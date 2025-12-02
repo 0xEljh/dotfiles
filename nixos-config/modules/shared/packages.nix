@@ -15,6 +15,7 @@ with pkgs; [
   sqlite
   wget
   zip
+  gh
 
   # Encryption and security tools
   age
@@ -42,7 +43,6 @@ with pkgs; [
   # Text and terminal utilities
   htop
   hunspell
-  iftop
   jetbrains-mono
   jq
   ripgrep
@@ -53,6 +53,7 @@ with pkgs; [
   eza
   ouch
   zoxide
+  fzf
   difftastic
   nushell
   zsh-powerlevel10k
@@ -60,4 +61,7 @@ with pkgs; [
   # Python packages
   python3
   virtualenv
+  uv
+  ruff
+  pyright
 ]
