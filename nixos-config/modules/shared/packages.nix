@@ -16,6 +16,7 @@ with pkgs; [
   wget
   zip
   gh
+  lazygit
 
   # Encryption and security tools
   age
@@ -28,17 +29,15 @@ with pkgs; [
   docker-compose
 
   # Media-related packages
-  dejavu_fonts
   ffmpeg
   fd
-  font-awesome
-  hack-font
   noto-fonts
   noto-fonts-emoji
   meslo-lgs-nf
 
   # Node.js development tools
   nodejs_24
+  bun
 
   # Text and terminal utilities
   htop

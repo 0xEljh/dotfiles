@@ -376,26 +376,27 @@ let name = "elijah";
     settings = {
       confirm_os_window_close = 0;
       enable_audio_bell       = "no";
-      allow_remote_control    = "yes";     # let ssh sessions control parent kitty
+      allow_remote_control    = "socket-only";     # let ssh sessions control parent kitty
+      listen_on               = "unix:/tmp/mykitty";
       macos_option_as_alt     = "yes";     # natural ⌥ behaviour on macOS
       scrollback_lines        = 10000;
       wheel_scroll_multiplier = 3.0;
 
       ## aesthetics
-      background_opacity      = "0.60";
-      background_blur         = 20;        # macOS only
+      background_opacity      = "0.80";
+      background_blur         = 40;        # macOS only
       hide_window_decorations = "titlebar-and-corners";
       window_padding_width    = 8;
       inactive_text_alpha     = "0.80";
-      inactive_border_color   = "background";
-      active_border_color     = "accent";  # picked from theme
+      inactive_border_color   = "#1e1e2e"; # i.e. background for mocha
+      active_border_color     = "#cba6f7";  # Mauve accent
 
       ## tab bar
       tab_bar_edge            = "top";
       tab_bar_min_tabs        = 2;
       tab_title_template      = "{index}:{title}";
-      active_tab_foreground   = "background";
-      active_tab_background   = "color2";
+      active_tab_foreground   = "#1e1e2e"; # background
+      active_tab_background   = "#a6e3a1";
     };
 
     ## KEYBINDINGS -----------------------------------------------------------
