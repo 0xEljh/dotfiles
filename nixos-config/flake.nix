@@ -27,9 +27,13 @@
       url = "github:nix-community/disko";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    nixos-wsl = {
+      url = "github:nix-community/NixOS-WSL/main";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, home-manager, nixpkgs, disko } @inputs:
+  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, home-manager, nixpkgs, disko, nixos-wsl } @inputs:
     let
       user = "elijah";
       linuxSystems = [ "x86_64-linux" "aarch64-linux" ];
@@ -115,6 +119,22 @@
           }
           ./hosts/nixos
         ];
-     });
+      });
+
+      # WSL Configuration - NixOS running inside Windows Subsystem for Linux
+      nixosConfigurations.wsl = nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        specialArgs = inputs // { inherit nixos-wsl; };
+        modules = [
+          home-manager.nixosModules.home-manager {
+            home-manager = {
+              useGlobalPkgs = true;
+              useUserPackages = true;
+              users.${user} = import ./modules/wsl/home-manager.nix;
+            };
+          }
+          ./hosts/wsl
+        ];
+      };
   };
 }
