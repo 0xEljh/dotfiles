@@ -13,7 +13,6 @@ NixOS configuration for Windows Subsystem for Linux (WSL2).
 
 ## Features
 
-- **win32yank** - Clipboard integration between WSL and Windows
 - **WSLg support** - GUI application support via Wayland
 - **Neovim** - Pre-configured editor with WSL clipboard integration
 - **Shared config** - Inherits from `modules/shared/` for consistency
@@ -55,21 +54,9 @@ sudo nixos-rebuild switch --flake .#wsl
 
 ## Clipboard Integration
 
-The configuration includes `win32yank` for seamless clipboard sharing between WSL and Windows.
-
 ### Neovim Clipboard
 
-Neovim clipboard is configured in your dotfiles at `nvim/lua/config/options.lua`. It automatically detects WSL and uses `win32yank.exe` for clipboard operations.
-
-### Manual Clipboard Operations
-
-```bash
-# Copy to Windows clipboard
-echo "text" | win32yank.exe -i
-
-# Paste from Windows clipboard
-win32yank.exe -o
-```
+Neovim clipboard is configured in your dotfiles at `nvim/lua/config/options.lua`. It automatically detects WSL and uses Windows clipboard utilities.
 
 ## Dotfiles Symlink Automation
 

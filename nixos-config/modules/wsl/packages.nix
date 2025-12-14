@@ -7,9 +7,6 @@ shared-packages ++ [
   # WSL-SPECIFIC PACKAGES
   # ============================================================================
 
-  # Clipboard integration with Windows
-  win32yank
-
   # Core development tools
   gnumake
   cmake

@@ -138,9 +138,6 @@ in
     curl
     wget
 
-    # WSL-specific: clipboard integration with Windows
-    win32yank
-
     # Editor
     neovim
 
@@ -166,8 +163,6 @@ in
   # ============================================================================
 
   environment.sessionVariables = {
-    # Ensure win32yank is used for clipboard in Neovim/Vim
-    # This helps with clipboard integration between WSL and Windows
     EDITOR = "nvim";
     VISUAL = "nvim";
   };

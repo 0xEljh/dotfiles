@@ -11,16 +11,16 @@ local function is_wsl()
 end
 
 if is_wsl() then
-  -- WSL: Use win32yank for clipboard integration with Windows
+  -- WSL: Use Windows clipboard integration
   vim.g.clipboard = {
-    name = "win32yank-wsl",
+    name = "wsl-windows-clipboard",
     copy = {
-      ["+"] = "win32yank.exe -i --crlf",
-      ["*"] = "win32yank.exe -i --crlf",
+      ["+"] = "clip.exe",
+      ["*"] = "clip.exe",
     },
     paste = {
-      ["+"] = "win32yank.exe -o --lf",
-      ["*"] = "win32yank.exe -o --lf",
+      ["+"] = "powershell.exe -NoProfile -Command Get-Clipboard",
+      ["*"] = "powershell.exe -NoProfile -Command Get-Clipboard",
     },
     cache_enabled = 0,
   }

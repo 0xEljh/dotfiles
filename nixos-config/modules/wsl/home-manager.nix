@@ -11,7 +11,7 @@ in
     enableNixpkgsReleaseCheck = false;
     username = "${user}";
     homeDirectory = "/home/${user}";
-    packages = pkgs.callPackage ./packages.nix {};
+    packages = import ./packages.nix { inherit pkgs; };
     file = shared-files;
     stateVersion = "24.11";
 

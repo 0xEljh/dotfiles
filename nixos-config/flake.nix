@@ -119,22 +119,22 @@
           }
           ./hosts/nixos
         ];
-      });
-
-      # WSL Configuration - NixOS running inside Windows Subsystem for Linux
-      nixosConfigurations.wsl = nixpkgs.lib.nixosSystem {
-        system = "x86_64-linux";
-        specialArgs = inputs // { inherit nixos-wsl; };
-        modules = [
-          home-manager.nixosModules.home-manager {
-            home-manager = {
-              useGlobalPkgs = true;
-              useUserPackages = true;
-              users.${user} = import ./modules/wsl/home-manager.nix;
-            };
-          }
-          ./hosts/wsl
-        ];
+      }) // {
+        # WSL Configuration - NixOS running inside Windows Subsystem for Linux
+        wsl = nixpkgs.lib.nixosSystem {
+          system = "x86_64-linux";
+          specialArgs = inputs // { inherit nixos-wsl; };
+          modules = [
+            home-manager.nixosModules.home-manager {
+              home-manager = {
+                useGlobalPkgs = true;
+                useUserPackages = true;
+                users.${user} = import ./modules/wsl/home-manager.nix;
+              };
+            }
+            ./hosts/wsl
+          ];
+        };
       };
   };
 }
