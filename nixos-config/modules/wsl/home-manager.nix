@@ -5,6 +5,19 @@ let
   xdg_configHome = "/home/${user}/.config";
   shared-programs = import ../shared/home-manager.nix { inherit config pkgs lib; };
   shared-files = import ../shared/files.nix { inherit config pkgs; };
+
+  git-wsl-config = {
+    enable = true;
+    userName = "0xEljh"; 
+    userEmail = "elijah@0xeljh.com";
+    
+    extraConfig = {
+      credential.helper = "${pkgs.gh}/bin/gh auth git-credential";
+      
+      # Force HTTPS instead of SSH
+      url."https://github.com/".insteadOf = "git@github.com:";
+    };
+  };
 in
 {
   home = {
@@ -21,11 +34,11 @@ in
     # This activation script creates symlinks for configs managed outside of Nix
     # (e.g., nvim config that you want to edit directly without rebuilding)
     #
-    # Assumes dotfiles are cloned to ~/.dotfiles
+    # Assumes dotfiles are cloned to ~/dotfiles
     # Adjust DOTFILES_DIR if your setup differs
 
     activation.linkDotfiles = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      DOTFILES_DIR="$HOME/.dotfiles"
+      DOTFILES_DIR="$HOME/dotfiles"
 
       # Helper function to create symlink (removes existing if present)
       link_config() {
@@ -51,12 +64,6 @@ in
 
       # Link nvim config
       link_config "$DOTFILES_DIR/nvim" "$HOME/.config/nvim"
-
-      # Link kitty config (if not managed by home-manager)
-      # link_config "$DOTFILES_DIR/kitty" "$HOME/.config/kitty"
-
-      # Add more symlinks as needed:
-      # link_config "$DOTFILES_DIR/some-config" "$HOME/.config/some-config"
     '';
   };
 
@@ -65,8 +72,9 @@ in
   # ============================================================================
 
   # Inherit shared programs - neovim config is managed separately via symlink
-  # See home.activation.linkDotfiles below
-  programs = shared-programs;
+  programs = lib.recursiveUpdate shared-programs {
+    git = git-wsl-config;
+  };
 
   # ============================================================================
   # WSL-SPECIFIC SERVICES
