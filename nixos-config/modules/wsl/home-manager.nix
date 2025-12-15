@@ -75,6 +75,35 @@ in
   programs = lib.recursiveUpdate shared-programs {
     git = git-wsl-config;
   };
+  
+  systemd.user.services.python-aw-push = {
+      Unit = {
+          Description = "Run aw push python script with uv";
+        };
+        Service = {
+            Type = "oneshot";
+            
+            WorkingDirectory = "%h/dotfiles";
+
+            ExecStart = "${pkgs.bash}/bin/bash -c '${pkgs.uv}'/bin/uv run scripts/push_aw.py";
+
+            Environment = "PYTHONUNBUFFERED=1";
+
+          };
+    };
+    
+    systemd.user.timers.python-aw-push = {
+        Unit = {
+            Description = "Run push script every 11 minutes";
+          };
+        Timer = {
+            OnCalendar = "*:0/11";
+            Persistent = true;
+          };
+        Install = {
+            WantedBy = ["timers.target"];
+          };
+      };
 
   # ============================================================================
   # WSL-SPECIFIC SERVICES

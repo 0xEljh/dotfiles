@@ -5,27 +5,19 @@
 -- Clipboard configuration
 -- Detect environment and configure clipboard accordingly
 
-local function is_wsl()
-  local output = vim.fn.systemlist("uname -r")
-  return output[1] and output[1]:lower():match("microsoft") ~= nil
-end
-
-if is_wsl() then
-  -- WSL: Use Windows clipboard integration
+if os.getenv("SSH_CONNECTION") then
   vim.g.clipboard = {
-    name = "wsl-windows-clipboard",
+    name = 'OSC 52',
     copy = {
-      ["+"] = "clip.exe",
-      ["*"] = "clip.exe",
+      ['+'] = require('vim.ui.clipboard.osc52').copy('+'),
+      ['*'] = require('vim.ui.clipboard.osc52').copy('*'),
     },
     paste = {
-      ["+"] = "powershell.exe -NoProfile -Command Get-Clipboard",
-      ["*"] = "powershell.exe -NoProfile -Command Get-Clipboard",
+      ['+'] = require('vim.ui.clipboard.osc52').paste('+'),
+      ['*'] = require('vim.ui.clipboard.osc52').paste('*'),
     },
-    cache_enabled = 0,
   }
-  vim.opt.clipboard = "unnamedplus"
-elseif os.getenv("SSH_CONNECTION") then
-  -- SSH: Use system clipboard
-  vim.opt.clipboard = "unnamedplus"
 end
+
+-- always sync with system clipboard
+vim.opt.clipboard = "unnamedplus"

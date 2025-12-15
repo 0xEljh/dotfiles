@@ -39,6 +39,9 @@ with pkgs; [
   nodejs_24
   bun
 
+  # C tools
+  gcc
+
   # Text and terminal utilities
   htop
   hunspell
