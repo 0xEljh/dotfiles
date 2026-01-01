@@ -59,6 +59,62 @@ CODING_APPS = {
     "docker", "postman", "insomnia", "dbeaver", "tableplus", "sequel pro", "pgadmin",
 }
 
+# Terminal apps - need title inspection to determine actual tool
+TERMINAL_APPS = {
+    "kitty", "terminal", "iterm2", "alacritty", "warp", "hyper", "wezterm",
+    "gnome-terminal", "konsole", "xterm",
+}
+
+# Patterns in terminal window titles that indicate specific coding tools
+# Maps pattern (lowercase) -> tool display name
+TERMINAL_TOOL_PATTERNS = {
+    "opencode": "OpenCode",
+    "nvim": "Neovim",
+    "neovim": "Neovim",
+    "vim": "Vim",
+    "hx ": "Helix",  # helix editor
+    "helix": "Helix",
+    "lazygit": "LazyGit",
+    "lazydocker": "LazyDocker",
+    "htop": "htop",
+    "btop": "btop",
+    "claude": "Claude CLI",
+    "aider": "Aider",
+    "ssh ": "SSH",
+    "kitten ssh": "SSH",
+}
+
+# AI Chat websites - for tracking AI assistant usage
+AI_CHAT_SITES = {
+    # OpenAI
+    "chatgpt.com", "chat.openai.com",
+    # Anthropic
+    "claude.ai",
+    # Google
+    "gemini.google.com", "bard.google.com", "aistudio.google.com",
+    # xAI
+    "grok.com",
+    # Perplexity
+    "perplexity.ai", "www.perplexity.ai",
+    # Other AI chats
+    "t3.chat",
+    "poe.com",
+    "you.com",
+    "phind.com",
+    "chat.mistral.ai",
+    "huggingface.co/chat",
+    "pi.ai",
+    "character.ai",
+    "copilot.microsoft.com",
+}
+
+# Planning/architecting apps - note-taking, knowledge management, thinking tools
+PLANNING_APPS = {
+    "notion", "logseq", "obsidian", "roam", "craft", "bear", "apple notes",
+    "notes", "evernote", "onenote", "remnote", "anytype", "capacities",
+    "miro", "whimsical", "excalidraw", "tldraw", "figjam",
+}
+
 # Websites considered as "coding activity"
 CODING_SITES = {
     "github.com", "gitlab.com", "bitbucket.org",
@@ -67,9 +123,11 @@ CODING_SITES = {
     "npmjs.com", "pypi.org", "crates.io", "rubygems.org",
     "replit.com", "codepen.io", "codesandbox.io", "jsfiddle.net",
     "figma.com", 
-    "aws.amazon.com", "dash.cloudflare.com", "aistudio.google.com",
+    "aws.amazon.com", "dash.cloudflare.com",
     "cronitor.io",
     "localhost:3000",
+    "vercel.com", "netlify.com", "railway.app", "render.com",
+    "huggingface.co",
 }
 
 # Apps to exclude from activity tracking (system processes, idle indicators)
@@ -212,6 +270,131 @@ def aggregate_web_app_time(events: list) -> dict:
     return dict(app_time)
 
 
+def aggregate_ai_chat_time(events: list) -> dict:
+    """
+    Aggregate time spent on AI chat sites from web watcher events.
+    Returns dict: {site_name: seconds} for AI chat sites with non-zero time.
+    """
+    ai_time = defaultdict(float)
+    for event in events:
+        url = event.get('data', {}).get('url', '')
+        domain = urlparse(url).netloc.lower()
+        duration = event.get('duration', 0) or 0
+        if duration <= 0:
+            continue
+        # Check if domain matches any AI chat site
+        for ai_site in AI_CHAT_SITES:
+            if ai_site in domain or domain.endswith(ai_site):
+                # Use a friendly name for the site
+                site_name = ai_site.replace('www.', '').split('.')[0]
+                if 'chatgpt' in ai_site or 'openai' in ai_site:
+                    site_name = 'ChatGPT'
+                elif 'claude' in ai_site:
+                    site_name = 'Claude'
+                elif 'gemini' in ai_site or 'bard' in ai_site:
+                    site_name = 'Gemini'
+                elif 'grok' in ai_site:
+                    site_name = 'Grok'
+                elif 'perplexity' in ai_site:
+                    site_name = 'Perplexity'
+                elif 'aistudio' in ai_site:
+                    site_name = 'AI Studio'
+                elif 't3.chat' in ai_site:
+                    site_name = 'T3'
+                elif 'copilot' in ai_site:
+                    site_name = 'Copilot'
+                ai_time[site_name] += duration
+                break
+    return dict(ai_time)
+
+
+def detect_terminal_tool(title: str) -> str | None:
+    """
+    Detect which coding tool is being used in a terminal based on window title.
+    Returns the tool name or None if not detected.
+    """
+    title_lower = title.lower()
+    for pattern, tool_name in TERMINAL_TOOL_PATTERNS.items():
+        if pattern in title_lower:
+            return tool_name
+    return None
+
+
+def aggregate_coding_tools_time(window_events: list) -> dict:
+    """
+    Aggregate time by coding tool with granular breakdown.
+    For terminal apps, inspects window title to determine actual tool.
+    Returns dict: {tool_name: seconds}
+    """
+    tool_time = defaultdict(float)
+    
+    for event in window_events:
+        app = event.get('data', {}).get('app', '').lower()
+        title = event.get('data', {}).get('title', '')
+        duration = event.get('duration', 0) or 0
+        
+        if duration <= 0:
+            continue
+        
+        # Skip excluded apps
+        if app in EXCLUDED_APPS:
+            continue
+        
+        # Check if this is a terminal app - inspect title for specific tool
+        if app in TERMINAL_APPS:
+            detected_tool = detect_terminal_tool(title)
+            if detected_tool:
+                tool_time[detected_tool] += duration
+            else:
+                # Generic terminal usage (shell, etc.)
+                tool_time['Terminal/Shell'] += duration
+        # Check if this is a known coding app (IDE, editor)
+        elif app in CODING_APPS:
+            # Capitalize nicely for display
+            display_name = app.title()
+            if app == 'code':
+                display_name = 'VS Code'
+            elif app == 'nvim':
+                display_name = 'Neovim'
+            tool_time[display_name] += duration
+    
+    return dict(tool_time)
+
+
+def count_ai_chat_minutes(ai_time: dict) -> int:
+    """
+    Count number of distinct minutes with AI chat activity.
+    Returns count of minutes where total AI chat time >= 30 seconds.
+    """
+    total_seconds = sum(ai_time.values())
+    return max(0, round(total_seconds / 60))
+
+
+def aggregate_planning_time(window_events: list, web_events: list, ai_chat_time: dict) -> dict:
+    """
+    Aggregate time spent on planning/architecting tools.
+    Includes: planning apps (Notion, Logseq, etc.) + AI chat time.
+    Returns dict: {tool_name: seconds}
+    """
+    planning_time = defaultdict(float)
+    
+    # Add planning apps from window events
+    for event in window_events:
+        app = event.get('data', {}).get('app', '').lower()
+        duration = event.get('duration', 0) or 0
+        if duration <= 0:
+            continue
+        if app in PLANNING_APPS:
+            display_name = app.title()
+            planning_time[display_name] += duration
+    
+    # Add AI chat time (already aggregated by site)
+    for site, seconds in ai_chat_time.items():
+        planning_time[site] += seconds
+    
+    return dict(planning_time)
+
+
 def format_duration(seconds: float) -> str:
     """Format seconds as human-readable duration, rounded to nearest minute."""
     minutes = round(seconds / 60)
@@ -279,6 +462,18 @@ def compute_hourly_stats(all_data: dict) -> dict:
             if any(coding_site in site.lower() for coding_site in CODING_SITES)
         )
         
+        # AI Chat time - aggregate by site
+        ai_chat_time = aggregate_ai_chat_time(hour_web)
+        ai_chat_total = sum(ai_chat_time.values())
+        
+        # Granular coding tools breakdown (with terminal tool detection)
+        coding_tools = aggregate_coding_tools_time(hour_window)
+        coding_tools_total = sum(coding_tools.values())
+        
+        # Planning time (Notion, Logseq, etc. + AI chats)
+        planning_tools = aggregate_planning_time(hour_window, hour_web, ai_chat_time)
+        planning_total = sum(planning_tools.values())
+        
         # Top 5 apps
         top_apps = sorted(app_time.items(), key=lambda x: -x[1])[:5]
         if (not top_apps) and web_app_time:
@@ -297,6 +492,12 @@ def compute_hourly_stats(all_data: dict) -> dict:
             'active_time': active_time,
             'total_app_time': total_app_time,
             'total_web_time': total_web_time,
+            'ai_chat_time': ai_chat_time,
+            'ai_chat_total': ai_chat_total,
+            'coding_tools': coding_tools,
+            'coding_tools_total': coding_tools_total,
+            'planning_tools': planning_tools,
+            'planning_total': planning_total,
         }
     
     return hourly_stats
@@ -314,24 +515,45 @@ def compute_daily_summary(hourly_stats: dict) -> dict:
     total_active_time = 0
     total_coding_time = 0
     total_notion_time = 0
+    total_ai_chat_time = 0
+    total_coding_tools_time = 0
+    total_planning_time = 0
     all_apps = defaultdict(float)
     all_sites = defaultdict(float)
+    all_ai_chats = defaultdict(float)
+    all_coding_tools = defaultdict(float)
+    all_planning_tools = defaultdict(float)
     
     for stats in hourly_stats.values():
         total_active_time += stats.get('active_time', stats.get('total_app_time', 0))
         total_coding_time += stats['coding_time']
         total_notion_time += stats['notion_time']
+        total_ai_chat_time += stats.get('ai_chat_total', 0)
+        total_coding_tools_time += stats.get('coding_tools_total', 0)
+        total_planning_time += stats.get('planning_total', 0)
         for app, time in stats['top_apps']:
             all_apps[app] += time
         for site, time in stats['top_sites']:
             all_sites[site] += time
+        for ai_site, time in stats.get('ai_chat_time', {}).items():
+            all_ai_chats[ai_site] += time
+        for tool, time in stats.get('coding_tools', {}).items():
+            all_coding_tools[tool] += time
+        for tool, time in stats.get('planning_tools', {}).items():
+            all_planning_tools[tool] += time
     
     return {
         'total_active_time': total_active_time,
         'total_coding_time': total_coding_time,
         'total_notion_time': total_notion_time,
+        'total_ai_chat_time': total_ai_chat_time,
+        'total_coding_tools_time': total_coding_tools_time,
+        'total_planning_time': total_planning_time,
         'top_apps': sorted(all_apps.items(), key=lambda x: -x[1])[:5],
         'top_sites': sorted(all_sites.items(), key=lambda x: -x[1])[:5],
+        'ai_chats': sorted(all_ai_chats.items(), key=lambda x: -x[1]),
+        'coding_tools': sorted(all_coding_tools.items(), key=lambda x: -x[1]),
+        'planning_tools': sorted(all_planning_tools.items(), key=lambda x: -x[1]),
     }
 
 
@@ -351,6 +573,28 @@ def make_table_row(cells: list) -> dict:
     }
 
 
+def format_tools_with_total(tools: dict, total_seconds: float, max_items: int = 3) -> str:
+    """
+    Format tools time with total in brackets: [45m] Tool1: 15m, Tool2: 10m
+    """
+    total_mins = round(total_seconds / 60)
+    if total_mins == 0:
+        return "-"
+    
+    # Sort by time descending
+    sorted_tools = sorted(tools.items(), key=lambda x: -x[1])[:max_items]
+    parts = []
+    for tool, seconds in sorted_tools:
+        mins = round(seconds / 60)
+        if mins > 0:
+            parts.append(f"{tool}: {mins}m")
+    
+    breakdown = ", ".join(parts) if parts else ""
+    if breakdown:
+        return f"[{total_mins}m] {breakdown}"
+    return f"[{total_mins}m]"
+
+
 def build_notion_blocks(hourly_stats: dict) -> list:
     """Build Notion blocks wrapped in a single parent toggle."""
     
@@ -358,15 +602,27 @@ def build_notion_blocks(hourly_stats: dict) -> list:
     summary = compute_daily_summary(hourly_stats)
     
     # Build table rows for hourly data
-    # Columns: Hour | Active | Coding | Notion | Top Apps | Top Sites
+    # Columns: Hour | Active | Dev Tools | Planning | Top Apps | Top Sites
     table_rows = [
         # Header row
-        make_table_row(["Hour", "Active", "Coding", "Notion", "Top Apps", "Top Sites"])
+        make_table_row(["Hour", "Active", "Dev Tools", "Planning", "Top Apps", "Top Sites"])
     ]
     
     for hour in sorted(hourly_stats.keys()):
         stats = hourly_stats[hour]
         hour_label = format_hour_label(hour)
+        
+        # Format dev tools with total: [45m] Windsurf: 15m, OpenCode: 10m
+        dev_tools_str = format_tools_with_total(
+            stats.get('coding_tools', {}),
+            stats.get('coding_tools_total', 0)
+        )
+        
+        # Format planning tools with total: [30m] Notion: 20m, ChatGPT: 10m
+        planning_str = format_tools_with_total(
+            stats.get('planning_tools', {}),
+            stats.get('planning_total', 0)
+        )
         
         # Format top apps (limit to top 3 for table)
         top_apps_str = ", ".join(
@@ -383,18 +639,27 @@ def build_notion_blocks(hourly_stats: dict) -> list:
         table_rows.append(make_table_row([
             hour_label,
             format_duration(stats.get('active_time', 0)) if stats.get('active_time', 0) > 0 else "-",
-            format_duration(stats['coding_time']) if stats['coding_time'] > 0 else "-",
-            format_duration(stats['notion_time']) if stats['notion_time'] > 0 else "-",
+            dev_tools_str,
+            planning_str,
             top_apps_str,
             top_sites_str
         ]))
     
     # Add totals row
+    dev_tools_total_str = format_tools_with_total(
+        dict(summary.get('coding_tools', [])),
+        summary.get('total_coding_tools_time', 0)
+    )
+    planning_total_str = format_tools_with_total(
+        dict(summary.get('planning_tools', [])),
+        summary.get('total_planning_time', 0)
+    )
+    
     table_rows.append(make_table_row([
         "TOTAL",
         format_duration(summary['total_active_time']),
-        format_duration(summary['total_coding_time']),
-        format_duration(summary['total_notion_time']),
+        dev_tools_total_str,
+        planning_total_str,
         ", ".join(f"{a} ({format_duration(t)})" for a, t in summary['top_apps'][:3]) or "-",
         ", ".join(f"{s} ({format_duration(t)})" for s, t in summary['top_sites'][:3]) or "-"
     ]))
