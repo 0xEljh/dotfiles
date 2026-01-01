@@ -1,0 +1,12 @@
+# environment files
+.env
+
+# log files
+*.log
+
+# data files
+*.json
+
+# python files
+__pycache__
+*.pyc

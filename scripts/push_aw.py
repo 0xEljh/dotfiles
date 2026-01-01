@@ -8,11 +8,11 @@ import requests
 import json
 import subprocess
 import socket
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 
 # --- CONFIGURATION ---
 VPS_ALIAS = "contabo"
-VPS_DEST_DIR = "~/scripts/aw-data/"    # Ensure this folder exists on VPS
+VPS_DEST_DIR = "~/dotfiles/scripts/aw-data/"    # Ensure this folder exists on VPS
 # ---------------------
 
 def get_aw_data():
