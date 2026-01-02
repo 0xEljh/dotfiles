@@ -117,6 +117,9 @@ in
 
         # space management
         alt - return : yabai -m window --toggle zoom-parent
+
+        # restart yabai
+        shift + alt - r : launchctl kickstart -k gui/$UID/org.nixos.yabai
       '';
     };
 
