@@ -321,6 +321,10 @@ let name = "elijah";
       # Remove Vim mode delays
       set -g focus-events on
 
+      # Allow escape sequences to pass through to the outer terminal (tmux 3.2+)
+      # This enables window title propagation over SSH with kitten ssh
+      set -g allow-passthrough on
+
       set -g set-titles on
       set -g set-titles-string "#{session_name}:#{window_index}.#{pane_index} #{pane_current_command} #{pane_title} #{pane_current_path}"
 
