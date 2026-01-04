@@ -1,4 +1,4 @@
-{ pkgs }:
+{ pkgs, lib ? pkgs.lib }:
 
 with pkgs; [
   # General packages for development and system management
@@ -67,4 +67,4 @@ with pkgs; [
   uv
   ruff
   pyright
-]
+] ++ lib.optionals (pkgs ? opencode) [ opencode ]

@@ -24,7 +24,7 @@
     executable = true;
     text = ''
       #!/bin/sh
-      set -eu
+      set -e
 
       if command -v nix >/dev/null 2>&1; then
         if nix shell --help >/dev/null 2>&1; then
@@ -56,7 +56,11 @@
         exec zsh -l
       fi
 
-      exec "${SHELL:-/bin/sh}" -l
+      if [ -n "$SHELL" ] && [ -x "$SHELL" ]; then
+        exec "$SHELL" -l
+      fi
+
+      exec /bin/sh -l
     '';
   };
 
