@@ -55,6 +55,7 @@ with pkgs; [
   eza
   ouch
   zoxide
+  atuin
   fzf
   difftastic
   nushell

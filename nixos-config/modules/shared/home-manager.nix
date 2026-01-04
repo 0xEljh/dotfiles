@@ -57,6 +57,11 @@ let name = "elijah";
 
       # zoxide
       eval $"$(zoxide init zsh)"
+
+      # atuin
+      if command -v atuin >/dev/null 2>&1; then
+        eval $"$(atuin init zsh)"
+      fi
     '';
   };
 
