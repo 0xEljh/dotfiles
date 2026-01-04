@@ -55,6 +55,16 @@ in
       };
       programs = {} // import ../shared/home-manager.nix { inherit config pkgs lib; };
 
+      home.activation.generateKittenSshTmuxConf = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+        src="$HOME/.config/tmux/tmux.conf"
+        dest="$HOME/.config/tmux/tmux.kitten.conf"
+
+        if [ -f "$src" ]; then
+          mkdir -p "$(dirname "$dest")"
+          ${pkgs.gnused}/bin/sed '/^[[:space:]]*run-shell[[:space:]]\+\/nix\/store\//d' "$src" > "$dest"
+        fi
+      '';
+
       # Marked broken Oct 20, 2022 check later to remove this
       # https://github.com/nix-community/home-manager/issues/3344
       manual.manpages.enable = false;

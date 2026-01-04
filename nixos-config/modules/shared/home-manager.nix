@@ -316,6 +316,11 @@ let name = "elijah";
       # Remove Vim mode delays
       set -g focus-events on
 
+      set -g set-titles on
+      set -g set-titles-string "#{session_name}:#{window_index}.#{pane_index} #{pane_current_command} #{pane_title} #{pane_current_path}"
+
+      set -g prefix2 C-b
+
       # Enable full mouse support
       set -g mouse on
 
@@ -324,9 +329,10 @@ let name = "elijah";
       # -----------------------------------------------------------------------------
 
       # Unbind default keys
-      unbind C-b
       unbind '"'
       unbind %
+
+      bind-key -T prefix C-b send-prefix -2
 
       # Split panes, vertical or horizontal
       bind-key x split-window -v

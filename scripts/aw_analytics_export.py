@@ -51,6 +51,7 @@ TERMINAL_APPS = {
 
 TERMINAL_TOOL_PATTERNS = {
     "opencode": "OpenCode",
+    "oc:": "OpenCode",
     "nvim": "Neovim",
     "neovim": "Neovim",
     "vim": "Vim",
