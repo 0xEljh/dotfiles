@@ -26,8 +26,10 @@
       #!/bin/sh
       set -e
 
+      # Try nix shell (flakes-style) first
       if command -v nix >/dev/null 2>&1; then
         if nix shell --help >/dev/null 2>&1; then
+          export KITTY_REMOTE_NIX=flakes
           exec nix \
             --extra-experimental-features nix-command \
             --extra-experimental-features flakes \
@@ -46,26 +48,34 @@
         fi
       fi
 
+      # Fallback to nix-shell (legacy)
       if command -v nix-shell >/dev/null 2>&1; then
+        export KITTY_REMOTE_NIX=legacy
         exec nix-shell -p \
           zsh zoxide lazygit bat atuin eza difftastic fzf neovim tmux \
           --command "zsh -l"
       fi
 
+      # No nix, try system zsh
       if command -v zsh >/dev/null 2>&1; then
         exec zsh -l
       fi
 
+      # Fallback to user's default shell
       if [ -n "$SHELL" ] && [ -x "$SHELL" ]; then
         exec "$SHELL" -l
       fi
 
+      # Last resort
       exec /bin/sh -l
     '';
   };
 
   ".config/kitty/remote-zsh/.zshrc" = {
     text = ''
+      # Kitty SSH remote configuration loaded
+      export KITTY_REMOTE_CONFIG=1
+
       export PATH=$HOME/.pnpm-packages/bin:$HOME/.pnpm-packages:$PATH
       export PATH=$HOME/.npm-packages/bin:$HOME/bin:$PATH
       export PATH=$HOME/.local/share/bin:$PATH
@@ -91,6 +101,21 @@
       if command -v atuin >/dev/null 2>&1; then
         eval "$(atuin init zsh)"
       fi
+
+      # Minimal prompt with indicator that kitty config is loaded
+      autoload -Uz colors && colors
+      setopt PROMPT_SUBST
+
+      # Build indicator based on how we got here
+      if [ -n "$KITTY_REMOTE_NIX" ]; then
+        # nix tools available (flakes or legacy)
+        _kitty_indicator="%F{green}[kitty+nix]%f"
+      else
+        # kitty config loaded but no nix
+        _kitty_indicator="%F{green}[kitty]%f"
+      fi
+
+      PROMPT="''${_kitty_indicator} %F{blue}%n@%m%f:%F{yellow}%~%f$ "
     '';
   };
 }
