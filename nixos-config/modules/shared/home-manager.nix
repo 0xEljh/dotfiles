@@ -402,6 +402,11 @@ let name = "elijah";
       # This helps ActivityWatch detect tools like opencode, nvim, etc.
       shell_integration       = "enabled";  # enables title reporting from shell
 
+      # Allow tmux/remote apps to set kitty window/tab titles via OSC escape sequences
+      # This enables tmux window titles to propagate to kitty tabs
+      allow_hyperlinks        = "yes";
+      allow_cloning           = "ask";
+
       ## aesthetics
       background_opacity      = "0.80";
       background_blur         = 40;        # macOS only
@@ -438,6 +443,10 @@ let name = "elijah";
       # copy / paste – works in tmux too
       "cmd+shift+c"     = "copy_to_clipboard";
       "cmd+shift+v"     = "paste_from_clipboard";
+
+      # shift+enter - send escape sequence so apps can distinguish from plain enter
+      # This is important for remote sessions where shift+enter may be lost
+      "shift+enter"     = "send_key shift+enter";
     };
   };
   

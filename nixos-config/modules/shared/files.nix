@@ -95,7 +95,8 @@
       alias tree="eza -T --icons";
 
       if command -v zoxide >/dev/null 2>&1; then
-        eval "$(zoxide init zsh)"
+        # Initialize zoxide with cd replacement so 'cd' uses zoxide
+        eval "$(zoxide init zsh --cmd cd)"
       fi
 
       if command -v atuin >/dev/null 2>&1; then
@@ -116,6 +117,16 @@
       fi
 
       PROMPT="''${_kitty_indicator} %F{blue}%n@%m%f:%F{yellow}%~%f$ "
+
+      # Show config loaded message on first shell startup
+      if [ -z "$KITTY_CONFIG_SHOWN" ]; then
+        export KITTY_CONFIG_SHOWN=1
+        if [ -n "$KITTY_REMOTE_NIX" ]; then
+          echo "\033[32m[kitty]\033[0m Remote config loaded (nix tools available)"
+        else
+          echo "\033[32m[kitty]\033[0m Remote config loaded"
+        fi
+      fi
     '';
   };
 }
