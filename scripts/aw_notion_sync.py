@@ -69,6 +69,7 @@ TERMINAL_APPS = {
 # Maps pattern (lowercase) -> tool display name
 TERMINAL_TOOL_PATTERNS = {
     "opencode": "OpenCode",
+    "oc:": "OpenCode",  # OpenCode short prefix in terminal titles
     "nvim": "Neovim",
     "neovim": "Neovim",
     "vim": "Vim",
@@ -423,6 +424,12 @@ def compute_hourly_stats(all_data: dict) -> dict:
             window_events.extend([{**e, '_bucket': bucket_name} for e in events])
         elif 'watcher-web' in bucket_name:
             web_events.extend([{**e, '_bucket': bucket_name} for e in events])
+    
+    # Warn if window watcher has no events (likely not running)
+    if not window_events and web_events:
+        print("⚠️  WARNING: No window watcher events found! Only browser data available.")
+        print("   - Terminal/IDE activity will NOT be tracked")
+        print("   - Check if aw-watcher-window is running on your system")
     
     # Bucket by hour
     window_by_hour = bucket_events_by_hour(window_events)

@@ -397,6 +397,11 @@ let name = "elijah";
       scrollback_lines        = 10000;
       wheel_scroll_multiplier = 3.0;
 
+      ## window title - show running command for ActivityWatch tracking
+      # {title} contains the shell-set title OR the foreground process name
+      # This helps ActivityWatch detect tools like opencode, nvim, etc.
+      shell_integration       = "enabled";  # enables title reporting from shell
+
       ## aesthetics
       background_opacity      = "0.80";
       background_blur         = 40;        # macOS only
