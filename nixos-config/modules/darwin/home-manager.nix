@@ -86,51 +86,7 @@ in
     ];
   };
 
-  services.yabai = {
-    enable = true;
-    enableScriptingAddition = true;        # requires partial-SIP
-    config = {
-      layout = "bsp";
-      window_gap          = 8;
-      split_ratio         = 0.55;
-      focus_follows_mouse = "autoraise";
-      mouse_follows_focus = "off";
-
-      window_opacity      = true;        # Enable the opacity feature
-      active_window_opacity = 0.95;       # Almost opaque when focused
-      normal_window_opacity = 0.85;      # Slightly transparent when unfocused
-
-    };
-    extraConfig = ''
-      # example: automatically grid-tile new floating windows
-      yabai -m signal --add event=window_created \
-          action="yabai -m window --grid 6:6:1:1:4:4"
-      
-      # Set VSCode to be transparent even when active
-      yabai -m rule --add app="^Code$" opacity=0.90
-
-    '';
-  };
-
-  services.skhd = {
-      enable = true;
-      skhdConfig = ''
-        # focus movement
-        alt - h : yabai -m window --focus west
-        alt - l : yabai -m window --focus east
-        alt - k : yabai -m window --focus north
-        alt - j : yabai -m window --focus south
-
-        # resize
-        shift + alt - h : yabai -m window --resize left:-40:0
-        shift + alt - l : yabai -m window --resize right:40:0
-
-        # space management
-        alt - return : yabai -m window --toggle zoom-parent
-
-        # restart yabai
-        shift + alt - r : launchctl kickstart -k gui/$UID/org.nixos.yabai
-      '';
-    };
+  # yabai and skhd are configured in accessibility.nix
+  # This ensures stable paths at /usr/local/bin/ are used for TCC permissions
 
 }
