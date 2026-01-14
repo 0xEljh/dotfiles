@@ -24,23 +24,4 @@ shared-packages ++ [
   inotify-tools  # inotifywait, inotifywatch - For file system events
   sqlite
   xdg-utils
-
-  # TODO: Consider adding these packages later
-  # ============================================================================
-
-  # GUI applications (requires WSLg)
-  # google-chrome
-  # firefox
-
-  # Security and authentication
-  # yubikey-agent
-  # keepassxc
-
-  # Media tools
-  # vlc
-  # fontconfig
-  # font-manager
-
-  # Productivity
-  # bc
 ]

@@ -133,6 +133,7 @@
               };
             }
             ./hosts/wsl
+            ./modules/wsl/configuration.nix
           ];
         };
       };

@@ -133,7 +133,7 @@ in
 
   environment.systemPackages = with pkgs; [
     # Core utilities
-    gitAndTools.gitFull
+    git
     inetutils
     curl
     wget
