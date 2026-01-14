@@ -257,13 +257,8 @@ let name = "elijah";
 
   ssh = {
     enable = true;
-    includes = [
-      (lib.mkIf pkgs.stdenv.hostPlatform.isLinux
-        "/home/${user}/.ssh/config_external"
-      )
-      (lib.mkIf pkgs.stdenv.hostPlatform.isDarwin
-        "/Users/${user}/.ssh/config_external"
-      )
+    includes = lib.mkDefault [
+      "${config.home.homeDirectory}/.ssh/config_external"
     ];
     matchBlocks = {
       # Example SSH configuration for GitHub

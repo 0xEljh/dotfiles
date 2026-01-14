@@ -5,6 +5,7 @@ let
   xdg_configHome = "/home/${user}/.config";
   shared-programs = import ../shared/home-manager.nix { inherit config pkgs lib; };
   shared-files = import ../shared/files.nix { inherit config pkgs; };
+  windowsSshDir = "/mnt/c/Users/elija/.ssh";
 
   git-wsl-config = {
     enable = true;
@@ -74,6 +75,18 @@ in
   # Inherit shared programs - neovim config is managed separately via symlink
   programs = lib.recursiveUpdate shared-programs {
     git = git-wsl-config;
+    ssh = {
+      includes = [
+        "${windowsSshDir}/config"
+      ];
+      matchBlocks = {
+        "*" = {
+          identityFile = [
+            "${windowsSshDir}/id_ed25519"
+          ];
+        };
+      };
+    };
   };
   
   # systemd.user.services.python-aw-push = {
