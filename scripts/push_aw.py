@@ -9,6 +9,7 @@ import json
 import subprocess
 import socket
 from datetime import datetime
+from collections import Counter
 
 # --- CONFIGURATION ---
 VPS_ALIAS = "contabo"
@@ -40,13 +41,40 @@ def get_aw_data():
     # Also extract the base name without trailing numbers (e.g., "elijahs-macbook-air" from "elijahs-macbook-air-2")
     base_hostname = short_hostname.rstrip("0123456789-")
 
+    watcher_bucket_hostnames = []
+    for bucket_id, bucket in buckets.items():
+        if any(
+            x in bucket_id
+            for x in ["aw-watcher-window", "aw-watcher-web", "aw-watcher-afk"]
+        ):
+            if isinstance(bucket, dict):
+                bucket_hostname = bucket.get("hostname")
+                if bucket_hostname:
+                    watcher_bucket_hostnames.append(bucket_hostname)
+
+    aw_hostname = None
+    if watcher_bucket_hostnames:
+        for bucket_hostname in watcher_bucket_hostnames:
+            if base_hostname and base_hostname in bucket_hostname.lower():
+                aw_hostname = bucket_hostname
+                break
+        if aw_hostname is None:
+            aw_hostname = Counter(watcher_bucket_hostnames).most_common(1)[0][0]
+
     for bucket_id in buckets.keys():
         bucket_id_lower = bucket_id.lower()
         # Filter 1: Only buckets for THIS computer (hostname check, case-insensitive)
         # Filter 2: Only the watchers we care about (Window, Web, AFK)
-        is_this_host = (
-            base_hostname in bucket_id_lower or "aw-watcher-web" in bucket_id_lower
-        )
+        bucket = buckets.get(bucket_id)
+        bucket_hostname = None
+        if isinstance(bucket, dict):
+            bucket_hostname = bucket.get("hostname")
+
+        is_this_host = False
+        if aw_hostname and bucket_hostname:
+            is_this_host = bucket_hostname == aw_hostname
+        else:
+            is_this_host = base_hostname in bucket_id_lower
         if is_this_host:
             if any(
                 x in bucket_id
