@@ -87,7 +87,19 @@ in
         };
       };
     };
-  };
+    zsh = {
+      # initContent appends this to the shared config
+      initContent = ''
+        # WSL-specific Nix-LD and GPU library paths
+        export NIX_LD_LIBRARY_PATH="/run/current-system/sw/share/nix-ld/lib"
+        export NIX_LD="/run/current-system/sw/share/nix-ld/lib/ld.so"
+        
+        # Solves a libstdc++.so.6 error and links Windows GPU drivers
+        export LD_LIBRARY_PATH="$NIX_LD_LIBRARY_PATH:/usr/lib/wsl/lib:$LD_LIBRARY_PATH"
+        '';
+      };
+    };
+
   
   # systemd.user.services.python-aw-push = {
   #     Unit = {
@@ -118,17 +130,4 @@ in
   #         };
   #     };
 
-  # ============================================================================
-  # WSL-SPECIFIC SERVICES
-  # ============================================================================
-
-  # Note: Many desktop services from the NixOS config are not applicable in WSL
-  # - No screen-locker (Windows handles this)
-  # - No polybar (no X11/Wayland desktop)
-  # - No dunst (Windows handles notifications)
-
-  # TODO: Consider enabling these services for WSLg GUI apps
-  # services = {
-  #   # If using WSLg for GUI applications
-  # };
 }

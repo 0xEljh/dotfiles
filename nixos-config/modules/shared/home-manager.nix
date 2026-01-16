@@ -21,7 +21,7 @@ let name = "elijah";
       }
     ];
 
-    initExtraFirst = ''
+    initContent = ''
       if [[ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]]; then
         . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
         . /nix/var/nix/profiles/default/etc/profile.d/nix.sh
@@ -56,11 +56,11 @@ let name = "elijah";
       alias tree="eza -T --icons";
 
       # zoxide
-      eval $"$(zoxide init zsh)"
+      eval "$(zoxide init zsh)"
 
       # atuin
       if command -v atuin >/dev/null 2>&1; then
-        eval $"$(atuin init zsh)"
+        eval "$(atuin init zsh)"
       fi
     '';
   };
