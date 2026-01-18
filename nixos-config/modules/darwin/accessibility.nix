@@ -147,8 +147,9 @@ in
       KeepAlive = true;
       RunAtLoad = true;
       ProcessType = "Interactive";
-      StandardOutPath = "/tmp/yabai.out.log";
-      StandardErrorPath = "/tmp/yabai.err.log";
+      # Use user-specific log paths to avoid permission issues
+      StandardOutPath = "/tmp/yabai_${user}.out.log";
+      StandardErrorPath = "/tmp/yabai_${user}.err.log";
     };
   };
 
@@ -167,8 +168,9 @@ in
       KeepAlive = true;
       RunAtLoad = true;
       ProcessType = "Interactive";
-      StandardOutPath = "/tmp/skhd.out.log";
-      StandardErrorPath = "/tmp/skhd.err.log";
+      # Use user-specific log paths to avoid permission issues
+      StandardOutPath = "/tmp/skhd_${user}.out.log";
+      StandardErrorPath = "/tmp/skhd_${user}.err.log";
     };
   };
 
