@@ -42,6 +42,9 @@ with pkgs; [
   # C tools
   gcc
 
+  # Lua
+  lua
+
   # Text and terminal utilities
   htop
   hunspell

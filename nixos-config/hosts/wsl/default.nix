@@ -17,6 +17,9 @@ in
     enable = true;
     defaultUser = user;
 
+    # Enable binfmt handler for running Windows .exe files from WSL
+    interop.register = true;
+
     # WSLg - enables GUI application support via Wayland
     wslConf = {
       automount.root = "/mnt";
