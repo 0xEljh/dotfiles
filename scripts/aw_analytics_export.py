@@ -120,8 +120,13 @@ AI_CHAT_SITES = {
     "copilot.microsoft.com",
 }
 
-PLANNING_APPS = {
+# AI Chat desktop apps - for tracking AI assistant usage from native apps
+AI_CHAT_APPS = {
     "claude",  # Claude desktop app
+    "chatgpt",  # ChatGPT desktop app
+}
+
+PLANNING_APPS = {
     "notion",
     "logseq",
     "obsidian",
@@ -181,6 +186,11 @@ CODING_APPS = {
     "tableplus",
     "sequel pro",
     "pgadmin",
+}
+
+# Websites considered as dev tools (browser-based development environments)
+DEV_TOOL_SITES = {
+    "colab.research.google.com": "Google Colab",
 }
 
 # Cross-platform: macOS, Linux, Windows
@@ -358,7 +368,19 @@ def aggregate_day_data(day_data: dict) -> dict:
                 display_name = app.title()
                 planning_apps[display_name] += duration
 
-    # Process web events for AI chat
+            # AI Chat desktop apps detection
+            if app in AI_CHAT_APPS:
+                if app == "claude":
+                    display_name = "Claude"
+                elif app == "chatgpt":
+                    display_name = "ChatGPT"
+                else:
+                    display_name = app.title()
+                ai_chats[display_name] += duration
+                # AI chats also count as planning
+                planning_apps[display_name] += duration
+
+    # Process web events for AI chat and dev tool sites
     for bucket_name, events in day_data.items():
         if "watcher-web" not in bucket_name:
             continue
@@ -376,6 +398,12 @@ def aggregate_day_data(day_data: dict) -> dict:
                 ai_chats[ai_name] += duration
                 # AI chats also count as planning
                 planning_apps[ai_name] += duration
+
+            # Check for browser-based dev tools
+            for site, display_name in DEV_TOOL_SITES.items():
+                if site in domain or domain.endswith(site):
+                    dev_tools[display_name] += duration
+                    break
 
     # Calculate totals
     dev_time = sum(dev_tools.values())

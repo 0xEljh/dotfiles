@@ -176,9 +176,14 @@ AI_CHAT_SITES = {
     "copilot.microsoft.com",
 }
 
+# AI Chat desktop apps - for tracking AI assistant usage from native apps
+AI_CHAT_APPS = {
+    "claude",  # Claude desktop app
+    "chatgpt",  # ChatGPT desktop app
+}
+
 # Planning/architecting apps - note-taking, knowledge management, thinking tools
 PLANNING_APPS = {
-    "claude",  # Claude desktop app
     "notion",
     "logseq",
     "obsidian",
@@ -227,6 +232,12 @@ CODING_SITES = {
     "railway.app",
     "render.com",
     "huggingface.co",
+    "colab.research.google.com",
+}
+
+# Browser-based dev tools with display names for breakdown tracking
+DEV_TOOL_SITES = {
+    "colab.research.google.com": "Google Colab",
 }
 
 # Apps to exclude from activity tracking (system processes, idle indicators)
@@ -437,13 +448,17 @@ def aggregate_web_app_time(events: list) -> dict:
     return dict(app_time)
 
 
-def aggregate_ai_chat_time(events: list) -> dict:
+def aggregate_ai_chat_time(
+    web_events: list, window_events: list | None = None
+) -> dict:
     """
-    Aggregate time spent on AI chat sites from web watcher events.
-    Returns dict: {site_name: seconds} for AI chat sites with non-zero time.
+    Aggregate time spent on AI chat from web events and desktop apps.
+    Returns dict: {site_name: seconds} for AI chat with non-zero time.
     """
     ai_time = defaultdict(float)
-    for event in events:
+
+    # Process web events (browser-based AI chat)
+    for event in web_events:
         url = event.get("data", {}).get("url", "")
         domain = urlparse(url).netloc.lower()
         duration = event.get("duration", 0) or 0
@@ -472,6 +487,25 @@ def aggregate_ai_chat_time(events: list) -> dict:
                     site_name = "Copilot"
                 ai_time[site_name] += duration
                 break
+
+    # Process window events (desktop AI chat apps)
+    if window_events:
+        for event in window_events:
+            app_raw = event.get("data", {}).get("app", "")
+            app = normalize_app_name(app_raw)
+            duration = event.get("duration", 0) or 0
+            if duration <= 0:
+                continue
+            if app in AI_CHAT_APPS:
+                # Use friendly display name
+                if app == "claude":
+                    site_name = "Claude"
+                elif app == "chatgpt":
+                    site_name = "ChatGPT"
+                else:
+                    site_name = app.title()
+                ai_time[site_name] += duration
+
     return dict(ai_time)
 
 
@@ -487,10 +521,11 @@ def detect_terminal_tool(title: str) -> str | None:
     return None
 
 
-def aggregate_coding_tools_time(window_events: list) -> dict:
+def aggregate_coding_tools_time(window_events: list, web_events: list | None = None) -> dict:
     """
     Aggregate time by coding tool with granular breakdown.
     For terminal apps, inspects window title to determine actual tool.
+    Also includes browser-based dev tools (e.g., Google Colab).
     Returns dict: {tool_name: seconds}
     """
     tool_time = defaultdict(float)
@@ -525,6 +560,21 @@ def aggregate_coding_tools_time(window_events: list) -> dict:
             elif app == "nvim":
                 display_name = "Neovim"
             tool_time[display_name] += duration
+
+    # Process web events for browser-based dev tools
+    if web_events:
+        for event in web_events:
+            url = event.get("data", {}).get("url", "")
+            domain = urlparse(url).netloc.lower()
+            duration = event.get("duration", 0) or 0
+
+            if duration <= 0:
+                continue
+
+            for site, display_name in DEV_TOOL_SITES.items():
+                if site in domain or domain.endswith(site):
+                    tool_time[display_name] += duration
+                    break
 
     return dict(tool_time)
 
@@ -641,12 +691,12 @@ def compute_hourly_stats(all_data: dict) -> dict:
             if any(coding_site in site.lower() for coding_site in CODING_SITES)
         )
 
-        # AI Chat time - aggregate by site
-        ai_chat_time = aggregate_ai_chat_time(hour_web)
+        # AI Chat time - aggregate by site (includes desktop AI chat apps)
+        ai_chat_time = aggregate_ai_chat_time(hour_web, hour_window)
         ai_chat_total = sum(ai_chat_time.values())
 
-        # Granular coding tools breakdown (with terminal tool detection)
-        coding_tools = aggregate_coding_tools_time(hour_window)
+        # Granular coding tools breakdown (with terminal tool detection + web dev tools)
+        coding_tools = aggregate_coding_tools_time(hour_window, hour_web)
         coding_tools_total = sum(coding_tools.values())
 
         # Planning time (Notion, Logseq, etc. + AI chats)
