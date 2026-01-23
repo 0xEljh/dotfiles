@@ -8,12 +8,15 @@ import requests
 import json
 import subprocess
 import socket
+import os
 from datetime import datetime
 from collections import Counter
+from zoneinfo import ZoneInfo
 
 # --- CONFIGURATION ---
 VPS_ALIAS = "contabo"
 VPS_DEST_DIR = "~/dotfiles/scripts/aw-data/"  # Ensure this folder exists on VPS
+TARGET_TZ = ZoneInfo(os.getenv("TARGET_TZ", "Asia/Singapore"))
 # ---------------------
 
 
@@ -21,11 +24,11 @@ def get_aw_data():
     base_url = "http://localhost:5600/api/0"
     hostname = socket.gethostname()
 
-    # Range: Start of today (midnight local time) to now
-    # This ensures we get the full picture of the current day every time we sync
-    now = datetime.now()
-    start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0).astimezone()
-    end_time = now.astimezone()
+    # Range: Start of today (midnight in TARGET_TZ) to now
+    # Uses TARGET_TZ to ensure consistent day boundaries regardless of system timezone
+    now = datetime.now(TARGET_TZ)
+    start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    end_time = now
 
     params = {"start": start_of_day.isoformat(), "end": end_time.isoformat()}
 
@@ -93,7 +96,7 @@ def get_aw_data():
 
 def sync_to_vps(data):
     hostname = socket.gethostname()
-    date_str = datetime.now().strftime("%Y-%m-%d")
+    date_str = datetime.now(TARGET_TZ).strftime("%Y-%m-%d")
 
     # Filename includes hostname so it won't overwrite data from other machines
     filename = f"aw_{hostname}_{date_str}.json"
