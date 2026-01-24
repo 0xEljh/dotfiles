@@ -4,12 +4,13 @@
 # ///
 
 
+import argparse
 import requests
 import json
 import subprocess
 import socket
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from collections import Counter
 from zoneinfo import ZoneInfo
 
@@ -20,15 +21,20 @@ TARGET_TZ = ZoneInfo(os.getenv("TARGET_TZ", "Asia/Singapore"))
 # ---------------------
 
 
-def get_aw_data():
+def get_aw_data(target_date=None):
     base_url = "http://localhost:5600/api/0"
     hostname = socket.gethostname()
 
-    # Range: Start of today (midnight in TARGET_TZ) to now
-    # Uses TARGET_TZ to ensure consistent day boundaries regardless of system timezone
     now = datetime.now(TARGET_TZ)
-    start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    end_time = now
+
+    if target_date is None:
+        # Default: today, from midnight to now
+        start_of_day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_time = now
+    else:
+        # Specific date: full day (midnight to midnight)
+        start_of_day = datetime(target_date.year, target_date.month, target_date.day, tzinfo=TARGET_TZ)
+        end_time = start_of_day + timedelta(days=1)
 
     params = {"start": start_of_day.isoformat(), "end": end_time.isoformat()}
 
@@ -94,9 +100,12 @@ def get_aw_data():
     return target_data
 
 
-def sync_to_vps(data):
+def sync_to_vps(data, target_date=None):
     hostname = socket.gethostname()
-    date_str = datetime.now(TARGET_TZ).strftime("%Y-%m-%d")
+    if target_date is None:
+        date_str = datetime.now(TARGET_TZ).strftime("%Y-%m-%d")
+    else:
+        date_str = target_date.strftime("%Y-%m-%d")
 
     # Filename includes hostname so it won't overwrite data from other machines
     filename = f"aw_{hostname}_{date_str}.json"
@@ -119,8 +128,27 @@ def sync_to_vps(data):
 
 
 if __name__ == "__main__":
-    data = get_aw_data()
+    parser = argparse.ArgumentParser(description="Push ActivityWatch data to VPS")
+    parser.add_argument(
+        "date",
+        nargs="?",
+        help="Date to push (YYYY-MM-DD format). Defaults to today.",
+    )
+    parser.add_argument(
+        "-y", "--yesterday",
+        action="store_true",
+        help="Push yesterday's data",
+    )
+    args = parser.parse_args()
+
+    target_date = None
+    if args.yesterday:
+        target_date = datetime.now(TARGET_TZ).date() - timedelta(days=1)
+    elif args.date:
+        target_date = datetime.strptime(args.date, "%Y-%m-%d").date()
+
+    data = get_aw_data(target_date)
     if data:
-        sync_to_vps(data)
+        sync_to_vps(data, target_date)
     else:
-        print("No data found for today yet.")
+        print(f"No data found for {target_date or 'today'}.")

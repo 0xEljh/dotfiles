@@ -38,12 +38,17 @@ with pkgs; [
   # Node.js development tools
   nodejs_24
   bun
+  claude-code
 
   # C tools
   gcc
 
   # Lua
-  lua
+  lua5_1
+  luarocks
+
+  # Image processing (for image.nvim)
+  imagemagick
 
   # Text and terminal utilities
   htop

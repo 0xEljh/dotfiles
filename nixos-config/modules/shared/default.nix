@@ -1,4 +1,4 @@
-{ config, pkgs, ... }:
+{ config, pkgs, claude-code-nix ? null, ... }:
 
 {
 
@@ -13,9 +13,11 @@
     overlays =
       # Apply each overlay found in the /overlays directory
       let path = ../../overlays; in with builtins;
-      map (n: import (path + ("/" + n)))
+      (map (n: import (path + ("/" + n)))
           (filter (n: match ".*\\.nix" n != null ||
                       pathExists (path + ("/" + n + "/default.nix")))
-                  (attrNames (readDir path)));
+                  (attrNames (readDir path))))
+      # Add claude-code overlay from flake input
+      ++ (if claude-code-nix != null then [ claude-code-nix.overlays.default ] else []);
   };
 }
