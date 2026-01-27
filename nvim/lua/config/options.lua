@@ -5,20 +5,22 @@
 -- Clipboard configuration
 -- Detect environment and configure clipboard accordingly
 
+local function paste()
+  return {
+    vim.fn.split(vim.fn.getreg(""), "\n"),
+    vim.fn.getregtype(""),
+  }
+end
+
 vim.g.clipboard = {
-  name = "OSC 52 (copy only)",
+  name = "OSC 52",
   copy = {
     ["+"] = require("vim.ui.clipboard.osc52").copy("+"),
     ["*"] = require("vim.ui.clipboard.osc52").copy("*"),
   },
   paste = {
-    -- Use terminal paste instead to avoid paste sync issues
-    ["+"] = function()
-      return {}
-    end,
-    ["*"] = function()
-      return {}
-    end,
+    ["+"] = paste,
+    ["*"] = paste,
   },
 }
 
