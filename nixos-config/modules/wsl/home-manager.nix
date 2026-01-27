@@ -9,12 +9,10 @@ let
 
   git-wsl-config = {
     enable = true;
-    userName = "0xEljh"; 
-    userEmail = "elijah@0xeljh.com";
-    
-    extraConfig = {
+    settings = {
+      user.name = "0xEljh";
+      user.email = "elijah@0xeljh.com";
       credential.helper = "${pkgs.gh}/bin/gh auth git-credential";
-      
       # Force HTTPS instead of SSH
       url."https://github.com/".insteadOf = "git@github.com:";
     };

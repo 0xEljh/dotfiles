@@ -68,15 +68,15 @@ let name = "elijah";
   git = {
     enable = true;
     ignores = [ "*.swp" ];
-    userName = "0xEljh";
-    userEmail = "elijahng96@gmail.com";
     lfs = {
       enable = true;
     };
-    extraConfig = {
+    settings = {
+      user.name = "0xEljh";
+      user.email = "elijahng96@gmail.com";
       init.defaultBranch = "main";
       core = {
-	    editor = "vim";
+        editor = "vim";
         autocrlf = "input";
       };
       pull.rebase = true;
@@ -257,6 +257,8 @@ let name = "elijah";
 
   ssh = {
     enable = true;
+    # Disable default config values that will be removed in future home-manager
+    enableDefaultConfig = false;
     includes = lib.mkDefault [
       "${config.home.homeDirectory}/.ssh/config_external"
     ];
@@ -439,9 +441,10 @@ let name = "elijah";
       "cmd+shift+c"     = "copy_to_clipboard";
       "cmd+shift+v"     = "paste_from_clipboard";
 
-      # shift+enter - send escape sequence so apps can distinguish from plain enter
-      # This is important for remote sessions where shift+enter may be lost
-      "shift+enter"     = "send_key shift+enter";
+      # shift+enter - send raw CSI u escape sequence so apps can distinguish from plain enter
+      # Using send_text with the literal escape sequence ensures it works through SSH host jumps
+      # \x1b[13;2u = CSI u encoding for shift+enter (13 = enter keycode, 2 = shift modifier)
+      "shift+enter"     = "send_text all \\x1b[13;2u";
     };
   };
   
