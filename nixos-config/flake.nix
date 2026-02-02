@@ -133,6 +133,7 @@
               home-manager = {
                 useGlobalPkgs = true;
                 useUserPackages = true;
+                backupFileExtension = "backup";
                 users.${user} = import ./modules/wsl/home-manager.nix;
               };
             }
