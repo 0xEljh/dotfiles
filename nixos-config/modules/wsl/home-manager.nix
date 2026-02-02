@@ -19,6 +19,7 @@ let
   };
 in
 {
+  imports = [ ../shared/ai-tools.nix ];
   home = {
     enableNixpkgsReleaseCheck = false;
     username = "${user}";

@@ -1,0 +1,2 @@
+- You should, when applicable, use Chrome for design verification, reviews, or accessing websites that were otherwise inaccessible to you.
+- Aggressively create agents in parallel during planning and exploration.

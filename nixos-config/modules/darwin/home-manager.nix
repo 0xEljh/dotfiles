@@ -43,6 +43,8 @@ in
   home-manager = {
     useGlobalPkgs = true;
     users.${user} = { pkgs, config, lib, ... }:{
+      imports = [ ../shared/ai-tools.nix ];
+
       home = {
         enableNixpkgsReleaseCheck = false;
         packages = import ./packages.nix { inherit pkgs; };
