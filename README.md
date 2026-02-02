@@ -33,3 +33,19 @@ nix run --extra-experimental-features 'nix-command flakes' .#build
 ```bash
 nix run --extra-experimental-features 'nix-command flakes' .#build-switch
 ```
+
+---
+
+## NixOS on WSL
+
+For NixOS running in WSL, you need to specify the `.#wsl` target when building:
+
+```bash
+sudo nixos-rebuild switch --flake .#wsl
+```
+
+To build without switching:
+
+```bash
+nixos-rebuild build --flake .#wsl
+```

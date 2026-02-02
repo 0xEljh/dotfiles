@@ -38,7 +38,7 @@ with pkgs; [
   # Node.js development tools
   nodejs_24
   bun
-  claude-code
+  llm-agents.claude-code
 
   # C tools
   gcc
@@ -75,4 +75,4 @@ with pkgs; [
   uv
   ruff
   pyright
-] ++ lib.optionals (pkgs ? opencode) [ opencode ]
+] ++ lib.optionals (pkgs ? llm-agents && pkgs.llm-agents ? opencode) [ llm-agents.opencode ]

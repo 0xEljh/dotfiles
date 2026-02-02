@@ -1,13 +1,17 @@
-{ config, pkgs, claude-code-nix ? null, ... }:
+{ config, pkgs, lib, llm-agents ? null, ... }:
 
 {
 
   nixpkgs = {
     config = {
-      allowUnfree = true;
-      allowBroken = true;
+      allowUnfree = false;
+      allowBroken = false;
       allowInsecure = false;
-      allowUnsupportedSystem = true;
+      allowUnsupportedSystem = false;
+      # Allow only specific unfree packages (security: explicit rather than blanket permission)
+      allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) [
+        "unrar"
+      ];
     };
 
     overlays =
@@ -17,7 +21,7 @@
           (filter (n: match ".*\\.nix" n != null ||
                       pathExists (path + ("/" + n + "/default.nix")))
                   (attrNames (readDir path))))
-      # Add claude-code overlay from flake input
-      ++ (if claude-code-nix != null then [ claude-code-nix.overlays.default ] else []);
+      # Add llm-agents overlay from flake input (provides claude-code, opencode, etc.)
+      ++ (if llm-agents != null then [ llm-agents.overlays.default ] else []);
   };
 }

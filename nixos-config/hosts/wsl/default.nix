@@ -2,6 +2,10 @@
 
 let
   user = "elijah";
+  sshKeys = [
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDlOVZ9KcD3aokJ6r9ex0c1eOJX72eiQvY8eDlcQolqh"
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJhFpUfIbtvUjCO15YjsuyN9PjFLgNegURfmGoyJjEOV"
+  ];
 in
 {
   imports = [
@@ -40,8 +44,8 @@ in
     settings = {
       allowed-users = [ "${user}" ];
       trusted-users = [ "@wheel" "${user}" ];
-      substituters = [ "https://nix-community.cachix.org" "https://cache.nixos.org" ];
-      trusted-public-keys = [ "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=" ];
+      substituters = [ "https://nix-community.cachix.org" "https://cache.nixos.org" "https://numtide.cachix.org" ];
+      trusted-public-keys = [ "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=" "numtide.cachix.org-1:2ps1kLBUWjxIneOy1Ber+6dwNbSd05yOb6HnGfN1gvI=" ];
     };
 
     package = pkgs.nix;
@@ -81,6 +85,9 @@ in
       };
     };
 
+    # Tailscale for secure networking and SSH access
+    tailscale.enable = true;
+
     # TODO: Consider enabling these services later
     # syncthing = { ... };
   };
@@ -109,8 +116,7 @@ in
       "docker"
     ];
     shell = pkgs.zsh;
-    # TODO: Add SSH keys for authentication
-    # openssh.authorizedKeys.keys = [ "ssh-ed25519 AAAA..." ];
+    openssh.authorizedKeys.keys = sshKeys;
   };
 
   # ============================================================================
