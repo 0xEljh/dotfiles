@@ -258,6 +258,12 @@ EXCLUDED_APPS = {
 # Table header used to identify our stats table
 AW_TABLE_HEADER = "Hour"
 
+# Hourly select thresholds (in seconds)
+DEEP_WORK_DEV_TOOLS_THRESHOLD = 30 * 60  # 30 minutes
+DEEP_WORK_ACTIVE_TIME_THRESHOLD = 50 * 60  # 50 minutes
+SHALLOW_WORK_PLANNING_THRESHOLD = 30 * 60  # 30 minutes
+SHALLOW_WORK_ACTIVE_TIME_THRESHOLD = 50 * 60  # 50 minutes
+
 
 def load_aw_data_for_journal_day(journal_date: date) -> dict:
     """
@@ -448,9 +454,7 @@ def aggregate_web_app_time(events: list) -> dict:
     return dict(app_time)
 
 
-def aggregate_ai_chat_time(
-    web_events: list, window_events: list | None = None
-) -> dict:
+def aggregate_ai_chat_time(web_events: list, window_events: list | None = None) -> dict:
     """
     Aggregate time spent on AI chat from web events and desktop apps.
     Returns dict: {site_name: seconds} for AI chat with non-zero time.
@@ -521,7 +525,9 @@ def detect_terminal_tool(title: str) -> str | None:
     return None
 
 
-def aggregate_coding_tools_time(window_events: list, web_events: list | None = None) -> dict:
+def aggregate_coding_tools_time(
+    window_events: list, web_events: list | None = None
+) -> dict:
     """
     Aggregate time by coding tool with granular breakdown.
     For terminal apps, inspects window title to determine actual tool.
@@ -730,6 +736,42 @@ def compute_hourly_stats(all_data: dict) -> dict:
         }
 
     return hourly_stats
+
+
+def get_hour_property_name(hour: int) -> str:
+    """Format hour as HH:00 for Notion property name (00:00 to 23:00)."""
+    return f"{hour:02d}:00"
+
+
+def determine_hourly_select_value(hour_stats: dict) -> str | None:
+    """
+    Determine the suggested select value for an hour based on activity data.
+
+    Returns:
+    - "Deep Work" if dev tooling > 30min and active time > 50min
+    - "Shallow Work" if planning tools > 30min and active time > 50min
+    - None if no rules match or active time is insufficient
+
+    Deep Work takes precedence if both conditions are met.
+    """
+    active_time = hour_stats.get("active_time", 0)
+
+    # Check if we meet the active time threshold
+    if active_time < DEEP_WORK_ACTIVE_TIME_THRESHOLD:
+        return None
+
+    dev_tools_time = hour_stats.get("coding_tools_total", 0)
+    planning_time = hour_stats.get("planning_total", 0)
+
+    # Check Deep Work first (takes precedence)
+    if dev_tools_time >= DEEP_WORK_DEV_TOOLS_THRESHOLD:
+        return "Deep Work"
+
+    # Check Shallow Work
+    if planning_time >= SHALLOW_WORK_PLANNING_THRESHOLD:
+        return "Shallow Work"
+
+    return None
 
 
 def format_hour_label(hour: int) -> str:
@@ -1001,6 +1043,40 @@ def sync_date(journal_date: date, notion: Client) -> bool:
 
         page_id = pages[0]["id"]
         print(f"Found page: {page_id}")
+
+        # Update hourly select properties based on activity rules
+        page_details = notion.pages.retrieve(page_id=page_id)
+        page_properties = page_details.get("properties", {})
+
+        hourly_updates = {}
+        skipped_hours = []
+        updated_hours = []
+
+        for hour, stats in hourly_stats.items():
+            prop_name = get_hour_property_name(hour)
+            prop_data = page_properties.get(prop_name, {})
+
+            # Check if property exists and is empty (no select value)
+            current_select = prop_data.get("select")
+            if current_select and current_select.get("name"):
+                skipped_hours.append(f"{prop_name} (already: {current_select['name']})")
+                continue
+
+            # Determine suggested value
+            suggested_value = determine_hourly_select_value(stats)
+            if suggested_value:
+                hourly_updates[prop_name] = {"select": {"name": suggested_value}}
+                updated_hours.append(f"{prop_name}: {suggested_value}")
+
+        # Apply hourly property updates if any
+        if hourly_updates:
+            notion.pages.update(page_id=page_id, properties=hourly_updates)
+            print(f"Updated {len(hourly_updates)} hourly properties:")
+            for update_info in updated_hours:
+                print(f"  → {update_info}")
+
+        if skipped_hours:
+            print(f"Skipped {len(skipped_hours)} already-filled hours")
 
         # Clear existing AW blocks
         find_and_clear_existing_blocks(notion, page_id)
