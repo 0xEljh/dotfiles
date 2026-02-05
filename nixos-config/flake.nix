@@ -84,9 +84,26 @@
 
       darwinConfigurations = nixpkgs.lib.genAttrs darwinSystems (system: let
         user = "elijah";
+        lib = nixpkgs.lib;
+        pkgs = import nixpkgs {
+          inherit system;
+          config = {
+            allowUnfree = false;
+            allowBroken = false;
+            allowInsecure = false;
+            allowUnsupportedSystem = false;
+            allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) [
+              "unrar"
+            ];
+          };
+          overlays = [
+            (import ./overlays/10-feather-font.nix)
+            (import ./overlays/20-notion-cat.nix)
+          ] ++ (if llm-agents != null then [ llm-agents.overlays.default ] else []);
+        };
       in
         darwin.lib.darwinSystem {
-          inherit system;
+          inherit system pkgs;
           specialArgs = inputs;
           modules = [
             home-manager.darwinModules.home-manager

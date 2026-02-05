@@ -68,6 +68,7 @@ with pkgs; [
   difftastic
   nushell
   zsh-powerlevel10k
+  notion-cat
 
   # Python packages
   python3

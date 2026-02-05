@@ -54,6 +54,7 @@ let name = "elijah";
       alias la="eza -a --group --icons";
       alias lt="eza -T --level=2 --git-ignore --icons";
       alias tree="eza -T --icons";
+      alias ncat="notion-cat";
 
       # zoxide
       eval "$(zoxide init zsh)"
@@ -263,6 +264,11 @@ let name = "elijah";
       "${config.home.homeDirectory}/.ssh/config_external"
     ];
     matchBlocks = {
+      "*" = {
+        serverAliveInterval = 60;
+        serverAliveCountMax = 30;
+      };
+
       # Example SSH configuration for GitHub
       # "github.com" = {
       #   identitiesOnly = true;
