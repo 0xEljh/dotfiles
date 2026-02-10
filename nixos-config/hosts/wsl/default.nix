@@ -111,6 +111,7 @@ in
 
   users.users.${user} = {
     isNormalUser = true;
+    linger = true;
     extraGroups = [
       "wheel"  # Enable 'sudo' for the user
       "docker"
@@ -174,6 +175,9 @@ in
   environment.sessionVariables = {
     EDITOR = "nvim";
     VISUAL = "nvim";
+
+    # WSL-specific: Explicit SSL cert location for non-Nix apps and Windows interoperability
+    SSL_CERT_FILE = "/etc/ssl/certs/ca-bundle.crt";
   };
 
   # ============================================================================

@@ -1,6 +1,7 @@
 # /// script
 # requires-python = ">=3.11"
 # dependencies = [
+#     "mistune>=3.0",
 #     "notion-client",
 #     "python-dotenv",
 # ]
@@ -22,11 +23,12 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+import mistune
 from dotenv import load_dotenv
 from notion_client import Client
 
 
-MAX_RICH_TEXT_LEN = 2000
+MAX_RICH_TEXT_LEN = 1999
 MAX_RICH_TEXT_ITEMS = 100
 MAX_CHILDREN_PER_REQUEST = 100
 
@@ -192,6 +194,277 @@ def build_code_blocks(text: str, language: str) -> list[dict]:
     return blocks
 
 
+NOTION_LANG_ALIASES = {
+    "py": "python",
+    "js": "javascript",
+    "ts": "typescript",
+    "sh": "bash",
+    "zsh": "bash",
+    "shell": "bash",
+    "yml": "yaml",
+    "cpp": "c++",
+    "dockerfile": "docker",
+    "md": "markdown",
+    "jsx": "javascript",
+    "tsx": "typescript",
+}
+
+
+def _notion_rich_text(text: str, annotations: dict | None = None) -> dict:
+    rt: dict = {"type": "text", "text": {"content": text}}
+    if annotations:
+        rt["annotations"] = annotations
+    return rt
+
+
+def _split_rich_text_item(item: dict) -> list[dict]:
+    content = item["text"]["content"]
+    if len(content) <= MAX_RICH_TEXT_LEN:
+        return [item]
+    parts = []
+    for idx in range(0, len(content), MAX_RICH_TEXT_LEN):
+        chunk = content[idx : idx + MAX_RICH_TEXT_LEN]
+        new_item = {"type": "text", "text": {"content": chunk}}
+        if "annotations" in item:
+            new_item["annotations"] = item["annotations"]
+        parts.append(new_item)
+    return parts
+
+
+def _ast_inline_to_rich_text(children: list[dict]) -> list[dict]:
+    items: list[dict] = []
+    for child in children:
+        items.extend(_inline_token_to_rich_text(child, {}))
+    split_items: list[dict] = []
+    for item in items:
+        split_items.extend(_split_rich_text_item(item))
+    return split_items
+
+
+def _merge_annotations(base: dict, override: dict) -> dict:
+    merged = dict(base)
+    merged.update(override)
+    return merged
+
+
+def _inline_token_to_rich_text(token: dict, annotations: dict) -> list[dict]:
+    t = token.get("type", "")
+
+    if t == "text":
+        raw = token.get("raw", token.get("text", ""))
+        if not raw:
+            return []
+        ann = annotations if annotations else None
+        return [_notion_rich_text(raw, ann)]
+
+    if t == "codespan":
+        raw = token.get("raw", token.get("text", ""))
+        if not raw:
+            return []
+        ann = _merge_annotations(annotations, {"code": True})
+        return [_notion_rich_text(raw, ann)]
+
+    if t == "strong":
+        ann = _merge_annotations(annotations, {"bold": True})
+        items: list[dict] = []
+        for child in token.get("children", []):
+            items.extend(_inline_token_to_rich_text(child, ann))
+        return items
+
+    if t == "emphasis":
+        ann = _merge_annotations(annotations, {"italic": True})
+        items = []
+        for child in token.get("children", []):
+            items.extend(_inline_token_to_rich_text(child, ann))
+        return items
+
+    if t == "strikethrough":
+        ann = _merge_annotations(annotations, {"strikethrough": True})
+        items = []
+        for child in token.get("children", []):
+            items.extend(_inline_token_to_rich_text(child, ann))
+        return items
+
+    if t == "link":
+        url = ""
+        if "attrs" in token:
+            url = token["attrs"].get("url", "")
+        elif "link" in token:
+            url = token["link"]
+        ann = dict(annotations) if annotations else {}
+        items = []
+        for child in token.get("children", []):
+            child_items = _inline_token_to_rich_text(child, ann)
+            for ci in child_items:
+                ci["text"]["link"] = {"url": url}
+            items.extend(child_items)
+        if not items:
+            raw = token.get("raw", url)
+            rt = _notion_rich_text(raw, ann if ann else None)
+            rt["text"]["link"] = {"url": url}
+            items.append(rt)
+        return items
+
+    if t == "softbreak":
+        return [_notion_rich_text("\n")]
+
+    if t == "linebreak":
+        return [_notion_rich_text("\n")]
+
+    if t == "image":
+        alt = ""
+        if token.get("children"):
+            for child in token["children"]:
+                alt += child.get("raw", child.get("text", ""))
+        return [_notion_rich_text(alt or "[image]")]
+
+    if t == "inline_html":
+        raw = token.get("raw", token.get("text", ""))
+        return [_notion_rich_text(raw)] if raw else []
+
+    raw = token.get("raw", token.get("text", ""))
+    if raw:
+        ann = annotations if annotations else None
+        return [_notion_rich_text(raw, ann)]
+    return []
+
+
+def _make_block(block_type: str, rich_text: list[dict], **extra: object) -> dict:
+    block: dict = {
+        "object": "block",
+        "type": block_type,
+        block_type: {"rich_text": rich_text, **extra},
+    }
+    return block
+
+
+def _ast_to_blocks(tokens: list[dict]) -> list[dict]:
+    blocks: list[dict] = []
+    for token in tokens:
+        blocks.extend(_token_to_blocks(token))
+    return blocks
+
+
+def _token_to_blocks(token: dict) -> list[dict]:
+    t = token.get("type", "")
+
+    if t == "paragraph":
+        rt = _ast_inline_to_rich_text(token.get("children", []))
+        return [_make_block("paragraph", rt)]
+
+    if t == "heading":
+        level = token.get("attrs", {}).get("level", 1)
+        if level > 3:
+            level = 3
+        block_type = f"heading_{level}"
+        rt = _ast_inline_to_rich_text(token.get("children", []))
+        return [_make_block(block_type, rt)]
+
+    if t == "block_code":
+        code = token.get("raw", token.get("text", ""))
+        info = token.get("attrs", {}).get("info", "") or ""
+        lang = info.split()[0] if info else ""
+        lang_key = lang.lower()
+        notion_lang = NOTION_LANG_ALIASES.get(lang_key, lang_key) or "plain text"
+        rt = chunk_rich_text(code)
+        result_blocks: list[dict] = []
+        for idx in range(0, len(rt), MAX_RICH_TEXT_ITEMS):
+            result_blocks.append(
+                _make_block("code", rt[idx : idx + MAX_RICH_TEXT_ITEMS], language=notion_lang)
+            )
+        return result_blocks
+
+    if t == "block_quote":
+        child_blocks = _ast_to_blocks(token.get("children", []))
+        if not child_blocks:
+            return [_make_block("quote", [_notion_rich_text("")])]
+        first = child_blocks[0]
+        first_type = first.get("type", "")
+        if first_type in ("paragraph", "heading_1", "heading_2", "heading_3"):
+            rt = first[first_type]["rich_text"]
+        else:
+            rt = [_notion_rich_text("")]
+        block = _make_block("quote", rt)
+        if len(child_blocks) > 1:
+            block["quote"]["children"] = child_blocks[1:]
+        return [block]
+
+    if t == "list":
+        ordered = token.get("attrs", {}).get("ordered", False)
+        items: list[dict] = []
+        for child in token.get("children", []):
+            items.extend(_list_item_to_blocks(child, ordered))
+        return items
+
+    if t == "thematic_break":
+        return [{"object": "block", "type": "divider", "divider": {}}]
+
+    if t == "blank_line":
+        return []
+
+    if t == "block_html":
+        raw = token.get("raw", token.get("text", ""))
+        if raw:
+            return [_make_block("paragraph", [_notion_rich_text(raw)])]
+        return []
+
+    if t == "block_text":
+        rt = _ast_inline_to_rich_text(token.get("children", []))
+        return [_make_block("paragraph", rt)]
+
+    raw = token.get("raw", token.get("text", ""))
+    if raw:
+        return [_make_block("paragraph", [_notion_rich_text(raw)])]
+    return []
+
+
+def _list_item_to_blocks(token: dict, ordered: bool) -> list[dict]:
+    block_type = "numbered_list_item" if ordered else "bulleted_list_item"
+
+    children = token.get("children", [])
+    if not children:
+        return [_make_block(block_type, [_notion_rich_text("")])]
+
+    inline_rt: list[dict] = []
+    nested_blocks: list[dict] = []
+
+    for child in children:
+        ct = child.get("type", "")
+        if ct == "paragraph":
+            if not inline_rt:
+                inline_rt = _ast_inline_to_rich_text(child.get("children", []))
+            else:
+                nested_blocks.extend(_token_to_blocks(child))
+        elif ct == "list":
+            nested_blocks.extend(_token_to_blocks(child))
+        elif ct == "block_text":
+            if not inline_rt:
+                inline_rt = _ast_inline_to_rich_text(child.get("children", []))
+            else:
+                nested_blocks.extend(_token_to_blocks(child))
+        else:
+            nested_blocks.extend(_token_to_blocks(child))
+
+    if not inline_rt:
+        inline_rt = [_notion_rich_text("")]
+
+    block = _make_block(block_type, inline_rt)
+    if nested_blocks:
+        block[block_type]["children"] = nested_blocks
+    return [block]
+
+
+def build_markdown_blocks(text: str) -> list[dict]:
+    if not text.strip():
+        return []
+    md = mistune.create_markdown(
+        renderer=None,
+        plugins=["strikethrough", "table"],
+    )
+    tokens = md(text)
+    return _ast_to_blocks(tokens)
+
+
 def build_properties(
     title: str,
     type_value: str,
@@ -266,6 +539,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data-source-id", help="Notion data source id")
     parser.add_argument("--env-file", help="Path to .env file")
     parser.add_argument("--no-stdout", action="store_true", help="Do not echo input")
+    parser.add_argument("--raw", action="store_true", help="Force code-block mode for .md/.mdx")
     parser.add_argument("--dry-run", action="store_true", help="Do not call Notion")
     return parser.parse_args()
 
@@ -321,6 +595,8 @@ def main() -> int:
         else os.environ.get("NOTION_CAT_NOTES") or make_notes(cwd_name, input_desc, ts)
     )
     language = args.lang or os.environ.get("NOTION_CAT_LANG") or inferred_lang
+    use_markdown = inferred_lang == "markdown" and not args.raw
+    mode = "markdown" if use_markdown else "code"
 
     if args.dry_run:
         eprint("dry-run: not creating Notion page")
@@ -330,6 +606,7 @@ def main() -> int:
         eprint(f"source={source}")
         eprint(f"notes={notes}")
         eprint(f"lang={language}")
+        eprint(f"mode={mode}")
         if env_loaded:
             eprint(f"env={env_loaded}")
         return 0
@@ -350,7 +627,10 @@ def main() -> int:
         return 1
 
     text = data.decode("utf-8", errors="replace")
-    blocks = build_code_blocks(text, language)
+    if use_markdown:
+        blocks = build_markdown_blocks(text)
+    else:
+        blocks = build_code_blocks(text, language)
     if blocks:
         append_blocks(notion, page_id, blocks)
     else:

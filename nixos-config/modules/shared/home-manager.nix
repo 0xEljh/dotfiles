@@ -374,7 +374,12 @@ let name = "elijah";
       bind-key -T copy-mode-vi 'C-j' select-pane -D
       bind-key -T copy-mode-vi 'C-k' select-pane -U
       bind-key -T copy-mode-vi 'C-l' select-pane -R
-      bind-key -T copy-mode-vi 'C-\' select-pane -l
+      bind-key -T copy-mode-vi 'C-\\' select-pane -l
+
+      # Enable extended keys (CSI u) support for shift+enter and other modified keys
+      set -s extended-keys on
+      set -s user-keys[0] "\x1b[13;2u"
+      bind-key -n User0 send-keys Escape "[13;2u"
       '';
     };
 
