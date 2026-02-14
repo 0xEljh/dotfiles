@@ -6,9 +6,16 @@
 
 ## Design Documents
 
-- Cross reference online documentation and codebases while planning or writing design documents. 
+- Cross reference online documentation and codebases while planning or writing design documents.
 - Include links to the relevant documentation and code snippets in these plans/docs. Plans may sometimes be handed off to an engineering team for review and implementation.
 
 ## Test Driven Development (TDD)
 
 If the codebase has tests, then TDD should be adopted. That is, tests should be written first, then code. Only as a final step do we wrangle tests and code. This reduces "empty tests" and also limits spec drift.
+
+## Maximise exploration/search during planning
+
+MAXIMISE SEARCH EFFORTS. Launch multiple background agents IN PARALLEL.
+Look up codebase patterns, file structures, ast-grep/ripgrep (rg).
+Check remote repos, official docs, GitHub examples.
+NEVER stop at the first result - be exhaustive.
