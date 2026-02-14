@@ -23,6 +23,7 @@ with pkgs; [
   age-plugin-yubikey
   gnupg
   libfido2
+  magic-wormhole
 
   # Cloud-related tools and SDKs
   docker

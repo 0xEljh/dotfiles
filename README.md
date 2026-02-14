@@ -49,9 +49,26 @@ What activation does:
 
 Note: `ai-tools/opencode/opencode.json` and `ai-tools/claude-code/settings.json` are currently uninitialised; if missing, activation warns and proceeds on best-effort.
 
+### 3) `notion-cat`: `cat` to Notion
+
+Simple utility to create a new Notion page and append stdin/files as code blocks.
+
+Required env:
+
+- NOTION_TOKEN
+- NOTION_CAT_DATA_SOURCE_ID (Notion data source ID for the target database)
+
+Examples:
+
+- echo "hello" | notion-cat
+- notion-cat README.md
+- rg "TODO" -n . | notion-cat --title "TODO scan"
+
+May add other versions and integrate with ai-tools in the future.
+
 ---
 
-## Installation for macOS
+## Nix on macOS
 
 ```bash
 xcode-select --install
