@@ -380,6 +380,27 @@ let name = "elijah";
       set -s extended-keys on
       set -s user-keys[0] "\x1b[13;2u"
       bind-key -n User0 send-keys Escape "[13;2u"
+
+      # -----------------------------------------------------------------------------
+      # Mouse selection and copy mode improvements
+      # -----------------------------------------------------------------------------
+
+      # Keep selection highlighted after copying (don't auto-clear)
+      set -g @yank_action 'copy-pipe-no-clear'
+
+      # Exit copy-mode when clicking elsewhere (not just q/Esc)
+      bind -T copy-mode MouseDown1Pane select-pane \; send-keys -X clear-selection
+      bind -T copy-mode-vi MouseDown1Pane select-pane \; send-keys -X clear-selection
+
+      # Double-click to select words (works in and out of copy-mode)
+      bind -T copy-mode DoubleClick1Pane select-pane \; send-keys -X select-word \; send-keys -X copy-pipe-no-clear
+      bind -T copy-mode-vi DoubleClick1Pane select-pane \; send-keys -X select-word \; send-keys -X copy-pipe-no-clear
+      bind -n DoubleClick1Pane select-pane \; copy-mode -M \; send-keys -X select-word \; send-keys -X copy-pipe-no-clear
+
+      # Triple-click to select lines (works in and out of copy-mode)
+      bind -T copy-mode TripleClick1Pane select-pane \; send-keys -X select-line \; send-keys -X copy-pipe-no-clear
+      bind -T copy-mode-vi TripleClick1Pane select-pane \; send-keys -X select-line \; send-keys -X copy-pipe-no-clear
+      bind -n TripleClick1Pane select-pane \; copy-mode -M \; send-keys -X select-line \; send-keys -X copy-pipe-no-clear
       '';
     };
 

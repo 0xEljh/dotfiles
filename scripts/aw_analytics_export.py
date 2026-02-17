@@ -27,6 +27,7 @@ import sys
 import json
 import glob
 import argparse
+import re
 from datetime import datetime, timedelta, time, date
 from zoneinfo import ZoneInfo
 from collections import defaultdict
@@ -218,6 +219,102 @@ def parse_timestamp(ts_str: str) -> datetime:
     return dt.astimezone(TARGET_TZ)
 
 
+def get_event_time_range(event: dict) -> tuple[datetime, datetime] | tuple[None, None]:
+    """Get start and end datetime for an event."""
+    ts_str = event.get("timestamp", "")
+    if not ts_str:
+        return None, None
+    start = parse_timestamp(ts_str)
+    duration = event.get("duration", 0) or 0
+    end = start + timedelta(seconds=duration)
+    return start, end
+
+
+def extract_host_from_bucket(bucket_name: str) -> str | None:
+    if not bucket_name:
+        return None
+    match = re.match(r"^aw-watcher-(?:window|afk)_(.+)$", bucket_name)
+    if match:
+        return match.group(1)
+    match = re.match(r"^aw-watcher-web(?:-[^_]+)?_(.+)$", bucket_name)
+    if match:
+        return match.group(1)
+    return None
+
+
+def merge_intervals(
+    intervals: list[tuple[datetime, datetime]],
+) -> list[tuple[datetime, datetime]]:
+    if not intervals:
+        return []
+    sorted_intervals = sorted(intervals, key=lambda x: x[0])
+    merged = [sorted_intervals[0]]
+    for start, end in sorted_intervals[1:]:
+        last_start, last_end = merged[-1]
+        if start <= last_end:
+            merged[-1] = (last_start, max(last_end, end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def build_not_afk_periods_by_host(afk_events_by_host: dict) -> dict:
+    periods_by_host = {}
+    for host, events in afk_events_by_host.items():
+        intervals = []
+        for event in events:
+            status = event.get("data", {}).get("status", "")
+            if status != "not-afk":
+                continue
+            start, end = get_event_time_range(event)
+            if not start or not end or end <= start:
+                continue
+            intervals.append((start, end))
+        periods_by_host[host] = merge_intervals(intervals)
+    return periods_by_host
+
+
+def filter_events_by_afk(events: list, not_afk_periods_by_host: dict) -> list:
+    if not events:
+        return []
+    if not not_afk_periods_by_host:
+        return events
+
+    filtered_events = []
+
+    for event in events:
+        bucket_name = event.get("_bucket", "")
+        host = extract_host_from_bucket(bucket_name)
+        if not host:
+            filtered_events.append(event)
+            continue
+
+        host_periods = not_afk_periods_by_host.get(host)
+        if host_periods is None:
+            filtered_events.append(event)
+            continue
+        if not host_periods:
+            continue
+
+        event_start, event_end = get_event_time_range(event)
+        if not event_start or not event_end:
+            continue
+
+        for active_start, active_end in host_periods:
+            overlap_start = max(event_start, active_start)
+            overlap_end = min(event_end, active_end)
+
+            if overlap_start < overlap_end:
+                filtered_event = event.copy()
+                filtered_event["timestamp"] = overlap_start.isoformat()
+                filtered_event["duration"] = (
+                    overlap_end - overlap_start
+                ).total_seconds()
+                filtered_events.append(filtered_event)
+
+    return filtered_events
+
+
 def normalize_app_name(app: str) -> str:
     """
     Normalize app name for cross-platform consistency.
@@ -331,79 +428,97 @@ def aggregate_day_data(day_data: dict) -> dict:
     planning_apps = defaultdict(float)
     all_apps = defaultdict(float)
 
-    # Process window events
+    # Collect AFK events from all AFK buckets (per host)
+    afk_events_by_host = defaultdict(list)
     for bucket_name, events in day_data.items():
-        if "watcher-window" not in bucket_name:
+        if "watcher-afk" in bucket_name:
+            host = extract_host_from_bucket(bucket_name)
+            if host:
+                afk_events_by_host[host].extend(events)
+
+    not_afk_periods_by_host = build_not_afk_periods_by_host(afk_events_by_host)
+
+    # Collect and filter window events
+    window_events = []
+    for bucket_name, events in day_data.items():
+        if "watcher-window" in bucket_name:
+            window_events.extend([{**e, "_bucket": bucket_name} for e in events])
+
+    window_events = filter_events_by_afk(window_events, not_afk_periods_by_host)
+
+    # Process filtered window events
+    for event in window_events:
+        app_raw = event.get("data", {}).get("app", "")
+        app = normalize_app_name(app_raw)
+        title = event.get("data", {}).get("title", "")
+        duration = event.get("duration", 0) or 0
+
+        if duration <= 0 or app in EXCLUDED_APPS:
             continue
 
-        for event in events:
-            app_raw = event.get("data", {}).get("app", "")
-            app = normalize_app_name(app_raw)
-            title = event.get("data", {}).get("title", "")
-            duration = event.get("duration", 0) or 0
+        # Track all apps
+        all_apps[app] += duration
 
-            if duration <= 0 or app in EXCLUDED_APPS:
-                continue
+        # Dev tools detection
+        if app in TERMINAL_APPS:
+            detected_tool = detect_terminal_tool(title)
+            if detected_tool:
+                dev_tools[detected_tool] += duration
+            else:
+                dev_tools["Terminal/Shell"] += duration
+        elif app in CODING_APPS:
+            display_name = app.title()
+            if app == "code":
+                display_name = "VS Code"
+            elif app == "nvim":
+                display_name = "Neovim"
+            dev_tools[display_name] += duration
 
-            # Track all apps
-            all_apps[app] += duration
+        # Planning apps detection
+        if app in PLANNING_APPS:
+            display_name = app.title()
+            planning_apps[display_name] += duration
 
-            # Dev tools detection
-            if app in TERMINAL_APPS:
-                detected_tool = detect_terminal_tool(title)
-                if detected_tool:
-                    dev_tools[detected_tool] += duration
-                else:
-                    dev_tools["Terminal/Shell"] += duration
-            elif app in CODING_APPS:
+        # AI Chat desktop apps detection
+        if app in AI_CHAT_APPS:
+            if app == "claude":
+                display_name = "Claude"
+            elif app == "chatgpt":
+                display_name = "ChatGPT"
+            else:
                 display_name = app.title()
-                if app == "code":
-                    display_name = "VS Code"
-                elif app == "nvim":
-                    display_name = "Neovim"
+            ai_chats[display_name] += duration
+            # AI chats also count as planning
+            planning_apps[display_name] += duration
+
+    # Collect and filter web events
+    web_events = []
+    for bucket_name, events in day_data.items():
+        if "watcher-web" in bucket_name:
+            web_events.extend([{**e, "_bucket": bucket_name} for e in events])
+
+    web_events = filter_events_by_afk(web_events, not_afk_periods_by_host)
+
+    # Process filtered web events for AI chat and dev tool sites
+    for event in web_events:
+        url = event.get("data", {}).get("url", "")
+        domain = urlparse(url).netloc
+        duration = event.get("duration", 0) or 0
+
+        if duration <= 0:
+            continue
+
+        ai_name = get_ai_chat_name(domain)
+        if ai_name:
+            ai_chats[ai_name] += duration
+            # AI chats also count as planning
+            planning_apps[ai_name] += duration
+
+        # Check for browser-based dev tools
+        for site, display_name in DEV_TOOL_SITES.items():
+            if site in domain or domain.endswith(site):
                 dev_tools[display_name] += duration
-
-            # Planning apps detection
-            if app in PLANNING_APPS:
-                display_name = app.title()
-                planning_apps[display_name] += duration
-
-            # AI Chat desktop apps detection
-            if app in AI_CHAT_APPS:
-                if app == "claude":
-                    display_name = "Claude"
-                elif app == "chatgpt":
-                    display_name = "ChatGPT"
-                else:
-                    display_name = app.title()
-                ai_chats[display_name] += duration
-                # AI chats also count as planning
-                planning_apps[display_name] += duration
-
-    # Process web events for AI chat and dev tool sites
-    for bucket_name, events in day_data.items():
-        if "watcher-web" not in bucket_name:
-            continue
-
-        for event in events:
-            url = event.get("data", {}).get("url", "")
-            domain = urlparse(url).netloc
-            duration = event.get("duration", 0) or 0
-
-            if duration <= 0:
-                continue
-
-            ai_name = get_ai_chat_name(domain)
-            if ai_name:
-                ai_chats[ai_name] += duration
-                # AI chats also count as planning
-                planning_apps[ai_name] += duration
-
-            # Check for browser-based dev tools
-            for site, display_name in DEV_TOOL_SITES.items():
-                if site in domain or domain.endswith(site):
-                    dev_tools[display_name] += duration
-                    break
+                break
 
     # Calculate totals
     dev_time = sum(dev_tools.values())

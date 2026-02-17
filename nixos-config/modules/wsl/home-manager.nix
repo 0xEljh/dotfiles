@@ -6,6 +6,13 @@ let
   shared-programs = import ../shared/home-manager.nix { inherit config pkgs lib; };
   shared-files = import ../shared/files.nix { inherit config pkgs; };
   windowsSshDir = "/mnt/c/Users/elija/.ssh";
+  awPushPath = lib.makeBinPath [
+    pkgs.coreutils
+    pkgs.curl
+    pkgs.openssh
+    pkgs.rsync
+    pkgs.uv
+  ];
 
   git-wsl-config = {
     enable = true;
@@ -99,34 +106,39 @@ in
       };
     };
 
-  
-  # systemd.user.services.python-aw-push = {
-  #     Unit = {
-  #         Description = "Run aw push python script with uv";
-  #       };
-  #       Service = {
-  #           Type = "oneshot";
-  #
-  #           WorkingDirectory = "%h/dotfiles";
-  #
-  #           ExecStart = "${pkgs.bash}/bin/bash -c '${pkgs.uv}'/bin/uv run scripts/push_aw.py";
-  #
-  #           Environment = "PYTHONUNBUFFERED=1";
-  #
-  #         };
-  #   };
-  #
-  #   systemd.user.timers.python-aw-push = {
-  #       Unit = {
-  #           Description = "Run push script every 11 minutes";
-  #         };
-  #       Timer = {
-  #           OnCalendar = "*:0/11";
-  #           Persistent = true;
-  #         };
-  #       Install = {
-  #           WantedBy = ["timers.target"];
-  #         };
-  #     };
+  systemd.user.services.aw-push = {
+    Unit = {
+      Description = "Push ActivityWatch data to VPS";
+    };
+    Service = {
+      Type = "oneshot";
+      WorkingDirectory = "%h/dotfiles";
+      ExecStart = pkgs.writeShellScript "aw-push" ''
+        if ! ${pkgs.curl}/bin/curl -fsS http://localhost:5600/api/0/buckets >/dev/null 2>&1; then
+          exit 0
+        fi
 
+        ${pkgs.uv}/bin/uv run scripts/push_aw.py
+      '';
+      Environment = [
+        "PYTHONUNBUFFERED=1"
+        "PATH=${awPushPath}"
+      ];
+      TimeoutStartSec = "15min";
+    };
+  };
+
+  systemd.user.timers.aw-push = {
+    Unit = {
+      Description = "Push ActivityWatch data hourly";
+    };
+    Timer = {
+      OnCalendar = "hourly";
+      Persistent = true;
+      RandomizedDelaySec = "5m";
+    };
+    Install = {
+      WantedBy = [ "timers.target" ];
+    };
+  };
 }

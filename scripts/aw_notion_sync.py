@@ -635,6 +635,112 @@ def format_duration(seconds: float) -> str:
         return f"{hours}h {mins}m" if mins else f"{hours}h"
 
 
+def get_event_time_range(event: dict) -> tuple[datetime, datetime] | tuple[None, None]:
+    """Get start and end datetime for an event."""
+    ts_str = event.get("timestamp", "")
+    if not ts_str:
+        return None, None
+    start = parse_timestamp(ts_str)
+    duration = event.get("duration", 0) or 0
+    end = start + timedelta(seconds=duration)
+    return start, end
+
+
+def extract_host_from_bucket(bucket_name: str) -> str | None:
+    if not bucket_name:
+        return None
+    match = re.match(r"^aw-watcher-(?:window|afk)_(.+)$", bucket_name)
+    if match:
+        return match.group(1)
+    match = re.match(r"^aw-watcher-web(?:-[^_]+)?_(.+)$", bucket_name)
+    if match:
+        return match.group(1)
+    return None
+
+
+def merge_intervals(
+    intervals: list[tuple[datetime, datetime]],
+) -> list[tuple[datetime, datetime]]:
+    if not intervals:
+        return []
+    sorted_intervals = sorted(intervals, key=lambda x: x[0])
+    merged = [sorted_intervals[0]]
+    for start, end in sorted_intervals[1:]:
+        last_start, last_end = merged[-1]
+        if start <= last_end:
+            merged[-1] = (last_start, max(last_end, end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def build_not_afk_periods_by_host(afk_events_by_host: dict) -> dict:
+    periods_by_host = {}
+    for host, events in afk_events_by_host.items():
+        intervals = []
+        for event in events:
+            status = event.get("data", {}).get("status", "")
+            if status != "not-afk":
+                continue
+            start, end = get_event_time_range(event)
+            if not start or not end or end <= start:
+                continue
+            intervals.append((start, end))
+        periods_by_host[host] = merge_intervals(intervals)
+    return periods_by_host
+
+
+def filter_events_by_afk(events: list, not_afk_periods_by_host: dict) -> list:
+    """
+    Filter events to only include portions that overlap with 'not-afk' periods.
+
+    Args:
+        events: List of window or web events
+        not_afk_periods_by_host: Host -> merged not-afk intervals
+
+    Returns:
+        List of events with durations adjusted to exclude AFK time
+    """
+    if not events:
+        return []
+    if not not_afk_periods_by_host:
+        return events
+
+    filtered_events = []
+
+    for event in events:
+        bucket_name = event.get("_bucket", "")
+        host = extract_host_from_bucket(bucket_name)
+        if not host:
+            filtered_events.append(event)
+            continue
+
+        host_periods = not_afk_periods_by_host.get(host)
+        if host_periods is None:
+            filtered_events.append(event)
+            continue
+        if not host_periods:
+            continue
+
+        event_start, event_end = get_event_time_range(event)
+        if not event_start or not event_end:
+            continue
+
+        for active_start, active_end in host_periods:
+            overlap_start = max(event_start, active_start)
+            overlap_end = min(event_end, active_end)
+
+            if overlap_start < overlap_end:
+                filtered_event = event.copy()
+                filtered_event["timestamp"] = overlap_start.isoformat()
+                filtered_event["duration"] = (
+                    overlap_end - overlap_start
+                ).total_seconds()
+                filtered_events.append(filtered_event)
+
+    return filtered_events
+
+
 def compute_hourly_stats(all_data: dict) -> dict:
     """
     Compute stats for each hour from merged ActivityWatch data.
@@ -644,12 +750,23 @@ def compute_hourly_stats(all_data: dict) -> dict:
     # Separate buckets by type
     window_events = []
     web_events = []
+    afk_events_by_host = defaultdict(list)
 
     for bucket_name, events in all_data.items():
         if "watcher-window" in bucket_name:
             window_events.extend([{**e, "_bucket": bucket_name} for e in events])
         elif "watcher-web" in bucket_name:
             web_events.extend([{**e, "_bucket": bucket_name} for e in events])
+        elif "watcher-afk" in bucket_name:
+            host = extract_host_from_bucket(bucket_name)
+            if host:
+                afk_events_by_host[host].extend(events)
+
+    not_afk_periods_by_host = build_not_afk_periods_by_host(afk_events_by_host)
+
+    # Filter events to only include non-AFK time
+    window_events = filter_events_by_afk(window_events, not_afk_periods_by_host)
+    web_events = filter_events_by_afk(web_events, not_afk_periods_by_host)
 
     # Warn if window watcher has no events (likely not running)
     if not window_events and web_events:
