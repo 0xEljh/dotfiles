@@ -55,6 +55,7 @@ let name = "elijah";
       alias lt="eza -T --level=2 --git-ignore --icons";
       alias tree="eza -T --icons";
       alias ncat="notion-cat";
+      alias tmux-reset="tmux kill-server 2>/dev/null; rm -rf ~/.cache/tmux/resurrect/*; tmux";
 
       # zoxide
       eval "$(zoxide init zsh)"
@@ -401,6 +402,9 @@ let name = "elijah";
       bind -T copy-mode TripleClick1Pane select-pane \; send-keys -X select-line \; send-keys -X copy-pipe-no-clear
       bind -T copy-mode-vi TripleClick1Pane select-pane \; send-keys -X select-line \; send-keys -X copy-pipe-no-clear
       bind -n TripleClick1Pane select-pane \; copy-mode -M \; send-keys -X select-line \; send-keys -X copy-pipe-no-clear
+
+      # Clear resurrect data for a fresh start on next launch
+      bind-key M-r run-shell "rm -rf $HOME/.cache/tmux/resurrect/*" \; display-message "Resurrect data cleared"
       '';
     };
 
