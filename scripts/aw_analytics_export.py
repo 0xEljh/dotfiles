@@ -536,7 +536,7 @@ def aggregate_day_data(day_data: dict) -> dict:
             if detected_tool:
                 dev_tools[detected_tool] += duration
             else:
-                dev_tools["Terminal/Shell"] += duration
+                dev_tools["Terminal"] += duration
         elif app in CODING_APPS:
             display_name = app.title()
             if app == "code":
