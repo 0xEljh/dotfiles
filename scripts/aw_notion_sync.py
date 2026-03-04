@@ -79,6 +79,12 @@ CODING_APPS = {
     "android studio",
     "eclipse",
     "notepad++",
+    "jupyter",
+    "jupyterlab",
+    "jupyter lab",
+    "jupyter-notebook",
+    "jupyter notebook",
+    "marimo",
     # Development tools
     "docker",
     "postman",
@@ -239,6 +245,19 @@ CODING_SITES = {
 DEV_TOOL_SITES = {
     "colab.research.google.com": "Google Colab",
 }
+
+LOCALHOST_HOSTS = {
+    "localhost",
+    "127.0.0.1",
+    "0.0.0.0",
+    "::1",
+}
+
+JUPYTER_LOCAL_PATH_PREFIXES = (
+    "/lab",
+    "/notebooks",
+    "/tree",
+)
 
 # Apps to exclude from activity tracking (system processes, idle indicators)
 # Cross-platform: macOS, Linux, Windows
@@ -525,13 +544,65 @@ def detect_terminal_tool(title: str) -> str | None:
     return None
 
 
+def is_domain_or_subdomain(hostname: str, domain: str) -> bool:
+    if not hostname:
+        return False
+    hostname = hostname.lower()
+    domain = domain.lower()
+    return hostname == domain or hostname.endswith(f".{domain}")
+
+
+def is_docs_subdomain(hostname: str) -> bool:
+    if not hostname:
+        return False
+    return hostname.startswith("docs.") or ".docs." in hostname
+
+
+def get_planning_site_name(url: str) -> str | None:
+    hostname = (urlparse(url).hostname or "").lower()
+    if not hostname:
+        return None
+
+    if is_domain_or_subdomain(hostname, "github.com") or is_domain_or_subdomain(
+        hostname, "github.io"
+    ):
+        return "GitHub"
+    if is_domain_or_subdomain(hostname, "arxiv.org"):
+        return "arXiv"
+    if is_docs_subdomain(hostname):
+        return "Documentation"
+    return None
+
+
+def get_browser_dev_tool_name(url: str, title: str = "") -> str | None:
+    parsed_url = urlparse(url)
+    hostname = (parsed_url.hostname or "").lower()
+    path = (parsed_url.path or "").lower()
+    title_lower = title.lower()
+
+    for site, display_name in DEV_TOOL_SITES.items():
+        if is_domain_or_subdomain(hostname, site):
+            return display_name
+
+    if hostname in LOCALHOST_HOSTS:
+        if "marimo" in title_lower or "marimo" in path:
+            return "Marimo"
+        if "jupyterlab" in title_lower or "jupyter notebook" in title_lower:
+            return "Jupyter"
+        for prefix in JUPYTER_LOCAL_PATH_PREFIXES:
+            if path.startswith(prefix):
+                return "Jupyter"
+
+    return None
+
+
 def aggregate_coding_tools_time(
     window_events: list, web_events: list | None = None
 ) -> dict:
     """
     Aggregate time by coding tool with granular breakdown.
     For terminal apps, inspects window title to determine actual tool.
-    Also includes browser-based dev tools (e.g., Google Colab).
+    Also includes browser-based dev tools (e.g., Google Colab, local notebooks).
     Returns dict: {tool_name: seconds}
     """
     tool_time = defaultdict(float)
@@ -565,22 +636,31 @@ def aggregate_coding_tools_time(
                 display_name = "VS Code"
             elif app == "nvim":
                 display_name = "Neovim"
+            elif app in {
+                "jupyter",
+                "jupyterlab",
+                "jupyter lab",
+                "jupyter-notebook",
+                "jupyter notebook",
+            }:
+                display_name = "Jupyter"
+            elif app == "marimo":
+                display_name = "Marimo"
             tool_time[display_name] += duration
 
     # Process web events for browser-based dev tools
     if web_events:
         for event in web_events:
             url = event.get("data", {}).get("url", "")
-            domain = urlparse(url).netloc.lower()
+            title = event.get("data", {}).get("title", "")
             duration = event.get("duration", 0) or 0
 
             if duration <= 0:
                 continue
 
-            for site, display_name in DEV_TOOL_SITES.items():
-                if site in domain or domain.endswith(site):
-                    tool_time[display_name] += duration
-                    break
+            dev_tool_name = get_browser_dev_tool_name(url, title)
+            if dev_tool_name:
+                tool_time[dev_tool_name] += duration
 
     return dict(tool_time)
 
@@ -599,7 +679,7 @@ def aggregate_planning_time(
 ) -> dict:
     """
     Aggregate time spent on planning/architecting tools.
-    Includes: planning apps (Notion, Logseq, etc.) + AI chat time.
+    Includes: planning apps + planning/design web activity + AI chat time.
     Returns dict: {tool_name: seconds}
     """
     planning_time = defaultdict(float)
@@ -614,6 +694,17 @@ def aggregate_planning_time(
         if app in PLANNING_APPS:
             display_name = app.title()
             planning_time[display_name] += duration
+
+    # Add planning/design websites from web events
+    for event in web_events:
+        url = event.get("data", {}).get("url", "")
+        duration = event.get("duration", 0) or 0
+        if duration <= 0:
+            continue
+
+        planning_site_name = get_planning_site_name(url)
+        if planning_site_name:
+            planning_time[planning_site_name] += duration
 
     # Add AI chat time (already aggregated by site)
     for site, seconds in ai_chat_time.items():

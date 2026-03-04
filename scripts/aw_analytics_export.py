@@ -179,6 +179,12 @@ CODING_APPS = {
     "android studio",
     "eclipse",
     "notepad++",
+    "jupyter",
+    "jupyterlab",
+    "jupyter lab",
+    "jupyter-notebook",
+    "jupyter notebook",
+    "marimo",
     # Dev tools
     "docker",
     "postman",
@@ -193,6 +199,19 @@ CODING_APPS = {
 DEV_TOOL_SITES = {
     "colab.research.google.com": "Google Colab",
 }
+
+LOCALHOST_HOSTS = {
+    "localhost",
+    "127.0.0.1",
+    "0.0.0.0",
+    "::1",
+}
+
+JUPYTER_LOCAL_PATH_PREFIXES = (
+    "/lab",
+    "/notebooks",
+    "/tree",
+)
 
 # Cross-platform: macOS, Linux, Windows
 EXCLUDED_APPS = {
@@ -412,6 +431,58 @@ def get_ai_chat_name(domain: str) -> str | None:
     return None
 
 
+def is_domain_or_subdomain(hostname: str, domain: str) -> bool:
+    if not hostname:
+        return False
+    hostname = hostname.lower()
+    domain = domain.lower()
+    return hostname == domain or hostname.endswith(f".{domain}")
+
+
+def is_docs_subdomain(hostname: str) -> bool:
+    if not hostname:
+        return False
+    return hostname.startswith("docs.") or ".docs." in hostname
+
+
+def get_planning_site_name(url: str) -> str | None:
+    hostname = (urlparse(url).hostname or "").lower()
+    if not hostname:
+        return None
+
+    if is_domain_or_subdomain(hostname, "github.com") or is_domain_or_subdomain(
+        hostname, "github.io"
+    ):
+        return "GitHub"
+    if is_domain_or_subdomain(hostname, "arxiv.org"):
+        return "arXiv"
+    if is_docs_subdomain(hostname):
+        return "Documentation"
+    return None
+
+
+def get_browser_dev_tool_name(url: str, title: str = "") -> str | None:
+    parsed_url = urlparse(url)
+    hostname = (parsed_url.hostname or "").lower()
+    path = (parsed_url.path or "").lower()
+    title_lower = title.lower()
+
+    for site, display_name in DEV_TOOL_SITES.items():
+        if is_domain_or_subdomain(hostname, site):
+            return display_name
+
+    if hostname in LOCALHOST_HOSTS:
+        if "marimo" in title_lower or "marimo" in path:
+            return "Marimo"
+        if "jupyterlab" in title_lower or "jupyter notebook" in title_lower:
+            return "Jupyter"
+        for prefix in JUPYTER_LOCAL_PATH_PREFIXES:
+            if path.startswith(prefix):
+                return "Jupyter"
+
+    return None
+
+
 def aggregate_day_data(day_data: dict) -> dict:
     """
     Aggregate a single day's ActivityWatch data.
@@ -472,6 +543,16 @@ def aggregate_day_data(day_data: dict) -> dict:
                 display_name = "VS Code"
             elif app == "nvim":
                 display_name = "Neovim"
+            elif app in {
+                "jupyter",
+                "jupyterlab",
+                "jupyter lab",
+                "jupyter-notebook",
+                "jupyter notebook",
+            }:
+                display_name = "Jupyter"
+            elif app == "marimo":
+                display_name = "Marimo"
             dev_tools[display_name] += duration
 
         # Planning apps detection
@@ -499,26 +580,29 @@ def aggregate_day_data(day_data: dict) -> dict:
 
     web_events = filter_events_by_afk(web_events, not_afk_periods_by_host)
 
-    # Process filtered web events for AI chat and dev tool sites
+    # Process filtered web events for AI chat, planning, and dev tool sites
     for event in web_events:
         url = event.get("data", {}).get("url", "")
-        domain = urlparse(url).netloc
+        title = event.get("data", {}).get("title", "")
+        hostname = (urlparse(url).hostname or "").lower()
         duration = event.get("duration", 0) or 0
 
         if duration <= 0:
             continue
 
-        ai_name = get_ai_chat_name(domain)
+        ai_name = get_ai_chat_name(hostname)
         if ai_name:
             ai_chats[ai_name] += duration
             # AI chats also count as planning
             planning_apps[ai_name] += duration
 
-        # Check for browser-based dev tools
-        for site, display_name in DEV_TOOL_SITES.items():
-            if site in domain or domain.endswith(site):
-                dev_tools[display_name] += duration
-                break
+        planning_site_name = get_planning_site_name(url)
+        if planning_site_name:
+            planning_apps[planning_site_name] += duration
+
+        dev_tool_name = get_browser_dev_tool_name(url, title)
+        if dev_tool_name:
+            dev_tools[dev_tool_name] += duration
 
     # Calculate totals
     dev_time = sum(dev_tools.values())
