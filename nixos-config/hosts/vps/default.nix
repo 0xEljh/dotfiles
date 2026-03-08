@@ -35,7 +35,7 @@ in
   };
 
   networking.hostName = "vps";
-  time.timeZone = "America/New_York";
+  time.timeZone = "Asia/Singapore";
 
   nix = {
     nixPath = [ "nixos-config=/home/${user}/.local/share/src/nixos-config:/etc/nixos" ];
@@ -55,10 +55,20 @@ in
   programs = {
     gnupg.agent.enable = true;
     zsh.enable = true;
+
+    neovim = {
+	enable = true;
+	defaultEditor = true;
+	viAlias = true;
+	vimAlias = true;
+	};
+
   };
 
   services.openssh = {
     enable = true;
+    openFirewall = true;
+    ports = [ 22 ];
     settings = {
       PasswordAuthentication = false;
       KbdInteractiveAuthentication = false;
