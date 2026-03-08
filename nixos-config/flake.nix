@@ -141,7 +141,16 @@
           ./hosts/nixos
         ];
       }) // {
-        # WSL Configuration - NixOS running inside Windows Subsystem for Linux
+        # VPS configuration (initial bootstrap)
+        vps-bootstrap = nixpkgs.lib.nixosSystem {
+          system = "x86_64-linux";
+          specialArgs = inputs;
+          modules = [
+            ./hosts/vps
+          ];
+        };
+
+        # WSL Configuration
         wsl = nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
           specialArgs = inputs // { inherit nixos-wsl; };
