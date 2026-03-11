@@ -15,7 +15,13 @@ If the codebase has tests, then TDD should be adopted. That is, tests should be 
 
 ## Maximise exploration/search during planning
 
-MAXIMISE SEARCH EFFORTS. Launch multiple background agents IN PARALLEL.
-Look up codebase patterns, file structures, ast-grep/ripgrep (rg).
+MAXIMISE SEARCH EFFORTS. Launch multiple background agents in parallel.
+Look up codebase patterns, file structures, ripgrep (rg)
 Check remote repos, official docs, GitHub examples.
+Search up best practices, design considerations, and reference implementations.
 NEVER stop at the first result - be exhaustive.
+
+## Agent Use
+
+Be liberal with the use of subagents. This avoids polluting the main context.
+Many subagents can be run in parallel. Assign specific deliverables to each subagent.
