@@ -101,6 +101,9 @@ in
         
         # Solves a libstdc++.so.6 error and links Windows GPU drivers
         export LD_LIBRARY_PATH="$NIX_LD_LIBRARY_PATH:/usr/lib/wsl/lib:$LD_LIBRARY_PATH"
+        
+        # for running kitty via WSLg
+        alias kitty='MESA_LOADER_DRIVER_OVERRIDE=d3d12 kitty --detach 2>/dev/null'
         '';
       };
     };
