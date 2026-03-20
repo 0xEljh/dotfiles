@@ -151,6 +151,7 @@
 	        useGlobalPkgs = true;
 		useUserPackages = true;
 		backupFileExtension = "backup";
+		overwriteBackup = true;
 		users.${user} = import ./modules/vps/home-manager.nix;
 		};
 	    }
@@ -168,6 +169,7 @@
                 useGlobalPkgs = true;
                 useUserPackages = true;
                 backupFileExtension = "backup";
+                overwriteBackup = true;
                 users.${user} = import ./modules/wsl/home-manager.nix;
               };
             }

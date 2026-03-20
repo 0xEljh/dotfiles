@@ -3,6 +3,8 @@
 
 let
   vampBackendPort = 18821;
+  vampPostgresPort = 5433;
+  vampPostgresContainerName = "vamp-tutor-postgres";
   homeDir = "/home/${user}";
   syncScript = "${homeDir}/dotfiles/scripts/run-sync.sh";
 
@@ -38,6 +40,21 @@ let
   };
 in
 {
+  virtualisation.oci-containers = {
+    backend = "docker";
+    containers.${vampPostgresContainerName} = {
+      image = "pgvector/pgvector:pg16";
+      autoStart = true;
+      environment = {
+        POSTGRES_USER = "postgres";
+        POSTGRES_PASSWORD = "postgres";
+        POSTGRES_DB = "carddb";
+      };
+      ports = [ "127.0.0.1:${toString vampPostgresPort}:5432" ];
+      volumes = [ "vamp-tutor-pgdata:/var/lib/postgresql/data" ];
+    };
+  };
+
   systemd.services = {
     digital-garden = mkNextApp {
       name = "digital-garden";
@@ -62,7 +79,11 @@ in
 
     vamp-tutor-backend = {
       description = "FastAPI app: vamp-tutor-backend";
-      after = [ "network-online.target" ];
+      after = [
+        "network-online.target"
+        "docker-${vampPostgresContainerName}.service"
+      ];
+      requires = [ "docker-${vampPostgresContainerName}.service" ];
       wants = [ "network-online.target" ];
       wantedBy = [ "multi-user.target" ];
       unitConfig = {
@@ -73,7 +94,10 @@ in
         Type = "simple";
         User = user;
         WorkingDirectory = "${homeDir}/vamp-tutor-website/backend";
-        ExecCondition = "${pkgs.postgresql}/bin/pg_isready --quiet -h 127.0.0.1 -p 5433";
+        Environment = [
+          "DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:${toString vampPostgresPort}/carddb"
+        ];
+        ExecStartPre = "${pkgs.bash}/bin/bash -c 'for i in {1..60}; do ${pkgs.postgresql}/bin/pg_isready --quiet -h 127.0.0.1 -p ${toString vampPostgresPort} && exit 0; sleep 1; done; exit 1'";
         ExecStart = "${pkgs.uv}/bin/uv run --frozen uvicorn vamp_tutor.main:app --host 127.0.0.1 --port ${toString vampBackendPort}";
         Restart = "always";
         RestartSec = "5s";

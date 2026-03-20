@@ -25,6 +25,9 @@ in
     recommendedTlsSettings = true;
 
     virtualHosts = {
+      "dev.nyf1.com" = mkNextHost 3000;
+      "dev2.nyf1.com" = mkNextHost 3001;
+
       "0xeljh.com" = mkNextHost 3005;
       "www.0xeljh.com" = mkRedirectHost "0xeljh.com";
 
@@ -33,6 +36,7 @@ in
 
       "vamptutor.com" = mkNextHost 3007;
       "www.vamptutor.com" = mkRedirectHost "vamptutor.com";
+      "binderapi.vamptutor.com" = mkNextHost 38127;
     };
   };
 

@@ -54,6 +54,18 @@ in
     '';
   };
 
+  programs.nix-ld = {
+    enable = true;
+    libraries = with pkgs; [
+      stdenv.cc.cc
+      zlib
+      openssl
+      glib
+    ];
+  };
+
+  services.envfs.enable = true;
+
   programs = {
     gnupg.agent.enable = true;
     zsh.enable = true;
