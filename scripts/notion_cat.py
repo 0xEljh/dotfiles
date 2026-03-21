@@ -22,6 +22,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 import mistune
 from dotenv import load_dotenv
@@ -231,6 +232,21 @@ def _split_rich_text_item(item: dict) -> list[dict]:
     return parts
 
 
+def _is_valid_notion_url(url: str) -> bool:
+    candidate = url.strip()
+    if not candidate:
+        return False
+
+    parsed = urlparse(candidate)
+    if not parsed.scheme:
+        return False
+
+    if parsed.scheme in {"http", "https"}:
+        return bool(parsed.netloc)
+
+    return bool(parsed.netloc or parsed.path)
+
+
 def _ast_inline_to_rich_text(children: list[dict]) -> list[dict]:
     items: list[dict] = []
     for child in children:
@@ -291,17 +307,20 @@ def _inline_token_to_rich_text(token: dict, annotations: dict) -> list[dict]:
             url = token["attrs"].get("url", "")
         elif "link" in token:
             url = token["link"]
+        is_valid_link = _is_valid_notion_url(url)
         ann = dict(annotations) if annotations else {}
         items = []
         for child in token.get("children", []):
             child_items = _inline_token_to_rich_text(child, ann)
-            for ci in child_items:
-                ci["text"]["link"] = {"url": url}
+            if is_valid_link:
+                for ci in child_items:
+                    ci["text"]["link"] = {"url": url}
             items.extend(child_items)
         if not items:
             raw = token.get("raw", url)
             rt = _notion_rich_text(raw, ann if ann else None)
-            rt["text"]["link"] = {"url": url}
+            if is_valid_link:
+                rt["text"]["link"] = {"url": url}
             items.append(rt)
         return items
 
@@ -370,7 +389,9 @@ def _token_to_blocks(token: dict) -> list[dict]:
         result_blocks: list[dict] = []
         for idx in range(0, len(rt), MAX_RICH_TEXT_ITEMS):
             result_blocks.append(
-                _make_block("code", rt[idx : idx + MAX_RICH_TEXT_ITEMS], language=notion_lang)
+                _make_block(
+                    "code", rt[idx : idx + MAX_RICH_TEXT_ITEMS], language=notion_lang
+                )
             )
         return result_blocks
 
@@ -509,6 +530,19 @@ def create_page(
     return notion.pages.create(parent=parent, properties=properties)
 
 
+def _is_retryable_append_error(exc: Exception) -> bool:
+    status = getattr(exc, "status", None)
+    if status == 429:
+        return True
+    if isinstance(status, int) and status >= 500:
+        return True
+
+    code = getattr(exc, "code", None)
+    if getattr(code, "value", code) == "rate_limited":
+        return True
+    return False
+
+
 def append_blocks(notion: Client, page_id: str, blocks: list[dict]) -> None:
     if not blocks:
         return
@@ -521,7 +555,8 @@ def append_blocks(notion: Client, page_id: str, blocks: list[dict]) -> None:
                 break
             except Exception as exc:  # pragma: no cover
                 attempt += 1
-                if attempt > 4:
+                retryable = _is_retryable_append_error(exc)
+                if not retryable or attempt > 4:
                     raise exc
                 time.sleep(1.5**attempt)
 
@@ -539,7 +574,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data-source-id", help="Notion data source id")
     parser.add_argument("--env-file", help="Path to .env file")
     parser.add_argument("--no-stdout", action="store_true", help="Do not echo input")
-    parser.add_argument("--raw", action="store_true", help="Force code-block mode for .md/.mdx")
+    parser.add_argument(
+        "--raw", action="store_true", help="Force code-block mode for .md/.mdx"
+    )
     parser.add_argument("--dry-run", action="store_true", help="Do not call Notion")
     return parser.parse_args()
 
