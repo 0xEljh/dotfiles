@@ -57,7 +57,8 @@ NEVER stop at the first result - be exhaustive.
 ## Agent Use
 
 Be liberal with the use of subagents. This avoids polluting the main context.
-Many subagents can be run in parallel. Assign specific deliverables to each subagent.
+Many subagents can be run in parallel.
+Assign specific deliverables to each subagent so that they can respond concisely.
 
 ## Completion Status Protocol
 
