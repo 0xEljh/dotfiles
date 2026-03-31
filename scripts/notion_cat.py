@@ -179,6 +179,7 @@ def chunk_rich_text(text: str) -> list[dict]:
 def build_code_blocks(text: str, language: str) -> list[dict]:
     if text == "":
         return []
+    notion_language = normalize_notion_language(language)
     items = chunk_rich_text(text)
     blocks = []
     for idx in range(0, len(items), MAX_RICH_TEXT_ITEMS):
@@ -188,7 +189,7 @@ def build_code_blocks(text: str, language: str) -> list[dict]:
                 "type": "code",
                 "code": {
                     "rich_text": items[idx : idx + MAX_RICH_TEXT_ITEMS],
-                    "language": language,
+                    "language": notion_language,
                 },
             }
         )
@@ -208,7 +209,14 @@ NOTION_LANG_ALIASES = {
     "md": "markdown",
     "jsx": "javascript",
     "tsx": "typescript",
+    "text": "plain text",
+    "txt": "plain text",
 }
+
+
+def normalize_notion_language(language: str) -> str:
+    lang_key = language.strip().lower()
+    return NOTION_LANG_ALIASES.get(lang_key, lang_key or "plain text")
 
 
 def _notion_rich_text(text: str, annotations: dict | None = None) -> dict:
@@ -383,8 +391,7 @@ def _token_to_blocks(token: dict) -> list[dict]:
         code = token.get("raw", token.get("text", ""))
         info = token.get("attrs", {}).get("info", "") or ""
         lang = info.split()[0] if info else ""
-        lang_key = lang.lower()
-        notion_lang = NOTION_LANG_ALIASES.get(lang_key, lang_key) or "plain text"
+        notion_lang = normalize_notion_language(lang)
         rt = chunk_rich_text(code)
         result_blocks: list[dict] = []
         for idx in range(0, len(rt), MAX_RICH_TEXT_ITEMS):

@@ -53,12 +53,17 @@ Look up codebase patterns, file structures, ripgrep (rg)
 Check remote repos, official docs, GitHub examples.
 Search up best practices, design considerations, and reference implementations.
 NEVER stop at the first result - be exhaustive.
+Yet, you should ensure that the agent performing the search has well defined bounds and doesn't time out.
+Your search deliverable should have been sufficiently well defined that the agent can complete it in time.
+Drilling down based on search results is your job as an orchestrator.
 
 ## Agent Use
 
 Be liberal with the use of subagents. This avoids polluting the main context.
 Many subagents can be run in parallel.
 Assign specific deliverables to each subagent so that they can respond concisely.
+For agents assigned search tasks, set an appropriate timeout for them (~10 minutes).
+Tasks should have been sufficiently well defined to avoid timeouts.
 
 ## Completion Status Protocol
 

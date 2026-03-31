@@ -93,6 +93,8 @@ Pros:
 
 ## Implementation Plan
 
+## Observability
+
 ## Test Strategy
 
 ## Open Questions
@@ -104,6 +106,7 @@ Pros:
 
 - Reference concrete paths where possible (for example, `src/module.ts:42`).
 - Include links to external docs when they influence decisions.
+- Observability of the proposed architecture/features should be considered from the onset.
 - Keep unknowns explicit in Open Questions; do not invent certainty.
 - Keep the document reviewable by someone who did not join the live planning session.
 
