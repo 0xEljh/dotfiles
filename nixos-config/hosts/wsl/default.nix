@@ -35,17 +35,21 @@ in
     # docker-desktop.enable = false;
   };
 
-  # ============================================================================
-  # NIX CONFIGURATION
-  # ============================================================================
+
+  nixpkgs = {
+    config = {
+      allowUnfree = true;
+      cudaSupport = true;
+    };
+  };
 
   nix = {
     nixPath = [ "nixos-config=/home/${user}/.local/share/src/nixos-config:/etc/nixos" ];
     settings = {
       allowed-users = [ "${user}" ];
       trusted-users = [ "@wheel" "${user}" ];
-      substituters = [ "https://nix-community.cachix.org" "https://cache.nixos.org" "https://numtide.cachix.org" ];
-      trusted-public-keys = [ "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=" "numtide.cachix.org-1:2ps1kLBUWjxIneOy1Ber+6dwNbSd05yOb6HnGfN1gvI=" ];
+      substituters = [ "https://nix-community.cachix.org" "https://cache.nixos.org" "https://numtide.cachix.org" "https://cache.nixos-cuda.org" ];
+      trusted-public-keys = [ "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=" "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Yrg+bU/s5/f/y/K5PCI4oaLY=" "numtide.cachix.org-1:2ps1kLBUWjxIneOy1Ber+6dwNbSd05yOb6HnGfN1gvI=" "cache.nixos-cuda.org:74DUi4Ye579gUqzH4ziL9IyiJBlDpMRn9MBN8oNan9M=" ];
     };
 
     package = pkgs.nix;
@@ -99,9 +103,31 @@ in
   virtualisation = {
     docker = {
       enable = true;
-      # Use containerd for better WSL2 integration
-      # TODO: Consider using podman instead for rootless containers
-      # podman = { enable = true; dockerCompat = true; };
+      daemon.settings = {
+        features.cdi = true;
+        "cdi-spec-dirs" = [ "/etc/cdi" ];
+      };
+    };
+  };
+
+  # ============================================================================
+  # NVIDIA CONTAINER TOOLKIT (for GPU passthrough in Docker)
+  # ============================================================================
+
+  hardware.nvidia-container-toolkit = {
+    enable = true;
+    mount-nvidia-executables = false;
+    # Driver is provided by the Windows host via NixOS-WSL, not by NixOS
+    suppressNvidiaDriverAssertion = true;
+  };
+
+  # Generate CDI spec for GPU passthrough in containers
+  systemd.services.nvidia-cdi-generator = {
+    description = "Generate NVIDIA CDI spec for container GPU access";
+    wantedBy = [ "docker.service" ];
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = "${pkgs.nvidia-docker}/bin/nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml --nvidia-ctk-path=${pkgs.nvidia-container-toolkit}/bin/nvidia-ctk";
     };
   };
 

@@ -98,6 +98,7 @@ in
         # WSL-specific Nix-LD and GPU library paths
         export NIX_LD_LIBRARY_PATH="/run/current-system/sw/share/nix-ld/lib"
         export NIX_LD="/run/current-system/sw/share/nix-ld/lib/ld.so"
+        export TRITON_LIBCUDA_PATH="/usr/lib/wsl/lib"
         
         # Solves a libstdc++.so.6 error and links Windows GPU drivers
         export LD_LIBRARY_PATH="$NIX_LD_LIBRARY_PATH:/usr/lib/wsl/lib:$LD_LIBRARY_PATH"
