@@ -27,7 +27,7 @@ At each step, especially steps 1 and 4, ask clarifying questions where needed.
 
 ## Output Conventions
 
-- Write to `docs/designs/` in the project root.
+- Write to `docs/design/` in the project root.
 - Create the directory if it does not exist.
 - Filename format: `<slug>-<optional-identifiers>.md`.
 - Use a short kebab-case slug based on the topic.

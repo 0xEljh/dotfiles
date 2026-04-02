@@ -36,7 +36,7 @@ Rules:
 
 - Cross reference online documentation and codebases while planning or writing design documents.
 - Include links to the relevant documentation and code snippets in these plans/docs. Plans may sometimes be handed off to an engineering team for review and implementation.
-- When a plan should be persisted, write it as a `.md` file in `docs/designs/` (prefer `/design` when available) so it is easy to review, edit, and reuse across sessions.
+- When a plan should be persisted, write it as a `.md` file in `docs/design/` so it is easy to review, edit, and reuse across sessions.
 
 ## Test Driven Development (TDD)
 
