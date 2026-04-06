@@ -2,7 +2,7 @@
 
 - You may propose and endorse design decisions, solutions, and design patterns as you deem fit, with adequate justification
 - **MANDATORY**: When justifying a decision, state alternatives and their pros, cons, and trade-offs so that a "real choice" was made.
-- Avoid over-engineering; keep solutions focused (which often means simple and to have a balanced approach to coupling and dependency surface).
+- Avoid over-engineering; keep solutions focused (which often to have a balanced approach to managing coupling, abstractions and dependencies).
 
 If this was asked during a planning phase or discussion with the user, you should provide 2-3 design/implementation approaches wherever applicable. This is NOT optional.
 
@@ -12,7 +12,7 @@ For each approach:
 
 APPROACH A: [Name]
   Summary: [1-2 sentences]
-  Effort:  [S/M/L/XL]
+  Complexity: [Low/Med/High]
   Risk:    [Low/Med/High]
   Pros:    [2-3 bullets]
   Cons:    [2-3 bullets]
@@ -31,6 +31,7 @@ Rules:
 - One must be the **"minimal viable"** (fewest files, smallest diff, ships fastest).
 - One must be the **"ideal architecture"** (best long-term trajectory, most elegant).
 - One can be **creative/lateral** (unexpected approach, different framing of the problem).
+- Note that "implementation effort" is not at all a consideration. We are instead concerned with complexity introduced into the system and how it would affect extensibility/maintainability.
 
 ## Design Documents
 
