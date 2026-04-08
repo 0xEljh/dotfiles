@@ -365,6 +365,58 @@ def _make_block(block_type: str, rich_text: list[dict], **extra: object) -> dict
     return block
 
 
+def _table_to_block(token: dict) -> list[dict]:
+    """Convert a mistune table token to a Notion table block with inline rows."""
+    row_blocks: list[dict] = []
+    has_column_header = False
+    table_width = 0
+
+    for child in token.get("children", []):
+        ct = child.get("type", "")
+        if ct == "table_head":
+            has_column_header = True
+            cells = [
+                _ast_inline_to_rich_text(cell.get("children", [])) or [_notion_rich_text("")]
+                for cell in child.get("children", [])
+                if cell.get("type") == "table_cell"
+            ]
+            if cells:
+                table_width = max(table_width, len(cells))
+                row_blocks.append({"object": "block", "type": "table_row", "table_row": {"cells": cells}})
+        elif ct == "table_body":
+            for row_token in child.get("children", []):
+                if row_token.get("type") != "table_row":
+                    continue
+                cells = [
+                    _ast_inline_to_rich_text(cell.get("children", [])) or [_notion_rich_text("")]
+                    for cell in row_token.get("children", [])
+                    if cell.get("type") == "table_cell"
+                ]
+                if cells:
+                    table_width = max(table_width, len(cells))
+                    row_blocks.append({"object": "block", "type": "table_row", "table_row": {"cells": cells}})
+
+    if not row_blocks:
+        return []
+
+    # Pad all rows to the same width
+    for rb in row_blocks:
+        cells = rb["table_row"]["cells"]
+        while len(cells) < table_width:
+            cells.append([_notion_rich_text("")])
+
+    return [{
+        "object": "block",
+        "type": "table",
+        "table": {
+            "table_width": table_width,
+            "has_column_header": has_column_header,
+            "has_row_header": False,
+        },
+        "children": row_blocks,
+    }]
+
+
 def _ast_to_blocks(tokens: list[dict]) -> list[dict]:
     blocks: list[dict] = []
     for token in tokens:
@@ -426,6 +478,9 @@ def _token_to_blocks(token: dict) -> list[dict]:
 
     if t == "thematic_break":
         return [{"object": "block", "type": "divider", "divider": {}}]
+
+    if t == "table":
+        return _table_to_block(token)
 
     if t == "blank_line":
         return []

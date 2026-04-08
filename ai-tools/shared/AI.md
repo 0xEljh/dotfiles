@@ -47,6 +47,12 @@ Only as a final step do we wrangle tests and code. This reduces "empty tests" an
 During planning, the tests to be implemented should already be defined based on the plan's specs.
 At the point of implementation, the tests should fail. Tests that don't initially fail are not useful and should be removed.
 
+### Type Checking
+
+Slightly related to TDD is the issue of type checking.
+Writing overly defensive type checks (especially in python) is an anti-pattern.
+Instead, the best place to be doing extensive type checks is for tests.
+
 ## Maximise exploration/search during planning
 
 MAXIMISE SEARCH EFFORTS. Launch multiple background agents in parallel.
