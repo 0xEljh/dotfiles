@@ -5,8 +5,14 @@ let
   vampBackendPort = 18821;
   vampPostgresPort = 5433;
   vampPostgresContainerName = "vamp-tutor-postgres";
+  kodoApiPort = 18002;
+  kodoMLPort = 18001;
   homeDir = "/home/${user}";
   syncScript = "${homeDir}/dotfiles/scripts/run-sync.sh";
+  kodoDir = "${homeDir}/kodo-app";
+  kodoApiSrc = "${kodoDir}/services/api";
+  kodoMLDir = "${kodoDir}/services/ml";
+  kodoConfigDir = "${homeDir}/.config/kodo";
 
   mkNextApp = {
     name,
@@ -56,6 +62,64 @@ in
   };
 
   systemd.services = {
+    kodo-api = {
+      description = "Kodo Go API";
+      after = [
+        "network-online.target"
+        "kodo-ml.service"
+      ];
+      wants = [
+        "network-online.target"
+        "kodo-ml.service"
+      ];
+      wantedBy = [ "multi-user.target" ];
+      unitConfig = {
+        ConditionPathExists = "${kodoApiSrc}/go.mod";
+      };
+
+      serviceConfig = {
+        Type = "simple";
+        User = user;
+        WorkingDirectory = kodoApiSrc;
+        Environment = [
+          "ADDR=127.0.0.1:${toString kodoApiPort}"
+          "HOME=${homeDir}"
+          # Force pure-Go stdlib (net, os/user) so `go run` doesn't try to invoke
+          # gcc for runtime/cgo. All deps (pgx, etc.) are pure-Go already.
+          "CGO_ENABLED=0"
+        ];
+        EnvironmentFile = "${kodoConfigDir}/api.env";
+        ExecStart = "${pkgs.go}/bin/go run ./cmd/api";
+        Restart = "always";
+        RestartSec = "5s";
+        KillSignal = "SIGINT";
+        KillMode = "control-group";
+        TimeoutStopSec = "30s";
+      };
+    };
+
+    kodo-ml = {
+      description = "Kodo ML API (FastAPI)";
+      after = [ "network-online.target" ];
+      wants = [ "network-online.target" ];
+      wantedBy = [ "multi-user.target" ];
+      unitConfig = {
+        ConditionPathExists = "${kodoMLDir}/.venv/bin/python";
+      };
+
+      serviceConfig = {
+        Type = "simple";
+        User = user;
+        WorkingDirectory = kodoMLDir;
+        EnvironmentFile = "-${kodoConfigDir}/ml.env";
+        ExecStart = "${pkgs.uv}/bin/uv run --frozen uvicorn main:app --host 127.0.0.1 --port ${toString kodoMLPort}";
+        Restart = "always";
+        RestartSec = "5s";
+        KillSignal = "SIGINT";
+        TimeoutStopSec = "30s";
+      };
+    };
+
     digital-garden = mkNextApp {
       name = "digital-garden";
       port = 3005;
