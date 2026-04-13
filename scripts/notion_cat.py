@@ -204,13 +204,16 @@ NOTION_LANG_ALIASES = {
     "zsh": "bash",
     "shell": "bash",
     "yml": "yaml",
+    "jsonc": "json",
+    "json5": "json",
+    "text": "plain text",
+    "plaintext": "plain text",
+    "txt": "plain text",
     "cpp": "c++",
     "dockerfile": "docker",
     "md": "markdown",
     "jsx": "javascript",
     "tsx": "typescript",
-    "text": "plain text",
-    "txt": "plain text",
 }
 
 
@@ -412,8 +415,8 @@ def _table_to_block(token: dict) -> list[dict]:
             "table_width": table_width,
             "has_column_header": has_column_header,
             "has_row_header": False,
+            "children": row_blocks,
         },
-        "children": row_blocks,
     }]
 
 
@@ -693,7 +696,9 @@ def main() -> int:
         if args.notes is not None
         else os.environ.get("NOTION_CAT_NOTES") or make_notes(cwd_name, input_desc, ts)
     )
-    language = args.lang or os.environ.get("NOTION_CAT_LANG") or inferred_lang
+    language = normalize_notion_language(
+        args.lang or os.environ.get("NOTION_CAT_LANG") or inferred_lang
+    )
     use_markdown = inferred_lang == "markdown" and not args.raw
     mode = "markdown" if use_markdown else "code"
 
