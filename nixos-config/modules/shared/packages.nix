@@ -10,7 +10,7 @@ with pkgs; [
   btop
   coreutils
   killall
-  neofetch
+  fastfetch
   openssh
   sqlite
   wget
