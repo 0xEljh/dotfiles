@@ -585,19 +585,9 @@ def make_notes(cwd_name: str, input_desc: str, ts: str) -> str:
     return f"cwd={cwd_name}; input={input_desc}; captured={ts}"
 
 
-def create_page(
-    notion: Client,
-    data_source_id: str,
-    properties: dict,
-) -> dict:
-    """Create a page in the specified data source."""
-    parent = {"data_source_id": data_source_id}
-    return notion.pages.create(parent=parent, properties=properties)
-
-
-def _is_retryable_append_error(exc: Exception) -> bool:
+def _is_retryable_error(exc: Exception) -> bool:
     status = getattr(exc, "status", None)
-    if status == 429:
+    if status in (403, 429):
         return True
     if isinstance(status, int) and status >= 500:
         return True
@@ -608,22 +598,38 @@ def _is_retryable_append_error(exc: Exception) -> bool:
     return False
 
 
+def _retry_with_backoff(fn, *, max_attempts: int = 5):
+    attempt = 0
+    while True:
+        try:
+            return fn()
+        except Exception as exc:  # pragma: no cover
+            attempt += 1
+            if not _is_retryable_error(exc) or attempt >= max_attempts:
+                raise
+            time.sleep(1.5**attempt)
+
+
+def create_page(
+    notion: Client,
+    data_source_id: str,
+    properties: dict,
+) -> dict:
+    """Create a page in the specified data source."""
+    parent = {"data_source_id": data_source_id}
+    return _retry_with_backoff(
+        lambda: notion.pages.create(parent=parent, properties=properties)
+    )
+
+
 def append_blocks(notion: Client, page_id: str, blocks: list[dict]) -> None:
     if not blocks:
         return
     for idx in range(0, len(blocks), MAX_CHILDREN_PER_REQUEST):
         batch = blocks[idx : idx + MAX_CHILDREN_PER_REQUEST]
-        attempt = 0
-        while True:
-            try:
-                notion.blocks.children.append(block_id=page_id, children=batch)
-                break
-            except Exception as exc:  # pragma: no cover
-                attempt += 1
-                retryable = _is_retryable_append_error(exc)
-                if not retryable or attempt > 4:
-                    raise exc
-                time.sleep(1.5**attempt)
+        _retry_with_backoff(
+            lambda b=batch: notion.blocks.children.append(block_id=page_id, children=b)
+        )
 
 
 def parse_args() -> argparse.Namespace:
