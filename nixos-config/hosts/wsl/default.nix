@@ -188,7 +188,6 @@ in
 
   fonts.packages = with pkgs; [
     dejavu_fonts
-    jetbrains-mono
     noto-fonts
     noto-fonts-color-emoji
     meslo-lgs-nf

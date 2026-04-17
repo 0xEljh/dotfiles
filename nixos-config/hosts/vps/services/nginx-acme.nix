@@ -30,6 +30,7 @@ in
       "dev-3001.0xeljh.com" = mkProxyHost 3001;
       "dev-5173.0xeljh.com" = mkProxyHost 5173;
       "dev-8000.0xeljh.com" = mkProxyHost 8000;
+      "dev-19000.0xeljh.com" = mkProxyHost 19000;
 
       # Kodo Go API. SSE stream endpoint must not be buffered, so it gets a
       # dedicated regex location that overrides proxy_buffering for that one route.
@@ -62,11 +63,6 @@ in
       "www.vamptutor.com" = mkRedirectHost "vamptutor.com";
       "binderapi.vamptutor.com" = mkProxyHost 38127;
     };
-  };
-
-  security.acme = {
-    acceptTerms = true;
-    defaults.email = "elijah@0xeljh.com";
   };
 
   networking.firewall.allowedTCPPorts = [ 80 443 ];

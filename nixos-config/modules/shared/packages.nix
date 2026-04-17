@@ -54,7 +54,6 @@ with pkgs; [
   # Text and terminal utilities
   htop
   hunspell
-  jetbrains-mono
   jq
   ripgrep
   tree

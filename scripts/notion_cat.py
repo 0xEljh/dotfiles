@@ -110,14 +110,9 @@ def default_title(cwd_name: str, device: str, ts: str) -> str:
 def infer_type_from_paths(paths: list[str]) -> str:
     if not paths:
         return DEFAULT_TYPE_OUTPUT
-
-    exts = []
-    for path in paths:
-        if path == "-":
-            return DEFAULT_TYPE_OUTPUT
-        exts.append(Path(path).suffix.lower())
-
-    if exts and all(ext in {".md", ".mdx"} for ext in exts):
+    if any(p == "-" for p in paths):
+        return DEFAULT_TYPE_OUTPUT
+    if all(Path(p).suffix.lower() in {".md", ".mdx"} for p in paths):
         return DEFAULT_TYPE_DOC
     return DEFAULT_TYPE_OUTPUT
 
@@ -126,16 +121,18 @@ def infer_language(paths: list[str]) -> str:
     if not paths:
         return DEFAULT_LANGUAGE
 
-    langs = []
+    first: str | None = None
     for path in paths:
         if path == "-":
             return DEFAULT_LANGUAGE
-        ext = Path(path).suffix.lower()
-        langs.append(EXT_TO_LANG.get(ext))
-
-    if langs and all(lang == langs[0] and lang is not None for lang in langs):
-        return langs[0] or DEFAULT_LANGUAGE
-    return DEFAULT_LANGUAGE
+        lang = EXT_TO_LANG.get(Path(path).suffix.lower())
+        if lang is None:
+            return DEFAULT_LANGUAGE
+        if first is None:
+            first = lang
+        elif lang != first:
+            return DEFAULT_LANGUAGE
+    return first or DEFAULT_LANGUAGE
 
 
 def read_all_inputs(paths: list[str]) -> tuple[bytes, str]:
@@ -169,11 +166,10 @@ def read_all_inputs(paths: list[str]) -> tuple[bytes, str]:
 
 
 def chunk_rich_text(text: str) -> list[dict]:
-    items = []
-    for idx in range(0, len(text), MAX_RICH_TEXT_LEN):
-        chunk = text[idx : idx + MAX_RICH_TEXT_LEN]
-        items.append({"type": "text", "text": {"content": chunk}})
-    return items
+    return [
+        {"type": "text", "text": {"content": text[i : i + MAX_RICH_TEXT_LEN]}}
+        for i in range(0, len(text), MAX_RICH_TEXT_LEN)
+    ]
 
 
 def build_code_blocks(text: str, language: str) -> list[dict]:
@@ -244,17 +240,11 @@ def _split_rich_text_item(item: dict) -> list[dict]:
 
 
 def _is_valid_notion_url(url: str) -> bool:
-    candidate = url.strip()
-    if not candidate:
-        return False
-
-    parsed = urlparse(candidate)
+    parsed = urlparse(url.strip())
     if not parsed.scheme:
         return False
-
     if parsed.scheme in {"http", "https"}:
         return bool(parsed.netloc)
-
     return bool(parsed.netloc or parsed.path)
 
 
@@ -274,89 +264,89 @@ def _merge_annotations(base: dict, override: dict) -> dict:
     return merged
 
 
-def _inline_token_to_rich_text(token: dict, annotations: dict) -> list[dict]:
-    t = token.get("type", "")
-
-    if t == "text":
-        raw = token.get("raw", token.get("text", ""))
-        if not raw:
-            return []
-        ann = annotations if annotations else None
-        return [_notion_rich_text(raw, ann)]
-
-    if t == "codespan":
-        raw = token.get("raw", token.get("text", ""))
-        if not raw:
-            return []
-        ann = _merge_annotations(annotations, {"code": True})
-        return [_notion_rich_text(raw, ann)]
-
-    if t == "strong":
-        ann = _merge_annotations(annotations, {"bold": True})
-        items: list[dict] = []
-        for child in token.get("children", []):
-            items.extend(_inline_token_to_rich_text(child, ann))
-        return items
-
-    if t == "emphasis":
-        ann = _merge_annotations(annotations, {"italic": True})
-        items = []
-        for child in token.get("children", []):
-            items.extend(_inline_token_to_rich_text(child, ann))
-        return items
-
-    if t == "strikethrough":
-        ann = _merge_annotations(annotations, {"strikethrough": True})
-        items = []
-        for child in token.get("children", []):
-            items.extend(_inline_token_to_rich_text(child, ann))
-        return items
-
-    if t == "link":
-        url = ""
-        if "attrs" in token:
-            url = token["attrs"].get("url", "")
-        elif "link" in token:
-            url = token["link"]
-        is_valid_link = _is_valid_notion_url(url)
-        ann = dict(annotations) if annotations else {}
-        items = []
-        for child in token.get("children", []):
-            child_items = _inline_token_to_rich_text(child, ann)
-            if is_valid_link:
-                for ci in child_items:
-                    ci["text"]["link"] = {"url": url}
-            items.extend(child_items)
-        if not items:
-            raw = token.get("raw", url)
-            rt = _notion_rich_text(raw, ann if ann else None)
-            if is_valid_link:
-                rt["text"]["link"] = {"url": url}
-            items.append(rt)
-        return items
-
-    if t == "softbreak":
-        return [_notion_rich_text("\n")]
-
-    if t == "linebreak":
-        return [_notion_rich_text("\n")]
-
-    if t == "image":
-        alt = ""
-        if token.get("children"):
-            for child in token["children"]:
-                alt += child.get("raw", child.get("text", ""))
-        return [_notion_rich_text(alt or "[image]")]
-
-    if t == "inline_html":
-        raw = token.get("raw", token.get("text", ""))
-        return [_notion_rich_text(raw)] if raw else []
-
+def _inline_leaf(token: dict, annotations: dict) -> list[dict]:
     raw = token.get("raw", token.get("text", ""))
-    if raw:
-        ann = annotations if annotations else None
-        return [_notion_rich_text(raw, ann)]
-    return []
+    if not raw:
+        return []
+    return [_notion_rich_text(raw, annotations or None)]
+
+
+def _inline_recurse(token: dict, annotations: dict) -> list[dict]:
+    items: list[dict] = []
+    for child in token.get("children", []):
+        items.extend(_inline_token_to_rich_text(child, annotations))
+    return items
+
+
+def _handle_inline_codespan(token: dict, ann: dict) -> list[dict]:
+    return _inline_leaf(token, _merge_annotations(ann, {"code": True}))
+
+
+def _handle_inline_strong(token: dict, ann: dict) -> list[dict]:
+    return _inline_recurse(token, _merge_annotations(ann, {"bold": True}))
+
+
+def _handle_inline_emphasis(token: dict, ann: dict) -> list[dict]:
+    return _inline_recurse(token, _merge_annotations(ann, {"italic": True}))
+
+
+def _handle_inline_strikethrough(token: dict, ann: dict) -> list[dict]:
+    return _inline_recurse(token, _merge_annotations(ann, {"strikethrough": True}))
+
+
+def _handle_inline_link(token: dict, ann: dict) -> list[dict]:
+    url = (token.get("attrs") or {}).get("url") or token.get("link") or ""
+    is_valid_link = _is_valid_notion_url(url)
+    base_ann = dict(ann) if ann else {}
+    items: list[dict] = []
+    for child in token.get("children", []):
+        child_items = _inline_token_to_rich_text(child, base_ann)
+        if is_valid_link:
+            for ci in child_items:
+                ci["text"]["link"] = {"url": url}
+        items.extend(child_items)
+    if not items:
+        raw = token.get("raw", url)
+        rt = _notion_rich_text(raw, base_ann or None)
+        if is_valid_link:
+            rt["text"]["link"] = {"url": url}
+        items.append(rt)
+    return items
+
+
+def _handle_inline_break(_token: dict, _ann: dict) -> list[dict]:
+    return [_notion_rich_text("\n")]
+
+
+def _handle_inline_image(token: dict, _ann: dict) -> list[dict]:
+    alt = "".join(c.get("raw", c.get("text", "")) for c in token.get("children", []))
+    return [_notion_rich_text(alt or "[image]")]
+
+
+def _handle_inline_html(token: dict, _ann: dict) -> list[dict]:
+    raw = token.get("raw", token.get("text", ""))
+    return [_notion_rich_text(raw)] if raw else []
+
+
+_INLINE_HANDLERS = {
+    "text": _inline_leaf,
+    "codespan": _handle_inline_codespan,
+    "strong": _handle_inline_strong,
+    "emphasis": _handle_inline_emphasis,
+    "strikethrough": _handle_inline_strikethrough,
+    "link": _handle_inline_link,
+    "softbreak": _handle_inline_break,
+    "linebreak": _handle_inline_break,
+    "image": _handle_inline_image,
+    "inline_html": _handle_inline_html,
+}
+
+
+def _inline_token_to_rich_text(token: dict, annotations: dict) -> list[dict]:
+    handler = _INLINE_HANDLERS.get(token.get("type", ""))
+    if handler is not None:
+        return handler(token, annotations)
+    return _inline_leaf(token, annotations)
 
 
 def _make_block(block_type: str, rich_text: list[dict], **extra: object) -> dict:
@@ -368,36 +358,38 @@ def _make_block(block_type: str, rich_text: list[dict], **extra: object) -> dict
     return block
 
 
+def _row_cells_from_tokens(cell_tokens: list[dict]) -> list[list[dict]]:
+    return [
+        _ast_inline_to_rich_text(cell.get("children", [])) or [_notion_rich_text("")]
+        for cell in cell_tokens
+        if cell.get("type") == "table_cell"
+    ]
+
+
 def _table_to_block(token: dict) -> list[dict]:
     """Convert a mistune table token to a Notion table block with inline rows."""
     row_blocks: list[dict] = []
     has_column_header = False
     table_width = 0
 
+    def _append_row(cells: list[list[dict]]) -> None:
+        nonlocal table_width
+        if not cells:
+            return
+        table_width = max(table_width, len(cells))
+        row_blocks.append(
+            {"object": "block", "type": "table_row", "table_row": {"cells": cells}}
+        )
+
     for child in token.get("children", []):
         ct = child.get("type", "")
         if ct == "table_head":
             has_column_header = True
-            cells = [
-                _ast_inline_to_rich_text(cell.get("children", [])) or [_notion_rich_text("")]
-                for cell in child.get("children", [])
-                if cell.get("type") == "table_cell"
-            ]
-            if cells:
-                table_width = max(table_width, len(cells))
-                row_blocks.append({"object": "block", "type": "table_row", "table_row": {"cells": cells}})
+            _append_row(_row_cells_from_tokens(child.get("children", [])))
         elif ct == "table_body":
             for row_token in child.get("children", []):
-                if row_token.get("type") != "table_row":
-                    continue
-                cells = [
-                    _ast_inline_to_rich_text(cell.get("children", [])) or [_notion_rich_text("")]
-                    for cell in row_token.get("children", [])
-                    if cell.get("type") == "table_cell"
-                ]
-                if cells:
-                    table_width = max(table_width, len(cells))
-                    row_blocks.append({"object": "block", "type": "table_row", "table_row": {"cells": cells}})
+                if row_token.get("type") == "table_row":
+                    _append_row(_row_cells_from_tokens(row_token.get("children", [])))
 
     if not row_blocks:
         return []
@@ -427,77 +419,91 @@ def _ast_to_blocks(tokens: list[dict]) -> list[dict]:
     return blocks
 
 
+_QUOTE_INLINE_PARENT_TYPES = frozenset(
+    {"paragraph", "heading_1", "heading_2", "heading_3"}
+)
+
+
+def _handle_block_paragraph(token: dict) -> list[dict]:
+    rt = _ast_inline_to_rich_text(token.get("children", []))
+    return [_make_block("paragraph", rt)]
+
+
+def _handle_block_heading(token: dict) -> list[dict]:
+    level = min(token.get("attrs", {}).get("level", 1), 3)
+    rt = _ast_inline_to_rich_text(token.get("children", []))
+    return [_make_block(f"heading_{level}", rt)]
+
+
+def _handle_block_code(token: dict) -> list[dict]:
+    code = token.get("raw", token.get("text", ""))
+    info = token.get("attrs", {}).get("info", "") or ""
+    lang = info.split()[0] if info else ""
+    notion_lang = normalize_notion_language(lang)
+    rt = chunk_rich_text(code)
+    return [
+        _make_block("code", rt[i : i + MAX_RICH_TEXT_ITEMS], language=notion_lang)
+        for i in range(0, len(rt), MAX_RICH_TEXT_ITEMS)
+    ]
+
+
+def _handle_block_quote(token: dict) -> list[dict]:
+    child_blocks = _ast_to_blocks(token.get("children", []))
+    if not child_blocks:
+        return [_make_block("quote", [_notion_rich_text("")])]
+    first = child_blocks[0]
+    first_type = first.get("type", "")
+    if first_type in _QUOTE_INLINE_PARENT_TYPES:
+        rt = first[first_type]["rich_text"]
+    else:
+        rt = [_notion_rich_text("")]
+    block = _make_block("quote", rt)
+    if len(child_blocks) > 1:
+        block["quote"]["children"] = child_blocks[1:]
+    return [block]
+
+
+def _handle_block_list(token: dict) -> list[dict]:
+    ordered = token.get("attrs", {}).get("ordered", False)
+    items: list[dict] = []
+    for child in token.get("children", []):
+        items.extend(_list_item_to_blocks(child, ordered))
+    return items
+
+
+def _handle_block_thematic_break(_token: dict) -> list[dict]:
+    return [{"object": "block", "type": "divider", "divider": {}}]
+
+
+def _handle_block_blank_line(_token: dict) -> list[dict]:
+    return []
+
+
+def _handle_block_html(token: dict) -> list[dict]:
+    raw = token.get("raw", token.get("text", ""))
+    if raw:
+        return [_make_block("paragraph", [_notion_rich_text(raw)])]
+    return []
+
+
+_BLOCK_HANDLERS = {
+    "paragraph": _handle_block_paragraph,
+    "heading": _handle_block_heading,
+    "block_code": _handle_block_code,
+    "block_quote": _handle_block_quote,
+    "list": _handle_block_list,
+    "thematic_break": _handle_block_thematic_break,
+    "table": _table_to_block,
+    "blank_line": _handle_block_blank_line,
+    "block_html": _handle_block_html,
+    "block_text": _handle_block_paragraph,
+}
+
+
 def _token_to_blocks(token: dict) -> list[dict]:
-    t = token.get("type", "")
-
-    if t == "paragraph":
-        rt = _ast_inline_to_rich_text(token.get("children", []))
-        return [_make_block("paragraph", rt)]
-
-    if t == "heading":
-        level = token.get("attrs", {}).get("level", 1)
-        if level > 3:
-            level = 3
-        block_type = f"heading_{level}"
-        rt = _ast_inline_to_rich_text(token.get("children", []))
-        return [_make_block(block_type, rt)]
-
-    if t == "block_code":
-        code = token.get("raw", token.get("text", ""))
-        info = token.get("attrs", {}).get("info", "") or ""
-        lang = info.split()[0] if info else ""
-        notion_lang = normalize_notion_language(lang)
-        rt = chunk_rich_text(code)
-        result_blocks: list[dict] = []
-        for idx in range(0, len(rt), MAX_RICH_TEXT_ITEMS):
-            result_blocks.append(
-                _make_block(
-                    "code", rt[idx : idx + MAX_RICH_TEXT_ITEMS], language=notion_lang
-                )
-            )
-        return result_blocks
-
-    if t == "block_quote":
-        child_blocks = _ast_to_blocks(token.get("children", []))
-        if not child_blocks:
-            return [_make_block("quote", [_notion_rich_text("")])]
-        first = child_blocks[0]
-        first_type = first.get("type", "")
-        if first_type in ("paragraph", "heading_1", "heading_2", "heading_3"):
-            rt = first[first_type]["rich_text"]
-        else:
-            rt = [_notion_rich_text("")]
-        block = _make_block("quote", rt)
-        if len(child_blocks) > 1:
-            block["quote"]["children"] = child_blocks[1:]
-        return [block]
-
-    if t == "list":
-        ordered = token.get("attrs", {}).get("ordered", False)
-        items: list[dict] = []
-        for child in token.get("children", []):
-            items.extend(_list_item_to_blocks(child, ordered))
-        return items
-
-    if t == "thematic_break":
-        return [{"object": "block", "type": "divider", "divider": {}}]
-
-    if t == "table":
-        return _table_to_block(token)
-
-    if t == "blank_line":
-        return []
-
-    if t == "block_html":
-        raw = token.get("raw", token.get("text", ""))
-        if raw:
-            return [_make_block("paragraph", [_notion_rich_text(raw)])]
-        return []
-
-    if t == "block_text":
-        rt = _ast_inline_to_rich_text(token.get("children", []))
-        return [_make_block("paragraph", rt)]
-
+    handler = _BLOCK_HANDLERS.get(token.get("type", ""))
+    if handler is not None:
+        return handler(token)
     raw = token.get("raw", token.get("text", ""))
     if raw:
         return [_make_block("paragraph", [_notion_rich_text(raw)])]
@@ -516,18 +522,8 @@ def _list_item_to_blocks(token: dict, ordered: bool) -> list[dict]:
 
     for child in children:
         ct = child.get("type", "")
-        if ct == "paragraph":
-            if not inline_rt:
-                inline_rt = _ast_inline_to_rich_text(child.get("children", []))
-            else:
-                nested_blocks.extend(_token_to_blocks(child))
-        elif ct == "list":
-            nested_blocks.extend(_token_to_blocks(child))
-        elif ct == "block_text":
-            if not inline_rt:
-                inline_rt = _ast_inline_to_rich_text(child.get("children", []))
-            else:
-                nested_blocks.extend(_token_to_blocks(child))
+        if ct in {"paragraph", "block_text"} and not inline_rt:
+            inline_rt = _ast_inline_to_rich_text(child.get("children", []))
         else:
             nested_blocks.extend(_token_to_blocks(child))
 

@@ -23,192 +23,43 @@ import sys
 import json
 import glob
 import argparse
+import re
 from datetime import datetime, timedelta, time, date
-from zoneinfo import ZoneInfo
 from collections import defaultdict
 from urllib.parse import urlparse
-import re
 from notion_client import Client
 from dotenv import load_dotenv
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(current_dir, ".env"))
 
+# Import shared module AFTER load_dotenv so TARGET_TZ/AW_DATA_DIR see env values.
+from aw_common import (  # noqa: E402
+    AI_CHAT_APPS,
+    AW_DATA_DIR,
+    CODING_APPS,
+    EXCLUDED_APPS,
+    PLANNING_APPS,
+    TARGET_TZ,
+    TERMINAL_APPS,
+    ai_chat_app_display_name,
+    build_not_afk_periods_by_host,
+    coding_app_display_name,
+    detect_terminal_tool,
+    extract_host_from_bucket,
+    filter_events_by_afk,
+    get_browser_dev_tool_name,
+    get_planning_site_name,
+    match_ai_chat_site,
+    normalize_app_name,
+    parse_timestamp,
+)
+
 NOTION_API_KEY = os.getenv("NOTION_TIME_ACCOUNTANT_SECRET")
 NOTION_DATASOURCE_ID = os.getenv("NOTION_TIME_ACCOUNTING_DATASOURCE_ID")
-AW_DATA_DIR = os.getenv("AW_DATA_DIR", os.path.join(current_dir, "aw-data"))
-
-# Journal timezone: the timezone used for defining "a day" in Notion
-TARGET_TZ = ZoneInfo(os.getenv("TARGET_TZ", "Asia/Singapore"))  # or "America/New_York"
 
 # How many hours into "today" we continue to update "yesterday"
 FREEZE_HOURS = int(os.getenv("FREEZE_HOURS", "2"))
-
-# Apps considered as "coding tools" (terminals, IDEs, editors)
-# Cross-platform: Linux, macOS, Windows
-CODING_APPS = {
-    # Terminals (Linux/macOS)
-    "kitty",
-    "terminal",
-    "iterm2",
-    "alacritty",
-    "warp",
-    "hyper",
-    "wezterm",
-    # Terminals (Windows)
-    "windowsterminal",
-    "powershell",
-    "pwsh",
-    "cmd",
-    "conhost",
-    # VS Code variants
-    "code",
-    "vscode",
-    "visual studio code",
-    "code - insiders",
-    # AI-powered IDEs
-    "windsurf",
-    "cursor",
-    # Other editors/IDEs
-    "vim",
-    "nvim",
-    "neovim",
-    "emacs",
-    "nano",
-    "xcode",
-    "android studio",
-    "eclipse",
-    "notepad++",
-    "jupyter",
-    "jupyterlab",
-    "jupyter lab",
-    "jupyter-notebook",
-    "jupyter notebook",
-    "marimo",
-    # Development tools
-    "docker",
-    "postman",
-    "insomnia",
-    "dbeaver",
-    "tableplus",
-    "sequel pro",
-    "pgadmin",
-}
-
-# Terminal apps - need title inspection to determine actual tool
-# Includes cross-platform variants (Linux/macOS/Windows)
-TERMINAL_APPS = {
-    # Linux/macOS
-    "kitty",
-    "terminal",
-    "iterm2",
-    "alacritty",
-    "warp",
-    "hyper",
-    "wezterm",
-    "gnome-terminal",
-    "konsole",
-    "xterm",
-    # Windows
-    "windowsterminal",
-    "powershell",
-    "pwsh",
-    "cmd",
-    "conhost",
-    "windows terminal",
-}
-
-# Patterns in terminal window titles that indicate specific coding tools
-# Maps pattern (lowercase) -> tool display name
-# Order matters: more specific patterns should come first
-TERMINAL_TOOL_PATTERNS = {
-    # Claude Code TUI patterns (unicode spinners and modified indicators)
-    "✳ ": "Claude Code",  # Modified indicator (asterisk-like)
-    "⠐ ": "Claude Code",  # Braille dot spinner (running state)
-    "⠂ ": "Claude Code",  # Braille dot spinner (alternate state)
-    "claude code": "Claude Code",  # Explicit Claude Code mention
-    # OpenCode patterns
-    "opencode": "OpenCode",
-    "oc |": "OpenCode",  # OpenCode short prefix (pipe separator)
-    "oc:": "OpenCode",  # OpenCode short prefix (colon separator)
-    "| opencode": "OpenCode",  # OpenCode suffix pattern (e.g., "Config | OpenCode")
-    # Editors
-    "nvim": "Neovim",
-    "neovim": "Neovim",
-    "vim": "Vim",
-    "hx ": "Helix",  # helix editor
-    "helix": "Helix",
-    # Git/Docker TUIs
-    "lazygit": "LazyGit",
-    "lazydocker": "LazyDocker",
-    # System monitors
-    "htop": "htop",
-    "btop": "btop",
-    # AI coding assistants (CLI/TUI)
-    "aider": "Aider",
-    "gemini-cli": "Gemini CLI",
-    "goose": "Goose",
-    # SSH/Remote patterns
-    "ssh ": "SSH",
-    "kitten ssh": "SSH",
-    "[ssh:": "SSH",  # VS Code/Windsurf remote indicator
-}
-
-# AI Chat websites - for tracking AI assistant usage
-AI_CHAT_SITES = {
-    # OpenAI
-    "chatgpt.com",
-    "chat.openai.com",
-    # Anthropic
-    "claude.ai",
-    # Google
-    "gemini.google.com",
-    "bard.google.com",
-    "aistudio.google.com",
-    # xAI
-    "grok.com",
-    # Perplexity
-    "perplexity.ai",
-    "www.perplexity.ai",
-    # Other AI chats
-    "t3.chat",
-    "poe.com",
-    "you.com",
-    "phind.com",
-    "chat.mistral.ai",
-    "huggingface.co/chat",
-    "pi.ai",
-    "character.ai",
-    "copilot.microsoft.com",
-}
-
-# AI Chat desktop apps - for tracking AI assistant usage from native apps
-AI_CHAT_APPS = {
-    "claude",  # Claude desktop app
-    "chatgpt",  # ChatGPT desktop app
-}
-
-# Planning/architecting apps - note-taking, knowledge management, thinking tools
-PLANNING_APPS = {
-    "notion",
-    "logseq",
-    "obsidian",
-    "roam",
-    "craft",
-    "bear",
-    "apple notes",
-    "notes",
-    "evernote",
-    "onenote",
-    "remnote",
-    "anytype",
-    "capacities",
-    "miro",
-    "whimsical",
-    "excalidraw",
-    "tldraw",
-    "figjam",
-}
 
 # Websites considered as "coding activity"
 CODING_SITES = {
@@ -239,39 +90,6 @@ CODING_SITES = {
     "render.com",
     "huggingface.co",
     "colab.research.google.com",
-}
-
-# Browser-based dev tools with display names for breakdown tracking
-DEV_TOOL_SITES = {
-    "colab.research.google.com": "Google Colab",
-}
-
-LOCALHOST_HOSTS = {
-    "localhost",
-    "127.0.0.1",
-    "0.0.0.0",
-    "::1",
-}
-
-JUPYTER_LOCAL_PATH_PREFIXES = (
-    "/lab",
-    "/notebooks",
-    "/tree",
-)
-
-# Apps to exclude from activity tracking (system processes, idle indicators)
-# Cross-platform: macOS, Linux, Windows
-EXCLUDED_APPS = {
-    # macOS
-    "loginwindow",  # macOS lock screen / sleep state
-    "screensaverengine",  # macOS screensaver
-    "screeninactivity",  # Idle state indicator
-    # Windows
-    "explorer",  # Task View, Task Switching, Program Manager
-    "searchhost",  # Windows Search
-    "shellexperiencehost",  # Windows Shell
-    "lockapp",  # Lock screen
-    "systemsettings",  # Settings app during idle
 }
 
 # Table header used to identify our stats table
@@ -358,27 +176,6 @@ def load_aw_data_for_journal_day(journal_date: date) -> dict:
         f"Loaded {len(seen_events)} unique events for {journal_date} from files: {file_dates}"
     )
     return dict(merged)
-
-
-def parse_timestamp(ts_str: str) -> datetime:
-    """Parse ISO8601 timestamp to datetime in journal timezone."""
-    # Handle various ISO formats
-    dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-    return dt.astimezone(TARGET_TZ)
-
-
-def normalize_app_name(app: str) -> str:
-    """
-    Normalize app name for cross-platform consistency.
-    - Strips .exe suffix (Windows)
-    - Converts to lowercase
-    - Handles common app name variations
-    """
-    app = app.lower()
-    # Strip Windows executable extension
-    if app.endswith(".exe"):
-        app = app[:-4]
-    return app
 
 
 def bucket_events_by_hour(events: list) -> dict:
@@ -487,29 +284,9 @@ def aggregate_ai_chat_time(web_events: list, window_events: list | None = None) 
         duration = event.get("duration", 0) or 0
         if duration <= 0:
             continue
-        # Check if domain matches any AI chat site
-        for ai_site in AI_CHAT_SITES:
-            if ai_site in domain or domain.endswith(ai_site):
-                # Use a friendly name for the site
-                site_name = ai_site.replace("www.", "").split(".")[0]
-                if "chatgpt" in ai_site or "openai" in ai_site:
-                    site_name = "ChatGPT"
-                elif "claude" in ai_site:
-                    site_name = "Claude"
-                elif "gemini" in ai_site or "bard" in ai_site:
-                    site_name = "Gemini"
-                elif "grok" in ai_site:
-                    site_name = "Grok"
-                elif "perplexity" in ai_site:
-                    site_name = "Perplexity"
-                elif "aistudio" in ai_site:
-                    site_name = "AI Studio"
-                elif "t3.chat" in ai_site:
-                    site_name = "T3"
-                elif "copilot" in ai_site:
-                    site_name = "Copilot"
-                ai_time[site_name] += duration
-                break
+        site_name = match_ai_chat_site(domain)
+        if site_name:
+            ai_time[site_name] += duration
 
     # Process window events (desktop AI chat apps)
     if window_events:
@@ -520,80 +297,9 @@ def aggregate_ai_chat_time(web_events: list, window_events: list | None = None) 
             if duration <= 0:
                 continue
             if app in AI_CHAT_APPS:
-                # Use friendly display name
-                if app == "claude":
-                    site_name = "Claude"
-                elif app == "chatgpt":
-                    site_name = "ChatGPT"
-                else:
-                    site_name = app.title()
-                ai_time[site_name] += duration
+                ai_time[ai_chat_app_display_name(app)] += duration
 
     return dict(ai_time)
-
-
-def detect_terminal_tool(title: str) -> str | None:
-    """
-    Detect which coding tool is being used in a terminal based on window title.
-    Returns the tool name or None if not detected.
-    """
-    title_lower = title.lower()
-    for pattern, tool_name in TERMINAL_TOOL_PATTERNS.items():
-        if pattern in title_lower:
-            return tool_name
-    return None
-
-
-def is_domain_or_subdomain(hostname: str, domain: str) -> bool:
-    if not hostname:
-        return False
-    hostname = hostname.lower()
-    domain = domain.lower()
-    return hostname == domain or hostname.endswith(f".{domain}")
-
-
-def is_docs_subdomain(hostname: str) -> bool:
-    if not hostname:
-        return False
-    return hostname.startswith("docs.") or ".docs." in hostname
-
-
-def get_planning_site_name(url: str) -> str | None:
-    hostname = (urlparse(url).hostname or "").lower()
-    if not hostname:
-        return None
-
-    if is_domain_or_subdomain(hostname, "github.com") or is_domain_or_subdomain(
-        hostname, "github.io"
-    ):
-        return "GitHub"
-    if is_domain_or_subdomain(hostname, "arxiv.org"):
-        return "arXiv"
-    if is_docs_subdomain(hostname):
-        return "Documentation"
-    return None
-
-
-def get_browser_dev_tool_name(url: str, title: str = "") -> str | None:
-    parsed_url = urlparse(url)
-    hostname = (parsed_url.hostname or "").lower()
-    path = (parsed_url.path or "").lower()
-    title_lower = title.lower()
-
-    for site, display_name in DEV_TOOL_SITES.items():
-        if is_domain_or_subdomain(hostname, site):
-            return display_name
-
-    if hostname in LOCALHOST_HOSTS:
-        if "marimo" in title_lower or "marimo" in path:
-            return "Marimo"
-        if "jupyterlab" in title_lower or "jupyter notebook" in title_lower:
-            return "Jupyter"
-        for prefix in JUPYTER_LOCAL_PATH_PREFIXES:
-            if path.startswith(prefix):
-                return "Jupyter"
-
-    return None
 
 
 def aggregate_coding_tools_time(
@@ -630,23 +336,7 @@ def aggregate_coding_tools_time(
                 tool_time["Terminal/Shell"] += duration
         # Check if this is a known coding app (IDE, editor)
         elif app in CODING_APPS:
-            # Capitalize nicely for display
-            display_name = app.title()
-            if app == "code":
-                display_name = "VS Code"
-            elif app == "nvim":
-                display_name = "Neovim"
-            elif app in {
-                "jupyter",
-                "jupyterlab",
-                "jupyter lab",
-                "jupyter-notebook",
-                "jupyter notebook",
-            }:
-                display_name = "Jupyter"
-            elif app == "marimo":
-                display_name = "Marimo"
-            tool_time[display_name] += duration
+            tool_time[coding_app_display_name(app)] += duration
 
     # Process web events for browser-based dev tools
     if web_events:
@@ -726,112 +416,6 @@ def format_duration(seconds: float) -> str:
         return f"{hours}h {mins}m" if mins else f"{hours}h"
 
 
-def get_event_time_range(event: dict) -> tuple[datetime, datetime] | tuple[None, None]:
-    """Get start and end datetime for an event."""
-    ts_str = event.get("timestamp", "")
-    if not ts_str:
-        return None, None
-    start = parse_timestamp(ts_str)
-    duration = event.get("duration", 0) or 0
-    end = start + timedelta(seconds=duration)
-    return start, end
-
-
-def extract_host_from_bucket(bucket_name: str) -> str | None:
-    if not bucket_name:
-        return None
-    match = re.match(r"^aw-watcher-(?:window|afk)_(.+)$", bucket_name)
-    if match:
-        return match.group(1)
-    match = re.match(r"^aw-watcher-web(?:-[^_]+)?_(.+)$", bucket_name)
-    if match:
-        return match.group(1)
-    return None
-
-
-def merge_intervals(
-    intervals: list[tuple[datetime, datetime]],
-) -> list[tuple[datetime, datetime]]:
-    if not intervals:
-        return []
-    sorted_intervals = sorted(intervals, key=lambda x: x[0])
-    merged = [sorted_intervals[0]]
-    for start, end in sorted_intervals[1:]:
-        last_start, last_end = merged[-1]
-        if start <= last_end:
-            merged[-1] = (last_start, max(last_end, end))
-        else:
-            merged.append((start, end))
-    return merged
-
-
-def build_not_afk_periods_by_host(afk_events_by_host: dict) -> dict:
-    periods_by_host = {}
-    for host, events in afk_events_by_host.items():
-        intervals = []
-        for event in events:
-            status = event.get("data", {}).get("status", "")
-            if status != "not-afk":
-                continue
-            start, end = get_event_time_range(event)
-            if not start or not end or end <= start:
-                continue
-            intervals.append((start, end))
-        periods_by_host[host] = merge_intervals(intervals)
-    return periods_by_host
-
-
-def filter_events_by_afk(events: list, not_afk_periods_by_host: dict) -> list:
-    """
-    Filter events to only include portions that overlap with 'not-afk' periods.
-
-    Args:
-        events: List of window or web events
-        not_afk_periods_by_host: Host -> merged not-afk intervals
-
-    Returns:
-        List of events with durations adjusted to exclude AFK time
-    """
-    if not events:
-        return []
-    if not not_afk_periods_by_host:
-        return events
-
-    filtered_events = []
-
-    for event in events:
-        bucket_name = event.get("_bucket", "")
-        host = extract_host_from_bucket(bucket_name)
-        if not host:
-            filtered_events.append(event)
-            continue
-
-        host_periods = not_afk_periods_by_host.get(host)
-        if host_periods is None:
-            filtered_events.append(event)
-            continue
-        if not host_periods:
-            continue
-
-        event_start, event_end = get_event_time_range(event)
-        if not event_start or not event_end:
-            continue
-
-        for active_start, active_end in host_periods:
-            overlap_start = max(event_start, active_start)
-            overlap_end = min(event_end, active_end)
-
-            if overlap_start < overlap_end:
-                filtered_event = event.copy()
-                filtered_event["timestamp"] = overlap_start.isoformat()
-                filtered_event["duration"] = (
-                    overlap_end - overlap_start
-                ).total_seconds()
-                filtered_events.append(filtered_event)
-
-    return filtered_events
-
-
 def compute_hourly_stats(all_data: dict) -> dict:
     """
     Compute stats for each hour from merged ActivityWatch data.
@@ -894,9 +478,11 @@ def compute_hourly_stats(all_data: dict) -> dict:
         notion_time += site_time.get("www.notion.so", 0)
         notion_time += site_time.get("notion.so", 0)
 
-        # Time on coding tools (apps + coding-related websites)
+        # Time on coding tools (apps + coding-related websites).
+        # `app_time` keys come from `aggregate_app_time` which uses
+        # `normalize_app_name`, so they are already lowercase.
         coding_time = sum(
-            time for app, time in app_time.items() if app.lower() in CODING_APPS
+            time for app, time in app_time.items() if app in CODING_APPS
         )
         # Add time on coding-related websites
         coding_time += sum(

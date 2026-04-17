@@ -15,6 +15,7 @@ in
 {
   imports = [
     ../../modules/shared
+    ./services/acme.nix
     ./services/nginx-acme.nix
     (import ./services/web-apps.nix { inherit user; })
   ]
@@ -37,6 +38,7 @@ in
   };
 
   networking.hostName = "vps";
+  networking.firewall.allowedTCPPorts = [ 19000 ];
   time.timeZone = "Asia/Singapore";
 
   nix = {
