@@ -33,7 +33,9 @@ def get_aw_data(target_date=None):
         end_time = now
     else:
         # Specific date: full day (midnight to midnight)
-        start_of_day = datetime(target_date.year, target_date.month, target_date.day, tzinfo=TARGET_TZ)
+        start_of_day = datetime(
+            target_date.year, target_date.month, target_date.day, tzinfo=TARGET_TZ
+        )
         end_time = start_of_day + timedelta(days=1)
 
     params = {"start": start_of_day.isoformat(), "end": end_time.isoformat()}
@@ -63,10 +65,23 @@ def get_aw_data(target_date=None):
 
     aw_hostname = None
     if watcher_bucket_hostnames:
+        # Prefer exact match (case-insensitive) against full hostname
         for bucket_hostname in watcher_bucket_hostnames:
-            if base_hostname and base_hostname in bucket_hostname.lower():
+            if short_hostname == bucket_hostname.lower():
                 aw_hostname = bucket_hostname
                 break
+        # Then try exact match against the bucket's short hostname (before first dot)
+        if aw_hostname is None:
+            for bucket_hostname in watcher_bucket_hostnames:
+                if short_hostname == bucket_hostname.split(".")[0].lower():
+                    aw_hostname = bucket_hostname
+                    break
+        # Fall back to substring match only if no exact match found
+        if aw_hostname is None:
+            for bucket_hostname in watcher_bucket_hostnames:
+                if base_hostname and base_hostname in bucket_hostname.lower():
+                    aw_hostname = bucket_hostname
+                    break
         if aw_hostname is None:
             aw_hostname = Counter(watcher_bucket_hostnames).most_common(1)[0][0]
 
@@ -135,7 +150,8 @@ if __name__ == "__main__":
         help="Date to push (YYYY-MM-DD format). Defaults to today.",
     )
     parser.add_argument(
-        "-y", "--yesterday",
+        "-y",
+        "--yesterday",
         action="store_true",
         help="Push yesterday's data",
     )

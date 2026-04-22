@@ -8,21 +8,34 @@
 
 Some things that might be different from other public configs:
 
-### 1) macOS “app persistence"
+### 1) macOS “app persistence”
 
-Problem: Nix store paths change on rebuild; macOS permissions (Accessibility) can be annoying to update if the “app path” keeps changing.
+Problem: Nix store paths change on rebuild; macOS TCC (Accessibility permissions) tracks by code signature. Ad-hoc signatures include cdhash, which changes with every rebuild, silently revoking permissions.
 
-Approach: create Finder aliases (not symlinks) into a stable folder:
+Approach (two layers):
 
+**GUI apps (kitty):** Finder aliases (not symlinks) into a stable folder via `mkalias`:
 - Stable path: `/Applications/Nix Apps/kitty.app`
-- Module: `nixos-config/modules/darwin/apps.nix` (uses `mkalias` during activation)
+- Module: `nixos-config/modules/darwin/apps.nix`
 
-On first run after `.#build-switch`, grant Accessibility once:
+**CLI daemons (yabai, skhd):** Minimal `.app` bundles + self-signed certificate:
+- Stable paths: `/Applications/Yabai.app`, `/Applications/Skhd.app`
+- Module: `nixos-config/modules/darwin/accessibility.nix`
+- Certificate-based designated requirement (DR) uses cert identity, not cdhash — survives binary replacement across rebuilds
+- `/usr/local/bin/` symlinks maintained for CLI convenience
+
+**One-time prerequisite:** Create a self-signed code signing certificate:
+1. Keychain Access > Certificate Assistant > Create a Certificate...
+2. Name: `nix-codesign` | Identity Type: Self Signed Root | Certificate Type: Code Signing
+
+On first run after `.#build-switch`, grant Accessibility once via
 `System Settings > Privacy & Security > Accessibility`:
 
+- `/Applications/Yabai.app`
+- `/Applications/Skhd.app`
 - `/Applications/Nix Apps/kitty.app`
 
-`nixos-config/modules/darwin/accessibility.nix` prints the one-time permission checklist (and also handles stable paths for yabai/skhd).
+These paths and signatures are stable across rebuilds.
 
 ### 2) Centralized + Extensible AI-tool configs (`ai-tools/`)
 

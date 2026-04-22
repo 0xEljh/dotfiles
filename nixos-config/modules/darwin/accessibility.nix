@@ -3,52 +3,104 @@
 # Accessibility Permissions for Nix-managed binaries
 #
 # Problem: macOS TCC (Transparency, Consent, Control) tracks Accessibility
-# permissions by code signature hash (cdhash). Each Nix rebuild creates new
-# store paths with different hashes, invalidating permissions.
+# permissions by code signature. Each Nix rebuild creates new store paths
+# with different binaries, invalidating ad-hoc signatures and permissions.
 #
 # Solution: This module:
-# 1. Copies binaries to stable paths (/usr/local/bin/)
-# 2. Re-signs them with ad-hoc signatures and stable identifiers
+# 1. Wraps binaries in minimal .app bundles at stable paths (/Applications/)
+# 2. Signs bundles with a named certificate (DR based on cert, not cdhash)
 # 3. Updates the yabai sudoers file with the new hash (for scripting addition)
-# 4. Overrides launchd services to use stable paths
+# 4. Creates launchd services pointing to the .app bundle binaries
+# 5. Symlinks /usr/local/bin/ for CLI convenience
+#
+# One-time prerequisite: Create a self-signed code signing certificate:
+#   Keychain Access > Certificate Assistant > Create a Certificate...
+#   Name: nix-codesign | Type: Code Signing | Identity: Self Signed Root
 #
 # After first run, grant Accessibility permissions to:
-#   /usr/local/bin/yabai
-#   /usr/local/bin/skhd
+#   /Applications/Yabai.app
+#   /Applications/Skhd.app
 #
-# These paths remain stable across rebuilds, so permissions persist.
+# These .app bundles + cert-based signatures persist across rebuilds.
 #
 # NOTE: kitty.app uses the mkalias approach in apps.nix since it's a .app bundle.
 # Grant permissions to /Applications/Nix Apps/kitty.app
 
 let
   user = "elijah";
+  certName = "nix-codesign";
+
+  capitalize = s:
+    (lib.toUpper (builtins.substring 0 1 s)) +
+    (builtins.substring 1 (builtins.stringLength s - 1) s);
 
   # Binaries that need Accessibility permissions
-  accessibilityBinaries = [
+  accessibilityApps = [
     { name = "yabai"; pkg = pkgs.yabai; identifier = "com.koekeishiya.yabai"; }
     { name = "skhd";  pkg = pkgs.skhd;  identifier = "com.koekeishiya.skhd"; }
   ];
 
-  # Script to copy, sign, and configure a binary
-  setupAccessibilityBinary = { name, pkg, identifier }: ''
-    echo "Setting up ${name} for stable Accessibility permissions..." >&2
+  # Generate a stable Info.plist for a .app bundle
+  mkInfoPlist = { name, identifier, ... }: pkgs.writeText "${name}-Info.plist" ''
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+    <plist version="1.0">
+    <dict>
+      <key>CFBundleExecutable</key>
+      <string>${name}</string>
+      <key>CFBundleIdentifier</key>
+      <string>${identifier}</string>
+      <key>CFBundleName</key>
+      <string>${capitalize name}</string>
+      <key>CFBundlePackageType</key>
+      <string>APPL</string>
+      <key>LSUIElement</key>
+      <true/>
+    </dict>
+    </plist>
+  '';
+
+  # Script to create .app bundle, sign, and symlink a binary
+  setupAccessibilityApp = { name, pkg, identifier }: let
+    appName = capitalize name;
+    appPath = "/Applications/${appName}.app";
+    binPath = "${appPath}/Contents/MacOS/${name}";
+    plist = mkInfoPlist { inherit name identifier; };
+  in ''
+    echo "Setting up ${appName}.app for stable Accessibility permissions..." >&2
 
     SRC="${pkg}/bin/${name}"
-    DEST="/usr/local/bin/${name}"
+    APP_PATH="${appPath}"
+    BIN_PATH="${binPath}"
 
     if [ ! -f "$SRC" ]; then
       echo "Warning: ${name} binary not found at $SRC" >&2
     else
-      # Copy to stable location (requires sudo, run in activation)
-      cp -f "$SRC" "$DEST"
-      chmod 755 "$DEST"
+      # Create .app bundle structure
+      mkdir -p "$APP_PATH/Contents/MacOS"
 
-      # Re-sign with ad-hoc signature and stable identifier
-      # The identifier helps macOS recognize it as the "same" app
-      codesign -fs - --identifier "${identifier}" "$DEST" 2>/dev/null || true
+      # Copy stable Info.plist from nix store
+      cp -f "${plist}" "$APP_PATH/Contents/Info.plist"
 
-      echo "Installed ${name} to $DEST with identifier ${identifier}" >&2
+      # Copy binary into bundle
+      cp -f "$SRC" "$BIN_PATH"
+      chmod 755 "$BIN_PATH"
+
+      # Sign with named certificate; fall back to ad-hoc if cert not found
+      if security find-identity -v -p codesigning 2>/dev/null | grep -q "${certName}"; then
+        codesign --force --sign "${certName}" --identifier "${identifier}" "$APP_PATH" 2>/dev/null
+        echo "Signed ${appName}.app with certificate '${certName}'" >&2
+      else
+        codesign --force -s - --identifier "${identifier}" "$APP_PATH" 2>/dev/null || true
+        echo "WARNING: Certificate '${certName}' not found — signed ad-hoc (permissions will not persist across rebuilds)" >&2
+        echo "  Create it: Keychain Access > Certificate Assistant > Create a Certificate" >&2
+        echo "  Name: ${certName} | Identity Type: Self Signed Root | Certificate Type: Code Signing" >&2
+      fi
+
+      # Symlink to /usr/local/bin for CLI convenience (skhdrc etc.)
+      ln -sf "$BIN_PATH" "/usr/local/bin/${name}"
+
+      echo "Installed ${appName}.app → /usr/local/bin/${name}" >&2
     fi
   '';
 
@@ -56,7 +108,7 @@ let
   updateYabaiSudoers = ''
     echo "Updating yabai sudoers configuration..." >&2
 
-    YABAI_BIN="/usr/local/bin/yabai"
+    YABAI_BIN="/Applications/Yabai.app/Contents/MacOS/yabai"
     SUDOERS_FILE="/private/etc/sudoers.d/yabai"
 
     if [ -f "$YABAI_BIN" ]; then
@@ -95,7 +147,7 @@ let
     # example: automatically grid-tile new floating windows
     yabai -m signal --add event=window_created \
         action="yabai -m window --grid 6:6:1:1:4:4"
-    
+
     # Set VSCode to be transparent even when active
     yabai -m rule --add app="^Code$" opacity=0.90
   '';
@@ -106,38 +158,38 @@ in
   services.yabai.enable = lib.mkForce false;
   services.skhd.enable = lib.mkForce false;
 
-  # Use extraActivation hook to set up accessibility binaries
+  # Use extraActivation hook to set up accessibility .app bundles
   # This runs early in activation, before launchd services start
   system.activationScripts.extraActivation.text = lib.mkAfter ''
-    # === Accessibility Binary Setup ===
-    echo "Configuring Accessibility binaries..." >&2
+    # === Accessibility .app Bundle Setup ===
+    echo "Configuring Accessibility .app bundles..." >&2
 
-    # Ensure /usr/local/bin exists
+    # Ensure /usr/local/bin exists (for symlinks)
     mkdir -p /usr/local/bin
 
-    ${lib.concatMapStringsSep "\n" setupAccessibilityBinary accessibilityBinaries}
+    ${lib.concatMapStringsSep "\n" setupAccessibilityApp accessibilityApps}
 
     ${updateYabaiSudoers}
 
     echo "" >&2
     echo "=== Accessibility Setup Complete ===" >&2
     echo "If this is your first run, grant Accessibility permissions to:" >&2
-    echo "  - /usr/local/bin/yabai" >&2
-    echo "  - /usr/local/bin/skhd" >&2
+    echo "  - /Applications/Yabai.app" >&2
+    echo "  - /Applications/Skhd.app" >&2
     echo "  - /Applications/Nix Apps/kitty.app" >&2
     echo "" >&2
     echo "System Settings > Privacy & Security > Accessibility" >&2
-    echo "These paths are stable and won't need re-granting after rebuilds." >&2
+    echo "These .app bundles are stable and won't need re-granting after rebuilds." >&2
     echo "===================================" >&2
   '';
 
-  # Custom launchd agent for yabai using stable path
+  # Custom launchd agent for yabai using .app bundle path
   # NOTE: yabai must run as user, not root (it refuses to run as root)
   launchd.user.agents.yabai = {
     serviceConfig = {
       Label = "com.koekeishiya.yabai";
       ProgramArguments = [
-        "/usr/local/bin/yabai"
+        "/Applications/Yabai.app/Contents/MacOS/yabai"
         "-c"
         "${yabaiConfig}"
       ];
@@ -153,12 +205,12 @@ in
     };
   };
 
-  # Custom launchd agent for skhd using stable path
+  # Custom launchd agent for skhd using .app bundle path
   launchd.user.agents.skhd = {
     serviceConfig = {
       Label = "com.koekeishiya.skhd";
       ProgramArguments = [
-        "/usr/local/bin/skhd"
+        "/Applications/Skhd.app/Contents/MacOS/skhd"
         "-c"
         "/etc/skhdrc"
       ];
