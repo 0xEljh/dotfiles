@@ -15,6 +15,7 @@ Uses Notion data source API (data_source_id) per latest Notion API.
 from __future__ import annotations
 
 import argparse
+import copy
 import os
 import platform
 import socket
@@ -32,6 +33,8 @@ from notion_client import Client
 MAX_RICH_TEXT_LEN = 1999
 MAX_RICH_TEXT_ITEMS = 100
 MAX_CHILDREN_PER_REQUEST = 100
+
+INLINE_CHILDREN_REQUIRED_TYPES = frozenset({"column", "column_list", "table", "tab"})
 
 DEFAULT_TYPE_OUTPUT = "Output Log"
 DEFAULT_TYPE_DOC = "Design Document"
@@ -400,16 +403,18 @@ def _table_to_block(token: dict) -> list[dict]:
         while len(cells) < table_width:
             cells.append([_notion_rich_text("")])
 
-    return [{
-        "object": "block",
-        "type": "table",
-        "table": {
-            "table_width": table_width,
-            "has_column_header": has_column_header,
-            "has_row_header": False,
-            "children": row_blocks,
-        },
-    }]
+    return [
+        {
+            "object": "block",
+            "type": "table",
+            "table": {
+                "table_width": table_width,
+                "has_column_header": has_column_header,
+                "has_row_header": False,
+                "children": row_blocks,
+            },
+        }
+    ]
 
 
 def _ast_to_blocks(tokens: list[dict]) -> list[dict]:
@@ -510,6 +515,11 @@ def _token_to_blocks(token: dict) -> list[dict]:
     return []
 
 
+# Block types not allowed as children of list items by the Notion API.
+# Promote these to siblings rather than nesting them.
+_NON_NESTABLE_IN_LIST_ITEM = frozenset({"code", "table"})
+
+
 def _list_item_to_blocks(token: dict, ordered: bool) -> list[dict]:
     block_type = "numbered_list_item" if ordered else "bulleted_list_item"
 
@@ -530,10 +540,15 @@ def _list_item_to_blocks(token: dict, ordered: bool) -> list[dict]:
     if not inline_rt:
         inline_rt = [_notion_rich_text("")]
 
+    nestable = [
+        b for b in nested_blocks if b.get("type") not in _NON_NESTABLE_IN_LIST_ITEM
+    ]
+    promoted = [b for b in nested_blocks if b.get("type") in _NON_NESTABLE_IN_LIST_ITEM]
+
     block = _make_block(block_type, inline_rt)
-    if nested_blocks:
-        block[block_type]["children"] = nested_blocks
-    return [block]
+    if nestable:
+        block[block_type]["children"] = nestable
+    return [block] + promoted
 
 
 def build_markdown_blocks(text: str) -> list[dict]:
@@ -606,6 +621,24 @@ def _retry_with_backoff(fn, *, max_attempts: int = 5):
             time.sleep(1.5**attempt)
 
 
+def _block_payload(block: dict) -> dict:
+    return block[block["type"]]
+
+
+def _block_children(block: dict) -> list[dict]:
+    return _block_payload(block).get("children", [])
+
+
+def _prepare_blocks_for_append(blocks: list[dict]) -> list[dict]:
+    prepared: list[dict] = []
+    for block in blocks:
+        prepared_block = copy.deepcopy(block)
+        if prepared_block["type"] not in INLINE_CHILDREN_REQUIRED_TYPES:
+            _block_payload(prepared_block).pop("children", None)
+        prepared.append(prepared_block)
+    return prepared
+
+
 def create_page(
     notion: Client,
     data_source_id: str,
@@ -618,14 +651,29 @@ def create_page(
     )
 
 
-def append_blocks(notion: Client, page_id: str, blocks: list[dict]) -> None:
+def append_blocks(notion: Client, parent_id: str, blocks: list[dict]) -> None:
     if not blocks:
         return
     for idx in range(0, len(blocks), MAX_CHILDREN_PER_REQUEST):
         batch = blocks[idx : idx + MAX_CHILDREN_PER_REQUEST]
-        _retry_with_backoff(
-            lambda b=batch: notion.blocks.children.append(block_id=page_id, children=b)
+        request_blocks = _prepare_blocks_for_append(batch)
+        response = _retry_with_backoff(
+            lambda b=request_blocks: notion.blocks.children.append(
+                block_id=parent_id, children=b
+            )
         )
+        results = response.get("results", [])
+        if len(results) != len(batch):
+            raise RuntimeError("Notion append returned an unexpected number of blocks")
+        for original, created in zip(batch, results):
+            child_blocks = _block_children(original)
+            if not child_blocks or original["type"] in INLINE_CHILDREN_REQUIRED_TYPES:
+                continue
+            child_id = created.get("id")
+            if not child_id:
+                raise RuntimeError("Notion append response omitted a created block id")
+            # Notion only allows two levels of nesting per append request.
+            append_blocks(notion, child_id, child_blocks)
 
 
 def parse_args() -> argparse.Namespace:
