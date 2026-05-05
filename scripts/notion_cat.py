@@ -431,13 +431,24 @@ _QUOTE_INLINE_PARENT_TYPES = frozenset(
 
 def _handle_block_paragraph(token: dict) -> list[dict]:
     rt = _ast_inline_to_rich_text(token.get("children", []))
-    return [_make_block("paragraph", rt)]
+    if not rt:
+        return [_make_block("paragraph", [])]
+    return [
+        _make_block("paragraph", rt[i : i + MAX_RICH_TEXT_ITEMS])
+        for i in range(0, len(rt), MAX_RICH_TEXT_ITEMS)
+    ]
 
 
 def _handle_block_heading(token: dict) -> list[dict]:
     level = min(token.get("attrs", {}).get("level", 1), 3)
+    block_type = f"heading_{level}"
     rt = _ast_inline_to_rich_text(token.get("children", []))
-    return [_make_block(f"heading_{level}", rt)]
+    if not rt:
+        return [_make_block(block_type, [])]
+    return [
+        _make_block(block_type, rt[i : i + MAX_RICH_TEXT_ITEMS])
+        for i in range(0, len(rt), MAX_RICH_TEXT_ITEMS)
+    ]
 
 
 def _handle_block_code(token: dict) -> list[dict]:
@@ -545,10 +556,15 @@ def _list_item_to_blocks(token: dict, ordered: bool) -> list[dict]:
     ]
     promoted = [b for b in nested_blocks if b.get("type") in _NON_NESTABLE_IN_LIST_ITEM]
 
-    block = _make_block(block_type, inline_rt)
+    block = _make_block(block_type, inline_rt[:MAX_RICH_TEXT_ITEMS])
+    overflow_rt = inline_rt[MAX_RICH_TEXT_ITEMS:]
     if nestable:
         block[block_type]["children"] = nestable
-    return [block] + promoted
+    overflow_blocks = [
+        _make_block("paragraph", overflow_rt[i : i + MAX_RICH_TEXT_ITEMS])
+        for i in range(0, len(overflow_rt), MAX_RICH_TEXT_ITEMS)
+    ]
+    return [block] + overflow_blocks + promoted
 
 
 def build_markdown_blocks(text: str) -> list[dict]:
