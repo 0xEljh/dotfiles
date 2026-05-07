@@ -15,7 +15,6 @@ Uses Notion data source API (data_source_id) per latest Notion API.
 from __future__ import annotations
 
 import argparse
-import copy
 import os
 import platform
 import socket
@@ -215,10 +214,34 @@ NOTION_LANG_ALIASES = {
     "tsx": "typescript",
 }
 
+# Authoritative list of languages accepted by Notion's code block API.
+# Anything not in this set is rejected with a 400 validation error, so we
+# fall back to "plain text" for unknown languages instead of trusting the
+# raw fence info string.
+NOTION_VALID_LANGUAGES = frozenset({
+    "abap", "abc", "agda", "arduino", "ascii art", "assembly", "bash",
+    "basic", "bnf", "c", "c#", "c++", "clojure", "coffeescript", "coq",
+    "css", "dart", "dhall", "diff", "docker", "ebnf", "elixir", "elm",
+    "erlang", "f#", "flow", "fortran", "gherkin", "glsl", "go", "graphql",
+    "groovy", "haskell", "hcl", "html", "idris", "java", "javascript",
+    "json", "julia", "kotlin", "latex", "less", "lisp", "livescript",
+    "llvm ir", "lua", "makefile", "markdown", "markup", "matlab",
+    "mathematica", "mermaid", "nix", "notion formula", "objective-c",
+    "ocaml", "pascal", "perl", "php", "plain text", "powershell", "prolog",
+    "protobuf", "purescript", "python", "r", "racket", "reason", "ruby",
+    "rust", "sass", "scala", "scheme", "scss", "shell", "smalltalk",
+    "solidity", "sql", "swift", "toml", "typescript", "vb.net", "verilog",
+    "vhdl", "visual basic", "webassembly", "xml", "yaml",
+    "java/c/c++/c#",
+})
+
 
 def normalize_notion_language(language: str) -> str:
     lang_key = language.strip().lower()
-    return NOTION_LANG_ALIASES.get(lang_key, lang_key or "plain text")
+    mapped = NOTION_LANG_ALIASES.get(lang_key, lang_key or "plain text")
+    if mapped not in NOTION_VALID_LANGUAGES:
+        return "plain text"
+    return mapped
 
 
 def _notion_rich_text(text: str, annotations: dict | None = None) -> dict:
@@ -638,6 +661,23 @@ def _pop_children_for_recursion(block: dict) -> list | None:
     return body.pop("children", None)
 
 
+def create_page(
+    notion: Client,
+    data_source_id: str,
+    properties: dict,
+) -> dict:
+    parent = {"data_source_id": data_source_id}
+    attempt = 0
+    while True:
+        try:
+            return notion.pages.create(parent=parent, properties=properties)
+        except Exception as exc:  # pragma: no cover
+            attempt += 1
+            if not _is_retryable_error(exc) or attempt > 4:
+                raise
+            time.sleep(1.5**attempt)
+
+
 def append_blocks(notion: Client, page_id: str, blocks: list[dict]) -> None:
     if not blocks:
         return
@@ -660,7 +700,7 @@ def append_blocks(notion: Client, page_id: str, blocks: list[dict]) -> None:
                 break
             except Exception as exc:  # pragma: no cover
                 attempt += 1
-                retryable = _is_retryable_append_error(exc)
+                retryable = _is_retryable_error(exc)
                 if not retryable or attempt > 4:
                     raise exc
                 time.sleep(1.5**attempt)
