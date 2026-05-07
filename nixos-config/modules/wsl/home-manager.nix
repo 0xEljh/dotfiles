@@ -13,6 +13,15 @@ let
     pkgs.rsync
     pkgs.uv
   ];
+  openportalPath = lib.makeBinPath ([
+    pkgs.bun
+    pkgs.nodejs_24
+    pkgs.git
+    pkgs.coreutils
+    pkgs.bash
+  ] ++ lib.optionals (pkgs ? llm-agents && pkgs.llm-agents ? opencode) [
+    pkgs.llm-agents.opencode
+  ]);
 
   git-wsl-config = {
     enable = true;
@@ -142,6 +151,33 @@ in
     };
     Install = {
       WantedBy = [ "timers.target" ];
+    };
+  };
+
+  # OpenPortal: mobile-first web UI for opencode, reachable over Tailscale
+  # at http://<tailscale-host>:8765. Spawns its own opencode server on :4765.
+  # Inherits ~/.config/opencode/opencode.json (linked by ai-tools.nix).
+  systemd.user.services.openportal = {
+    Unit = {
+      Description = "OpenPortal mobile web UI for opencode";
+      After = [ "network-online.target" ];
+      Wants = [ "network-online.target" ];
+    };
+    Service = {
+      Type = "simple";
+      WorkingDirectory = "%h";
+      ExecStart = "${pkgs.bun}/bin/bunx openportal -d %h --hostname 0.0.0.0 --port 8765 --opencode-port 4765";
+      Restart = "on-failure";
+      RestartSec = "10s";
+      # First run downloads openportal via bunx; allow time on slow links.
+      TimeoutStartSec = "5min";
+      Environment = [
+        "PATH=${openportalPath}"
+        "HOME=%h"
+      ];
+    };
+    Install = {
+      WantedBy = [ "default.target" ];
     };
   };
 }

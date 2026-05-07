@@ -97,6 +97,18 @@ in
   };
 
   # ============================================================================
+  # NETWORKING / FIREWALL
+  # ============================================================================
+  # Trust the Tailscale interface so user services (e.g. openportal on :8765)
+  # are reachable from other devices on the tailnet without per-port rules.
+  # The wider internet is still gated by the default-deny firewall.
+  networking.firewall = {
+    trustedInterfaces = [ "tailscale0" ];
+    # Tailscale's own UDP port for direct connections
+    allowedUDPPorts = [ 41641 ];
+  };
+
+  # ============================================================================
   # VIRTUALISATION
   # ============================================================================
 
@@ -106,6 +118,13 @@ in
       daemon.settings = {
         features.cdi = true;
         "cdi-spec-dirs" = [ "/etc/cdi" ];
+        # Expand the bridge-network address pool so parallel episode
+        # execution can allocate enough Docker networks (default ~31
+        # subnets is often insufficient; /12 base with /24 size → 4096).
+        default-address-pools = [{
+          base = "172.17.0.0/12";
+          size = 24;
+        }];
       };
     };
   };

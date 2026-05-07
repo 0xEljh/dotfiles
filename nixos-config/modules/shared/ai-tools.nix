@@ -34,6 +34,14 @@
     link_config "$AI_TOOLS/opencode/commands"      "$HOME/.config/opencode/commands"
     concat_with_separator "$AI_TOOLS/shared/AI.md" "$AI_TOOLS/opencode/AGENTS.md" "$HOME/.config/opencode/AGENTS.md"
 
+    # Patch opencode-claude-code-plugin: fix empty text block causing
+    # "cache_control cannot be set for empty text blocks" API error loop
+    PLUGIN_FILE="$HOME/.cache/opencode/packages/opencode-claude-code-plugin/node_modules/opencode-claude-code-plugin/dist/index.js"
+    if [ -f "$PLUGIN_FILE" ]; then
+      ${pkgs.gnused}/bin/sed -i 's/content: \[{ type: "text", text: "" }\]/content: [{ type: "text", text: " " }]/' "$PLUGIN_FILE"
+      echo "Patched: opencode-claude-code-plugin empty text block fix"
+    fi
+
     # Claude Code
     link_config "$AI_TOOLS/claude-code/settings.json" "$HOME/.claude/settings.json"
     link_config "$AI_TOOLS/shared/skills"             "$HOME/.claude/skills"
