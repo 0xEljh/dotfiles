@@ -403,18 +403,16 @@ def _table_to_block(token: dict) -> list[dict]:
         while len(cells) < table_width:
             cells.append([_notion_rich_text("")])
 
-    return [
-        {
-            "object": "block",
-            "type": "table",
-            "table": {
-                "table_width": table_width,
-                "has_column_header": has_column_header,
-                "has_row_header": False,
-                "children": row_blocks,
-            },
-        }
-    ]
+    return [{
+        "object": "block",
+        "type": "table",
+        "table": {
+            "table_width": table_width,
+            "has_column_header": has_column_header,
+            "has_row_header": False,
+            "children": row_blocks,
+        },
+    }]
 
 
 def _ast_to_blocks(tokens: list[dict]) -> list[dict]:
@@ -625,71 +623,51 @@ def _is_retryable_error(exc: Exception) -> bool:
     return False
 
 
-def _retry_with_backoff(fn, *, max_attempts: int = 5):
-    attempt = 0
-    while True:
-        try:
-            return fn()
-        except Exception as exc:  # pragma: no cover
-            attempt += 1
-            if not _is_retryable_error(exc) or attempt >= max_attempts:
-                raise
-            time.sleep(1.5**attempt)
+# Block types whose `children` must be supplied inline at creation time
+# (Notion rejects empty tables/columns; rows/columns can't be appended later).
+INLINE_CHILDREN_TYPES = {"table", "column_list", "column"}
 
 
-def _block_payload(block: dict) -> dict:
-    return block[block["type"]]
+def _pop_children_for_recursion(block: dict) -> list | None:
+    block_type = block.get("type")
+    if not block_type or block_type in INLINE_CHILDREN_TYPES:
+        return None
+    body = block.get(block_type)
+    if not isinstance(body, dict):
+        return None
+    return body.pop("children", None)
 
 
-def _block_children(block: dict) -> list[dict]:
-    return _block_payload(block).get("children", [])
-
-
-def _prepare_blocks_for_append(blocks: list[dict]) -> list[dict]:
-    prepared: list[dict] = []
-    for block in blocks:
-        prepared_block = copy.deepcopy(block)
-        if prepared_block["type"] not in INLINE_CHILDREN_REQUIRED_TYPES:
-            _block_payload(prepared_block).pop("children", None)
-        prepared.append(prepared_block)
-    return prepared
-
-
-def create_page(
-    notion: Client,
-    data_source_id: str,
-    properties: dict,
-) -> dict:
-    """Create a page in the specified data source."""
-    parent = {"data_source_id": data_source_id}
-    return _retry_with_backoff(
-        lambda: notion.pages.create(parent=parent, properties=properties)
-    )
-
-
-def append_blocks(notion: Client, parent_id: str, blocks: list[dict]) -> None:
+def append_blocks(notion: Client, page_id: str, blocks: list[dict]) -> None:
     if not blocks:
         return
+
+    # Notion limits inline children nesting to 2 levels per request. Strip
+    # children from each block and append them recursively to the created
+    # block's id so arbitrarily deep trees (e.g. nested bullet lists) work.
+    pending: list[list | None] = [_pop_children_for_recursion(b) for b in blocks]
+
+    created_ids: list[str] = []
     for idx in range(0, len(blocks), MAX_CHILDREN_PER_REQUEST):
         batch = blocks[idx : idx + MAX_CHILDREN_PER_REQUEST]
-        request_blocks = _prepare_blocks_for_append(batch)
-        response = _retry_with_backoff(
-            lambda b=request_blocks: notion.blocks.children.append(
-                block_id=parent_id, children=b
-            )
-        )
-        results = response.get("results", [])
-        if len(results) != len(batch):
-            raise RuntimeError("Notion append returned an unexpected number of blocks")
-        for original, created in zip(batch, results):
-            child_blocks = _block_children(original)
-            if not child_blocks or original["type"] in INLINE_CHILDREN_REQUIRED_TYPES:
-                continue
-            child_id = created.get("id")
-            if not child_id:
-                raise RuntimeError("Notion append response omitted a created block id")
-            # Notion only allows two levels of nesting per append request.
-            append_blocks(notion, child_id, child_blocks)
+        attempt = 0
+        while True:
+            try:
+                resp = notion.blocks.children.append(
+                    block_id=page_id, children=batch
+                )
+                created_ids.extend(b.get("id", "") for b in resp.get("results", []))
+                break
+            except Exception as exc:  # pragma: no cover
+                attempt += 1
+                retryable = _is_retryable_append_error(exc)
+                if not retryable or attempt > 4:
+                    raise exc
+                time.sleep(1.5**attempt)
+
+    for created_id, children in zip(created_ids, pending):
+        if children and created_id:
+            append_blocks(notion, created_id, children)
 
 
 def parse_args() -> argparse.Namespace:
