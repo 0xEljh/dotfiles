@@ -3,6 +3,7 @@
 - You may propose and endorse design decisions, solutions, and design patterns as you deem fit, with adequate justification
 - **MANDATORY**: When justifying a decision, state alternatives and their pros, cons, and trade-offs so that a "real choice" was made.
 - Avoid over-engineering; keep solutions focused (which often to have a balanced approach to managing coupling, abstractions and dependencies).
+- Unless stated otherwise, backwards compatibility is NEVER a consideration. Assume that we are not working with a production environment and can always wipe all data and start afresh.
 
 If this was asked during a planning phase or discussion with the user, you should provide 2-3 design/implementation approaches wherever applicable. This is NOT optional.
 
