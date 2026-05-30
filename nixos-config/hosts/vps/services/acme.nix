@@ -6,7 +6,7 @@ let
   #   sudo journalctl -u acme-0xeljh-wildcard.service -n 200 --no-pager
   # Staging certs are not browser-trusted; this flag exists so a misconfigured
   # token can't burn the Let's Encrypt prod rate limit.
-  useStaging = true;
+  useStaging = false;
 in
 {
   security.acme = {

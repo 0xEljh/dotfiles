@@ -39,7 +39,13 @@ in
 
   networking.hostName = "vps";
   networking.firewall.allowedTCPPorts = [ 19000 ];
+  # Tailscale uses UDP 41641 and needs reverse-path filtering relaxed; tailscale0 is trusted.
+  networking.firewall.checkReversePath = lib.mkForce "loose";
+  networking.firewall.trustedInterfaces = [ "tailscale0" ];
   time.timeZone = "Asia/Singapore";
+
+  # Tailscale daemon. Run `sudo tailscale up --ssh` once after the first build.
+  services.tailscale.enable = true;
 
   nix = {
     nixPath = [ "nixos-config=/home/${user}/.local/share/src/nixos-config:/etc/nixos" ];
@@ -96,6 +102,8 @@ in
     ${user} = {
       isNormalUser = true;
       shell = pkgs.zsh;
+      # Keep user systemd services (t3-serve) alive across logout.
+      linger = true;
       extraGroups = [
         "wheel"
         "docker"

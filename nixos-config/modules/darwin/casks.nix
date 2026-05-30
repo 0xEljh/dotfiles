@@ -5,7 +5,12 @@ _:
   "homebrew/cask/docker"
   "visual-studio-code"
   "windsurf"
+  # T3 Code: GUI front-end for Codex / Claude Code / OpenCode. See docs/design/t3-code-multi-host.md.
+  "t3-code"
 
+  # Networking
+  # Tailscale GUI + CLI (mesh VPN). Required for connecting to t3 serve --tailscale-serve on VPS/WSL.
+  "tailscale-app"
 
   # Productivity Tools
   "raycast"

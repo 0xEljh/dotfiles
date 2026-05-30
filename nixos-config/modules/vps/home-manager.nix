@@ -15,7 +15,16 @@ let
 	  };
 in
 {
-	imports = [../shared/ai-tools.nix];
+	imports = [
+		../shared/ai-tools.nix
+		../shared/t3-serve.nix
+	];
+
+	services.t3Serve = {
+		enable = true;
+		useTailscaleServe = true;
+	};
+
 	home = {
 	    username = "${user}";
 	    homeDirectory = "/home/${user}";
