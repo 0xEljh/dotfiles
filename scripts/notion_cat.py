@@ -105,8 +105,19 @@ def timestamp_now() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M")
 
 
-def default_title(cwd_name: str, device: str, ts: str) -> str:
-    return f"{cwd_name} @ {device} - {ts}"
+def file_title(path: str) -> str:
+    file_path = Path(path)
+    return file_path.stem.strip() or file_path.name.strip() or path
+
+
+def default_title(paths: list[str], cwd_name: str, ts: str) -> str:
+    if len(paths) == 1 and paths[0] != "-":
+        return file_title(paths[0])
+    if not paths or paths == ["-"]:
+        return f"stdin capture - {cwd_name} - {ts}"
+    if "-" in paths:
+        return f"mixed input - {cwd_name} - {ts}"
+    return f"{len(paths)} files - {cwd_name} - {ts}"
 
 
 def infer_type_from_paths(paths: list[str]) -> str:
@@ -771,7 +782,7 @@ def main() -> int:
     title = (
         args.title
         or os.environ.get("NOTION_CAT_TITLE")
-        or default_title(cwd_name, device, ts)
+        or default_title(args.files, cwd_name, ts)
     )
     type_value = args.type or os.environ.get("NOTION_CAT_TYPE") or inferred_type
     source = args.source or os.environ.get("NOTION_CAT_SOURCE") or device

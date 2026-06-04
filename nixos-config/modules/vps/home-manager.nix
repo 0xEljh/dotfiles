@@ -22,13 +22,20 @@ in
 
 	services.t3Serve = {
 		enable = true;
-		useTailscaleServe = true;
+		# Plain HTTP on the tailnet IP. The tailnet itself is the auth boundary;
+		# we skip Tailscale HTTPS to avoid leaking device names into public CT logs.
+		bindToTailscaleIp = true;
 	};
 
 	home = {
 	    username = "${user}";
 	    homeDirectory = "/home/${user}";
-	    packages = import ../shared/packages.nix { inherit pkgs; };
+	    # codex is excluded on VPS: building from source exhausts RAM and the
+	    # numtide cache miss path is impractical here. Bring it back when there's
+	    # a reliable prebuilt or more RAM.
+	    packages = lib.filter
+	      (p: !(lib.hasInfix "codex" (p.pname or p.name or "")))
+	      (import ../shared/packages.nix { inherit pkgs; });
 	    file = shared-files;
 	    stateVersion = "24.11";
 

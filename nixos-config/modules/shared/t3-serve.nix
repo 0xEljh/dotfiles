@@ -3,7 +3,7 @@
 let
   cfg = config.services.t3Serve;
 
-  serveArgs =
+  staticArgs =
     if cfg.useTailscaleServe then [
       "serve"
       "--tailscale-serve"
@@ -17,18 +17,46 @@ let
       (toString cfg.port)
     ];
 
-  argString = lib.concatStringsSep " " (map lib.escapeShellArg serveArgs);
+  staticArgString = lib.concatStringsSep " " (map lib.escapeShellArg staticArgs);
+
+  needsTailscale = cfg.useTailscaleServe || cfg.bindToTailscaleIp;
 
   t3Wrapper = pkgs.writeShellApplication {
     name = "t3-serve-wrapper";
-    runtimeInputs = [ pkgs.nodejs_24 pkgs.bun ] ++ lib.optional cfg.useTailscaleServe pkgs.tailscale;
+    # node-pty (a t3 transitive dep) runs `sh` and a small build toolchain in
+    # its npm postinstall. Systemd user services start with an empty PATH on
+    # NixOS, so we have to bring our own coreutils / bash / build deps.
+    runtimeInputs = [
+      pkgs.nodejs_24
+      pkgs.bun
+      pkgs.bash
+      pkgs.coreutils
+      pkgs.gnumake
+      pkgs.gcc
+      pkgs.python3
+    ] ++ lib.optional needsTailscale pkgs.tailscale;
     text = ''
       export NPM_CONFIG_YES=true
       export NPM_CONFIG_LOGLEVEL=warn
       # Pre-warm the npx cache so the first real run doesn't hang on download.
       npx -y t3@${cfg.t3Version} --version >/dev/null 2>&1 || true
-      exec npx -y t3@${cfg.t3Version} ${argString}
-    '';
+    '' + (if cfg.bindToTailscaleIp && !cfg.useTailscaleServe then ''
+      # Resolve the tailnet IPv4 at start time so renaming the tailnet or
+      # changing MagicDNS hostnames doesn't require a rebuild.
+      TSIP=""
+      for _ in $(seq 1 30); do
+        TSIP="$(tailscale ip -4 2>/dev/null | head -n1 || true)"
+        if [ -n "$TSIP" ]; then break; fi
+        sleep 1
+      done
+      if [ -z "$TSIP" ]; then
+        echo "t3-serve: could not resolve tailscale IPv4 within 30s" >&2
+        exit 1
+      fi
+      exec npx -y t3@${cfg.t3Version} serve --host "$TSIP" --port ${toString cfg.port}
+    '' else ''
+      exec npx -y t3@${cfg.t3Version} ${staticArgString}
+    '');
   };
 in
 {
@@ -37,10 +65,22 @@ in
 
     useTailscaleServe = lib.mkOption {
       type = lib.types.bool;
-      default = true;
+      default = false;
       description = ''
-        Bind the server via `tailscale serve`, exposing it over the tailnet with TLS.
-        When false, bind to `host`:`port` directly.
+        Bind the server via `tailscale serve`, exposing it over the tailnet
+        with TLS. Requires HTTPS certs to be enabled in the tailnet admin.
+        When false, bind to `host`:`port` directly (or use `bindToTailscaleIp`).
+      '';
+    };
+
+    bindToTailscaleIp = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Resolve the host's tailnet IPv4 at unit start via `tailscale ip -4`
+        and bind there on `port`. Plain HTTP, tailnet-only reachable, and
+        survives tailnet rename / MagicDNS changes. Ignored if
+        `useTailscaleServe = true`.
       '';
     };
 

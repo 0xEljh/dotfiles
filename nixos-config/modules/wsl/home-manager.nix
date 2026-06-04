@@ -33,7 +33,8 @@ in
 
   services.t3Serve = {
     enable = true;
-    useTailscaleServe = true;
+    # Plain HTTP on the tailnet IP — same reasoning as the VPS host config.
+    bindToTailscaleIp = true;
   };
 
   home = {

@@ -52,8 +52,16 @@ in
     settings = {
       allowed-users = [ user ];
       trusted-users = [ "@wheel" user ];
-      substituters = [ "https://cache.nixos.org" ];
-      trusted-public-keys = [ "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=" ];
+      substituters = [
+        "https://cache.nixos.org"
+        # numtide caches the llm-agents.nix builds (codex, opencode, claude-code).
+        # Without this, codex builds from source and exhausts VPS RAM.
+        "https://numtide.cachix.org"
+      ];
+      trusted-public-keys = [
+        "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+        "numtide.cachix.org-1:2ps1kLBUWjxIneOy1Ber+6dwNbSd05yOb6HnGfN1gvI="
+      ];
     };
 
     package = pkgs.nix;
