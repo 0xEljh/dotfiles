@@ -41,9 +41,27 @@ provider's VNC console open across the reboot.
 - SSH is key-only and no console password is set declaratively. Set a
   break-glass console password once per install with `sudo passwd elijah`
   (it persists; `users.mutableUsers` defaults to true).
-- If a new generation comes up without SSH: reboot from the provider panel,
-  and in the VNC console pick `NixOS - All configurations` at the GRUB menu,
-  then the previous generation. No credentials required.
-- After recovering, inspect the failed boot:
-  `journalctl -b -1 -p err` and
-  `journalctl -b -1 -u network-setup.service -u network-addresses-eth0.service -u sshd.service`.
+- If a new generation comes up without SSH, roll back to the previous
+  generation from the GRUB menu (`NixOS - All configurations`). No
+  credentials required. Catching GRUB over VNC:
+  - Panel-initiated restarts drop the VNC session, which usually reconnects
+    too late. Instead send Ctrl+Alt+Del *through the VNC console* (toolbar
+    button; works at the login prompt without logging in). A guest-initiated
+    reboot keeps the hypervisor VNC session alive, so the GRUB menu is
+    visible in the same window - press an arrow key to stop the countdown.
+  - `boot.loader.timeout = 15` exists to widen this window.
+- If GRUB can't be caught at all, boot the provider's rescue system (it is
+  reachable over SSH at the public IP, no VNC race). From rescue:
+  `mount /dev/sda3 /mnt`, then any of:
+  - set a console password: generate with `openssl passwd -6`, paste into the
+    user's second field in `/mnt/etc/shadow` (persists; mutableUsers),
+  - raise `set timeout=` in `/mnt/boot/grub/grub.cfg` to 60 so the GRUB menu
+    can be caught after a normal reboot,
+  - then disable rescue mode and reboot.
+- Once logged in at the console of a broken generation, the network can
+  usually be restored live (sshd is typically fine, only addressing failed):
+  `ip -br link` to find the NIC, then
+  `ip link set eth0 up && ip addr replace 109.123.255.31/20 dev eth0 && ip route replace default via 109.123.240.1 dev eth0`.
+- Inspect the failed boot: `journalctl -b -1 -p err` and
+  `journalctl -b -1 -u network-setup.service -u network-addresses-eth0.service -u sshd.service`
+  (drop `-b -1` if still inside the broken boot).

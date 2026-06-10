@@ -32,6 +32,11 @@ in
     device = lib.mkDefault "/dev/sda";
   };
 
+  # The provider VNC console drops on panel-initiated reboots and takes a
+  # while to reconnect; a longer GRUB window keeps generation rollback
+  # reachable over VNC.
+  boot.loader.timeout = 15;
+
   fileSystems."/" = lib.mkDefault {
     device = "/dev/disk/by-label/nixos";
     fsType = "ext4";
