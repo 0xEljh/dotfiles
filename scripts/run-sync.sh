@@ -26,9 +26,9 @@ fi
 # We change directory to ensure uv finds the sync_wakatime.py and .env file
 cd "$SCRIPT_DIR" || exit
 
+uv run aw_notion_sync.py
 uv run waka_notion_sync.py
 uv run sync_notion_bread_time_accounting.py
-uv run aw_notion_sync.py
 
 YYMMDD="$(date +%y%m%d)"
 ANALYTICS_DIR="$HOME/digital-garden/data"

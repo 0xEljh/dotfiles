@@ -23,7 +23,7 @@ in
   ++ lib.optional (builtins.pathExists ./networking.nix) ./networking.nix;
 
   warnings = lib.optional (!(builtins.pathExists ./hardware-configuration.nix))
-    "hosts/vps/hardware-configuration.nix is missing. Copy /etc/nixos/hardware-configuration.nix from the target host before building vps-bootstrap.";
+    "hosts/vps/hardware-configuration.nix is missing. Copy /etc/nixos/hardware-configuration.nix from the target host before building sleeper-service.";
 
   # Placeholder values keep flake evaluation working on non-target machines.
   # The copied hardware-configuration.nix should override these defaults.

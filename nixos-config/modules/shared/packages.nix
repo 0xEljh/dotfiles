@@ -28,6 +28,7 @@ with pkgs; [
   # Cloud-related tools and SDKs
   docker
   docker-compose
+  rclone
 
   # Media-related packages
   ffmpeg

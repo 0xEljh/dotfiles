@@ -202,6 +202,9 @@ DEV_TOOL_SITES = {
     "colab.research.google.com": "Google Colab",
 }
 
+T3_CODE_HOST = "vps.tail82ff8b.ts.net"
+T3_CODE_PORT = 3773
+
 LOCALHOST_HOSTS = {
     "localhost",
     "127.0.0.1",
@@ -467,6 +470,9 @@ def get_browser_dev_tool_name(url: str, title: str = "") -> str | None:
     hostname = (parsed_url.hostname or "").lower()
     path = (parsed_url.path or "").lower()
     title_lower = title.lower()
+
+    if hostname == T3_CODE_HOST and parsed_url.port == T3_CODE_PORT:
+        return "T3 Code"
 
     for site, display_name in DEV_TOOL_SITES.items():
         if is_domain_or_subdomain(hostname, site):

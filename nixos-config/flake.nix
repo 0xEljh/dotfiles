@@ -113,8 +113,8 @@
       );
 
       nixosConfigurations = {
-        # VPS configuration (initial bootstrap)
-        vps-bootstrap = nixpkgs.lib.nixosSystem {
+        # VPS configuration
+        sleeper-service = nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
           specialArgs = inputs;
           modules = [

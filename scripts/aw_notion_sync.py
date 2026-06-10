@@ -90,6 +90,7 @@ CODING_SITES = {
     "render.com",
     "huggingface.co",
     "colab.research.google.com",
+    "vps.tail82ff8b.ts.net",
 }
 
 # Table header used to identify our stats table
@@ -792,6 +793,30 @@ def find_and_clear_existing_blocks(notion: Client, page_id: str) -> None:
         print(f"Error finding existing blocks: {e}")
 
 
+def find_or_create_time_accounting_page(notion: Client, date_str: str) -> str:
+    """Return the Time Accounting page ID for date_str, creating it when missing."""
+    pages = notion.data_sources.query(
+        data_source_id=NOTION_DATASOURCE_ID,
+        filter={"property": "Date", "date": {"equals": date_str}},
+    ).get("results")
+
+    if pages:
+        page_id = pages[0]["id"]
+        print(f"Found page: {page_id}")
+        return page_id
+
+    created_page = notion.pages.create(
+        parent={"data_source_id": NOTION_DATASOURCE_ID},
+        properties={
+            "Name": {"title": [{"text": {"content": date_str}}]},
+            "Date": {"date": {"start": date_str}},
+        },
+    )
+    page_id = created_page["id"]
+    print(f"Created Time Accounting page for {date_str}: {page_id}")
+    return page_id
+
+
 def sync_date(journal_date: date, notion: Client) -> bool:
     """
     Sync ActivityWatch data for a specific journal date to Notion.
@@ -800,6 +825,15 @@ def sync_date(journal_date: date, notion: Client) -> bool:
     date_str = journal_date.strftime("%Y-%m-%d")
     print(f"\n{'=' * 50}")
     print(f"Syncing ActivityWatch data for: {date_str} (tz: {TARGET_TZ})")
+
+    try:
+        page_id = find_or_create_time_accounting_page(notion, date_str)
+    except Exception as e:
+        print(f"Notion Error: {e}")
+        import traceback
+
+        traceback.print_exc()
+        return False
 
     # Load ActivityWatch data with timezone-aware filtering
     aw_data = load_aw_data_for_journal_day(journal_date)
@@ -825,19 +859,6 @@ def sync_date(journal_date: date, notion: Client) -> bool:
     blocks = build_notion_blocks(hourly_stats)
 
     try:
-        # Find the page for this date
-        pages = notion.data_sources.query(
-            data_source_id=NOTION_DATASOURCE_ID,
-            filter={"property": "Date", "date": {"equals": date_str}},
-        ).get("results")
-
-        if not pages:
-            print(f"No Notion page found for {date_str}")
-            return False
-
-        page_id = pages[0]["id"]
-        print(f"Found page: {page_id}")
-
         # Update hourly select properties based on activity rules
         page_details = notion.pages.retrieve(page_id=page_id)
         page_properties = page_details.get("properties", {})
