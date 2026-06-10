@@ -9,7 +9,7 @@ _:
   "t3-code"
 
   # Networking
-  # Tailscale GUI + CLI (mesh VPN). Required for connecting to t3 serve --tailscale-serve on VPS/WSL.
+  # Tailscale GUI + CLI (mesh VPN). Required for connecting to t3 serve --tailscale-serve on sleeper-service/WSL.
   "tailscale-app"
 
   # Productivity Tools

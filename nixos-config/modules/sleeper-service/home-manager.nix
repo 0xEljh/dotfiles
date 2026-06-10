@@ -5,7 +5,7 @@ let
 	shared-programs = import ../shared/home-manager.nix { inherit config pkgs lib; };
 	shared-files = import ../shared/files.nix { inherit config pkgs; };
 
-	git-vps-config = {
+	git-sleeper-service-config = {
 	    enable = true;
 	    settings = {
 	      user.name = "0xEljh";
@@ -30,7 +30,7 @@ in
 	home = {
 	    username = "${user}";
 	    homeDirectory = "/home/${user}";
-	    # codex is excluded on VPS: building from source exhausts RAM and the
+	    # codex is excluded on sleeper-service: building from source exhausts RAM and the
 	    # numtide cache miss path is impractical here. Bring it back when there's
 	    # a reliable prebuilt or more RAM.
 	    packages = lib.filter
@@ -55,7 +55,7 @@ in
 	};
 	
 	programs = lib.recursiveUpdate shared-programs {
-		git = git-vps-config;
+		git = git-sleeper-service-config;
 	};
 
 }

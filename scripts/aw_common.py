@@ -202,7 +202,7 @@ DEV_TOOL_SITES = {
     "colab.research.google.com": "Google Colab",
 }
 
-T3_CODE_HOST = "vps.tail82ff8b.ts.net"
+T3_CODE_HOST = "sleeper-service.tail82ff8b.ts.net"
 T3_CODE_PORT = 3773
 
 LOCALHOST_HOSTS = {

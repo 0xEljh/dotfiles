@@ -15,8 +15,8 @@ from collections import Counter
 from zoneinfo import ZoneInfo
 
 # --- CONFIGURATION ---
-VPS_ALIAS = "contabo"
-VPS_DEST_DIR = "~/dotfiles/scripts/aw-data/"  # Ensure this folder exists on VPS
+SLEEPER_SERVICE_ALIAS = "contabo"
+SLEEPER_SERVICE_DEST_DIR = "~/dotfiles/scripts/aw-data/"  # Ensure this folder exists on sleeper-service
 TARGET_TZ = ZoneInfo(os.getenv("TARGET_TZ", "Asia/Singapore"))
 # ---------------------
 
@@ -115,7 +115,7 @@ def get_aw_data(target_date=None):
     return target_data
 
 
-def sync_to_vps(data, target_date=None):
+def sync_to_sleeper_service(data, target_date=None):
     hostname = socket.gethostname()
     if target_date is None:
         date_str = datetime.now(TARGET_TZ).strftime("%Y-%m-%d")
@@ -129,21 +129,26 @@ def sync_to_vps(data, target_date=None):
     with open(local_path, "w") as f:
         json.dump(data, f)
 
-    print(f"Pushing {filename} to {VPS_ALIAS}...")
+    print(f"Pushing {filename} to {SLEEPER_SERVICE_ALIAS}...")
 
     # Using the SSH alias directly
-    cmd = ["rsync", "-az", local_path, f"{VPS_ALIAS}:{VPS_DEST_DIR}"]
+    cmd = [
+        "rsync",
+        "-az",
+        local_path,
+        f"{SLEEPER_SERVICE_ALIAS}:{SLEEPER_SERVICE_DEST_DIR}",
+    ]
 
     try:
         subprocess.run(cmd, check=True)
         print("Sync success.")
         subprocess.run(["rm", local_path])  # Cleanup
     except subprocess.CalledProcessError as e:
-        print(f"Sync failed. Check SSH connection to '{VPS_ALIAS}'.")
+        print(f"Sync failed. Check SSH connection to '{SLEEPER_SERVICE_ALIAS}'.")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Push ActivityWatch data to VPS")
+    parser = argparse.ArgumentParser(description="Push ActivityWatch data to sleeper-service")
     parser.add_argument(
         "date",
         nargs="?",
@@ -165,6 +170,6 @@ if __name__ == "__main__":
 
     data = get_aw_data(target_date)
     if data:
-        sync_to_vps(data, target_date)
+        sync_to_sleeper_service(data, target_date)
     else:
         print(f"No data found for {target_date or 'today'}.")

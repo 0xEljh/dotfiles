@@ -33,7 +33,7 @@ in
 
   services.t3Serve = {
     enable = true;
-    # Plain HTTP on the tailnet IP — same reasoning as the VPS host config.
+    # Plain HTTP on the tailnet IP; same reasoning as sleeper-service.
     bindToTailscaleIp = true;
   };
 
@@ -121,7 +121,7 @@ in
 
   systemd.user.services.aw-push = {
     Unit = {
-      Description = "Push ActivityWatch data to VPS";
+      Description = "Push ActivityWatch data to sleeper-service";
     };
     Service = {
       Type = "oneshot";

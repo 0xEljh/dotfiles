@@ -1,6 +1,6 @@
 # dotfiles
 
-`nixos-config` is forked from [dustinlyons' nixos-config](https://github.com/dustinlyons/nixos-config)
+`nixos-config` is originally forked from [dustinlyons' nixos-config](https://github.com/dustinlyons/nixos-config), now trimmed to macOS (nix-darwin), WSL, and sleeper-service targets
 `nvim` is built off lazyvim.
 `scripts` contains my automations for time-accounting.
 
@@ -39,7 +39,7 @@ These paths and signatures are stable across rebuilds.
 
 ### 2) Centralized + Extensible AI-tool configs (`ai-tools/`)
 
-`ai-tools/` is the source-of-truth for agent instructions + shared skills, used by both OpenCode and Claude Code.
+`ai-tools/` is the source-of-truth for agent instructions + shared skills, used by OpenCode, Claude Code, and Codex CLI.
 These are global configs (separate from the local/project-based counterparts)
 
 Inputs:
@@ -47,6 +47,7 @@ Inputs:
 - Shared base: `ai-tools/shared/AI.md`
 - OpenCode layer: `ai-tools/opencode/AGENTS.md`
 - Claude layer: `ai-tools/claude-code/CLAUDE.md`
+- Codex layer: `ai-tools/codex/AGENTS.md`
 
 Wiring:
 
@@ -54,13 +55,31 @@ Wiring:
 
 What activation does:
 
-- Symlinks shared skills into both global config files
+- Symlinks shared skills into each tool's global config dir.
 - -> Only need to maintain the global configs in this folder.
 - Generates combined instruction files by concatenating `shared/AI.md` + tool layer, separated by `---`:
   - `~/.config/opencode/AGENTS.md`
   - `~/.claude/CLAUDE.md`
+  - `~/.codex/AGENTS.md`
 
 Note: `ai-tools/opencode/opencode.json` and `ai-tools/claude-code/settings.json` are currently uninitialised; if missing, activation warns and proceeds on best-effort.
+
+### 2a) T3 Code remote agents (mobile + cross-device)
+
+[T3 Code](https://github.com/pingdotgg/t3code) is a GUI front-end for Claude Code / OpenCode / Codex. This repo wires it up across all three hosts. Design: [`docs/design/t3-code-multi-host.md`](docs/design/t3-code-multi-host.md).
+
+- **sleeper-service + WSL** run `npx t3 serve --tailscale-serve` as a user systemd service. Module: `nixos-config/modules/shared/t3-serve.nix`.
+- **macOS** installs the T3 Code desktop app + Tailscale via Homebrew casks (`t3-code`, `tailscale-app`).
+- **Mobile / any device** uses [https://app.t3.codes](https://app.t3.codes) over the tailnet.
+
+One-time per host after first build:
+
+- sleeper-service: `sudo tailscale up --ssh`
+- macOS: launch Tailscale.app, sign in
+- WSL: `sudo tailscale up` (Tailscale was already enabled here)
+
+Then on the desktop client (Mac), pair via the QR / URL printed by the running `t3-serve` user service:
+`journalctl --user -u t3-serve -f` on the host.
 
 ### 3) `notion-cat`: `cat` to Notion
 

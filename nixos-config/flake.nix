@@ -1,5 +1,5 @@
 {
-  description = "Configuration for macOS, WSL, and VPS";
+  description = "Configuration for macOS, WSL, and sleeper-service";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
@@ -113,7 +113,7 @@
       );
 
       nixosConfigurations = {
-        # VPS configuration
+        # sleeper-service configuration
         sleeper-service = nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
           specialArgs = inputs;
@@ -124,10 +124,10 @@
 		useUserPackages = true;
 		backupFileExtension = "backup";
 		overwriteBackup = true;
-		users.${user} = import ./modules/vps/home-manager.nix;
+		users.${user} = import ./modules/sleeper-service/home-manager.nix;
 		};
 	    }
-            ./hosts/vps
+            ./hosts/sleeper-service
           ];
         };
 

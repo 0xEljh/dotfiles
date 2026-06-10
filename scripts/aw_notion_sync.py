@@ -90,7 +90,7 @@ CODING_SITES = {
     "render.com",
     "huggingface.co",
     "colab.research.google.com",
-    "vps.tail82ff8b.ts.net",
+    "sleeper-service.tail82ff8b.ts.net",
 }
 
 # Table header used to identify our stats table

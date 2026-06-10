@@ -23,7 +23,7 @@ in
   ++ lib.optional (builtins.pathExists ./networking.nix) ./networking.nix;
 
   warnings = lib.optional (!(builtins.pathExists ./hardware-configuration.nix))
-    "hosts/vps/hardware-configuration.nix is missing. Copy /etc/nixos/hardware-configuration.nix from the target host before building sleeper-service.";
+    "hosts/sleeper-service/hardware-configuration.nix is missing. Copy /etc/nixos/hardware-configuration.nix from the target host before building sleeper-service.";
 
   # Placeholder values keep flake evaluation working on non-target machines.
   # The copied hardware-configuration.nix should override these defaults.
@@ -37,7 +37,7 @@ in
     fsType = "ext4";
   };
 
-  networking.hostName = "vps";
+  networking.hostName = "sleeper-service";
   networking.firewall.allowedTCPPorts = [ 19000 ];
   # Tailscale uses UDP 41641 and needs reverse-path filtering relaxed; tailscale0 is trusted.
   networking.firewall.checkReversePath = lib.mkForce "loose";
@@ -55,7 +55,7 @@ in
       substituters = [
         "https://cache.nixos.org"
         # numtide caches the llm-agents.nix builds (codex, opencode, claude-code).
-        # Without this, codex builds from source and exhausts VPS RAM.
+        # Without this, codex builds from source and exhausts sleeper-service RAM.
         "https://numtide.cachix.org"
       ];
       trusted-public-keys = [
