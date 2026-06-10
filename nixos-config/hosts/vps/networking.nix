@@ -1,39 +1,23 @@
 { lib, ... }: {
-  # This file was populated at runtime with the networking
-  # details gathered from the active system.
+  # Static networking captured from the provider by nixos-infect.
+  # IPv6 is unconfigured on this host; the generator emitted empty
+  # defaultGateway6/ipv6.routes entries that expand to invalid
+  # `ip -6 route` commands in network-setup, so they are stripped.
+  # docker0 is managed by the docker daemon (random MAC per boot),
+  # so it must not be declared as a static interface here.
   networking = {
-    nameservers = [ "8.8.8.8"
- ];
+    nameservers = [ "8.8.8.8" ];
     defaultGateway = "109.123.240.1";
-    defaultGateway6 = {
-      address = "";
-      interface = "eth0";
-    };
     dhcpcd.enable = false;
     usePredictableInterfaceNames = lib.mkForce false;
-    interfaces = {
-      eth0 = {
-        ipv4.addresses = [
-          { address="109.123.255.31"; prefixLength=20; }
-        ];
-        ipv6.addresses = [
-          
-        ];
-        ipv4.routes = [ { address = "109.123.240.1"; prefixLength = 32; } ];
-        ipv6.routes = [ { address = ""; prefixLength = 128; } ];
-      };
-            docker0 = {
-        ipv4.addresses = [
-          { address="172.17.0.1"; prefixLength=16; }
-        ];
-        ipv6.addresses = [
-          
-        ];
-        };
+    interfaces.eth0 = {
+      ipv4.addresses = [
+        { address = "109.123.255.31"; prefixLength = 20; }
+      ];
+      ipv4.routes = [ { address = "109.123.240.1"; prefixLength = 32; } ];
     };
   };
   services.udev.extraRules = ''
     ATTR{address}=="00:50:56:4b:47:77", NAME="eth0"
-    ATTR{address}=="02:42:44:b8:e2:eb", NAME="docker0"
   '';
 }

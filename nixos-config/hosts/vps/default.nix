@@ -37,7 +37,8 @@ in
     fsType = "ext4";
   };
 
-  networking.hostName = "vps";
+  # Matches the flake attr so `nixos-rebuild --flake .` resolves by hostname.
+  networking.hostName = "sleeper-service";
   networking.firewall.allowedTCPPorts = [ 19000 ];
   # Tailscale uses UDP 41641 and needs reverse-path filtering relaxed; tailscale0 is trusted.
   networking.firewall.checkReversePath = lib.mkForce "loose";
@@ -46,6 +47,12 @@ in
 
   # Tailscale daemon. Run `sudo tailscale up --ssh` once after the first build.
   services.tailscale.enable = true;
+
+  # nixos-unstable flipped the default system bus to dbus-broker. The bus
+  # cannot be swapped on a live system, so any rebuild that crosses an
+  # implementation change must land via `nixos-rebuild boot` + reboot,
+  # not `nixos-rebuild switch`.
+  services.dbus.implementation = "broker";
 
   nix = {
     nixPath = [ "nixos-config=/home/${user}/.local/share/src/nixos-config:/etc/nixos" ];
