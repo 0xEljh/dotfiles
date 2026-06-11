@@ -1,10 +1,10 @@
 { user }:
-{ pkgs, ... }:
+{ config, pkgs, ... }:
 
 let
   homeDir = "/home/${user}";
   botDir = "${homeDir}/dotfiles/scripts/personal_telegram_bot";
-  envFile = "${homeDir}/.config/personal-telegram-bot/bot.env";
+  envFile = config.sops.secrets."telegram-bot.env".path;
 
   botService = command: {
     after = [ "network-online.target" ];

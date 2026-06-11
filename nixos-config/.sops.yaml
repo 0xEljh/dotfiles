@@ -2,16 +2,19 @@
 #
 # Host keys are the machines' SSH ed25519 host keys converted with ssh-to-age;
 # sops-nix derives the matching age identity from /etc/ssh/ssh_host_ed25519_key
-# at activation time, so hosts need no extra key material.
-# The user key lives at ~/.config/sops/age/keys.txt (generated on
-# sleeper-service 2026-06-11). The MacBook has no reachable sshd, so darwin
-# secrets are encrypted to the user key only until a Mac key is added.
+# on that host at activation time. Host private keys never leave their machine.
+# The user key lives at ~/.config/sops/age/keys.txt on sleeper-service
+# (generated 2026-06-11); it exists so secrets can be edited with `sops`.
 #
-# After adding/removing recipients: sops updatekeys secrets/<host>/<file>
+# To register another host (the WSL machine, the Mac, ...), run ON that host:
+#   ssh-to-age < /etc/ssh/ssh_host_ed25519_key.pub
+# add the printed key here, reference it in the matching rule, then run
+#   sops updatekeys secrets/<host>/<file>
 keys:
   - &user_elijah age1ptuayprnecag3e3spdhfvaa70654dyzcguexa4sr7xrl32j8sp0qw360ne
   - &host_sleeper_service age1jpj9umjvcfphhdtf8kxjyah6m8g4mqwgrghxfvp5eunyp2d8qufsswd42m
-  - &host_limiting_factor age18mhyn8el676gll79vh7q6fa5e5u8gh8jccv9yhw5hyyrwjln5qsqdd9u74
+  # WSL inside central-node (tailnet `nixos`), registered 2026-06-12.
+  - &host_wsl age12t298h9gsmu3j8lpw0ywpzggzl7sfcsv0ts7kz9yqfdp72e03auq0hjnl2
 
 creation_rules:
   - path_regex: secrets/sleeper-service/[^/]+$
@@ -23,15 +26,17 @@ creation_rules:
     key_groups:
       - age:
           - *user_elijah
-          - *host_limiting_factor
+          - *host_wsl
+  # The MacBook exposes no sshd to scan; register a key from it before
+  # giving it secrets.
   - path_regex: secrets/darwin/[^/]+$
     key_groups:
       - age:
           - *user_elijah
-  # Shared secrets readable by every current machine.
+  # Shared secrets readable by every registered machine.
   - path_regex: secrets/[^/]+$
     key_groups:
       - age:
           - *user_elijah
           - *host_sleeper_service
-          - *host_limiting_factor
+          - *host_wsl

@@ -15,6 +15,7 @@ in
 {
   imports = [
     ../../modules/shared
+    ./secrets.nix
     ./services/acme.nix
     ./services/nginx-acme.nix
     (import ./services/web-apps.nix { inherit user; })

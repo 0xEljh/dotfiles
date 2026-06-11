@@ -35,6 +35,10 @@ in
     enable = true;
     # Plain HTTP on the tailnet IP; same reasoning as sleeper-service.
     bindToTailscaleIp = true;
+    # Same patched build as sleeper-service. Copy the tarball here BEFORE
+    # rebuilding, or t3-serve will crash-loop on a missing file:
+    #   scp sleeper-service:.local/share/t3/t3-0.0.27-pr2673-2811.0.tgz ~/.local/share/t3/
+    t3Package = "file:/home/elijah/.local/share/t3/t3-0.0.27-pr2673-2811.0.tgz";
   };
 
   home = {

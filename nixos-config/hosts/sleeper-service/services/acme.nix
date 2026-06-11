@@ -1,4 +1,4 @@
-{ ... }:
+{ config, ... }:
 
 let
   # Flip to false after the first successful staging issuance, then rebuild.
@@ -21,7 +21,7 @@ in
       domain = "0xeljh.com";
       extraDomainNames = [ "*.0xeljh.com" ];
       dnsProvider = "namesilo";
-      environmentFile = "/var/lib/secrets/acme-0xeljh.env";
+      environmentFile = config.sops.secrets."acme-namesilo.env".path;
       # Use a public resolver to follow propagation from NameSilo's
       # authoritative nameservers (DNSOWL) rather than the box's local
       # resolver, which may cache stale negatives.

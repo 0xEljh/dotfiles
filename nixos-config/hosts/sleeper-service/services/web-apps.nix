@@ -1,5 +1,5 @@
 { user }:
-{ pkgs, ... }:
+{ config, pkgs, ... }:
 
 let
   vampBackendPort = 18821;
@@ -88,7 +88,7 @@ in
           # gcc for runtime/cgo. All deps (pgx, etc.) are pure-Go already.
           "CGO_ENABLED=0"
         ];
-        EnvironmentFile = "${kodoConfigDir}/api.env";
+        EnvironmentFile = config.sops.secrets."kodo-api.env".path;
         ExecStart = "${pkgs.go}/bin/go run ./cmd/api";
         Restart = "always";
         RestartSec = "5s";
