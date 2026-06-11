@@ -68,9 +68,10 @@ Note: `ai-tools/opencode/opencode.json` and `ai-tools/claude-code/settings.json`
 
 [T3 Code](https://github.com/pingdotgg/t3code) is a GUI front-end for Claude Code / OpenCode / Codex. This repo wires it up across all three hosts. Design: [`docs/design/t3-code-multi-host.md`](docs/design/t3-code-multi-host.md).
 
-- **sleeper-service + WSL** run `npx t3 serve --tailscale-serve` as a user systemd service. Module: `nixos-config/modules/shared/t3-serve.nix`.
+- **sleeper-service + WSL** run `npx t3 serve` as a user systemd service bound to the host's Tailnet IPv4 on port `3773`. Module: `nixos-config/modules/shared/t3-serve.nix`.
 - **macOS** installs the T3 Code desktop app + Tailscale via Homebrew casks (`t3-code`, `tailscale-app`).
-- **Mobile / any device** uses [https://app.t3.codes](https://app.t3.codes) over the tailnet.
+- **Mobile / any device** can pair to a Tailnet-reachable endpoint. The hosted app at [https://app.t3.codes](https://app.t3.codes) requires an HTTPS/WSS backend, so enable `services.t3Serve.useTailscaleServe` for that flow.
+- T3 is pinned by default in `services.t3Serve.t3Version`; use `services.t3Serve.t3Package` for a patched npm package when testing OpenCode fixes.
 
 One-time per host after first build:
 

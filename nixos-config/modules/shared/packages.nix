@@ -57,6 +57,7 @@ with pkgs; [
   hunspell
   jq
   ripgrep
+  ast-grep
   tree
   tmux
   unrar
@@ -77,6 +78,9 @@ with pkgs; [
   uv
   ruff
   pyright
+
+  # Secret management
+  sops
 ]
 ++ lib.optionals (pkgs ? llm-agents && pkgs.llm-agents ? opencode) [ llm-agents.opencode ]
 ++ lib.optionals (pkgs ? llm-agents && pkgs.llm-agents ? codex) [ llm-agents.codex ]

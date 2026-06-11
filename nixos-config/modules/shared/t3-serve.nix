@@ -2,6 +2,9 @@
 
 let
   cfg = config.services.t3Serve;
+  t3PackageSpec =
+    if cfg.t3Package == null then "t3@${cfg.t3Version}" else cfg.t3Package;
+  t3PackageArg = lib.escapeShellArg t3PackageSpec;
 
   staticArgs =
     if cfg.useTailscaleServe then [
@@ -38,8 +41,9 @@ let
     text = ''
       export NPM_CONFIG_YES=true
       export NPM_CONFIG_LOGLEVEL=warn
+      echo ${lib.escapeShellArg "t3-serve: using ${t3PackageSpec}"}
       # Pre-warm the npx cache so the first real run doesn't hang on download.
-      npx -y t3@${cfg.t3Version} --version >/dev/null 2>&1 || true
+      npx -y ${t3PackageArg} --version >/dev/null 2>&1 || true
     '' + (if cfg.bindToTailscaleIp && !cfg.useTailscaleServe then ''
       # Resolve the tailnet IPv4 at start time so renaming the tailnet or
       # changing MagicDNS hostnames doesn't require a rebuild.
@@ -53,9 +57,9 @@ let
         echo "t3-serve: could not resolve tailscale IPv4 within 30s" >&2
         exit 1
       fi
-      exec npx -y t3@${cfg.t3Version} serve --host "$TSIP" --port ${toString cfg.port}
+      exec npx -y ${t3PackageArg} serve --host "$TSIP" --port ${toString cfg.port}
     '' else ''
-      exec npx -y t3@${cfg.t3Version} ${staticArgString}
+      exec npx -y ${t3PackageArg} ${staticArgString}
     '');
   };
 in
@@ -104,10 +108,20 @@ in
 
     t3Version = lib.mkOption {
       type = lib.types.str;
-      default = "latest";
+      default = "0.0.27";
       description = ''
-        npm tag or version of `t3` to run via `npx`. Pin to a specific version
-        once you have a known-good build to avoid alpha churn.
+        npm tag or version of `t3` to run via `npx` when `t3Package` is unset.
+        Keep this pinned to avoid alpha churn.
+      '';
+    };
+
+    t3Package = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      example = "@your-scope/t3-open-code-fix@0.0.27-pr2673-2811";
+      description = ''
+        Full npm package spec to run via `npx`. When set, this overrides
+        `t3Version` and allows targeted patched packages or aliases.
       '';
     };
   };
@@ -116,7 +130,7 @@ in
     systemd.user.services.t3-serve = {
       Unit = {
         Description = "T3 Code headless agent server (npx t3 serve)";
-        Documentation = [ "https://github.com/pingdotgg/t3code/blob/main/REMOTE.md" ];
+        Documentation = [ "https://github.com/pingdotgg/t3code/blob/main/docs/user/remote-access.md" ];
         Wants = [ "network-online.target" ];
         After = [ "network-online.target" ];
       };

@@ -31,16 +31,30 @@
       url = "github:numtide/llm-agents.nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    sops-nix = {
+      url = "github:Mic92/sops-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, home-manager, nixpkgs, nixos-wsl, llm-agents } @inputs:
+  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, home-manager, nixpkgs, nixos-wsl, llm-agents, sops-nix } @inputs:
     let
       user = "elijah";
       darwinSystems = [ "aarch64-darwin" "x86_64-darwin" ];
-      forAllSystems = f: nixpkgs.lib.genAttrs darwinSystems f;
+      devShellSystems = darwinSystems ++ [ "x86_64-linux" ];
+      forDevShellSystems = f: nixpkgs.lib.genAttrs devShellSystems f;
       devShell = system: let pkgs = nixpkgs.legacyPackages.${system}; in {
         default = with pkgs; mkShell {
-          nativeBuildInputs = with pkgs; [ bashInteractive git ];
+          nativeBuildInputs = with pkgs; [
+            age
+            ast-grep
+            bashInteractive
+            direnv
+            git
+            nix-direnv
+            sops
+            ssh-to-age
+          ];
           shellHook = with pkgs; ''
             export EDITOR=vim
           '';
@@ -66,7 +80,7 @@
       };
     in
     {
-      devShells = forAllSystems devShell;
+      devShells = forDevShellSystems devShell;
       apps = nixpkgs.lib.genAttrs darwinSystems mkDarwinApps;
 
       darwinConfigurations = nixpkgs.lib.genAttrs darwinSystems (system: let
@@ -93,6 +107,7 @@
           specialArgs = inputs;
           modules = [
             home-manager.darwinModules.home-manager
+            sops-nix.darwinModules.sops
             nix-homebrew.darwinModules.nix-homebrew
             {
               nix-homebrew = {
@@ -118,6 +133,7 @@
           system = "x86_64-linux";
           specialArgs = inputs;
           modules = [
+	    sops-nix.nixosModules.sops
 	    home-manager.nixosModules.home-manager {
 	      home-manager = {
 	        useGlobalPkgs = true;
@@ -136,6 +152,7 @@
           system = "x86_64-linux";
           specialArgs = inputs // { inherit nixos-wsl; };
           modules = [
+            sops-nix.nixosModules.sops
             home-manager.nixosModules.home-manager {
               home-manager = {
                 useGlobalPkgs = true;

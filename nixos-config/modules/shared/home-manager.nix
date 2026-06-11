@@ -4,6 +4,11 @@ let name = "elijah";
     user = "elijah";
     email = "elijahng96@gmail.com"; in
 {
+  direnv = {
+    enable = true;
+    nix-direnv.enable = true;
+  };
+
   # Shared shell configuration
   zsh = {
     enable = true;

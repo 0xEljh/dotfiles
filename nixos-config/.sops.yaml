@@ -1,0 +1,37 @@
+# age recipients for sops-encrypted secrets under secrets/.
+#
+# Host keys are the machines' SSH ed25519 host keys converted with ssh-to-age;
+# sops-nix derives the matching age identity from /etc/ssh/ssh_host_ed25519_key
+# at activation time, so hosts need no extra key material.
+# The user key lives at ~/.config/sops/age/keys.txt (generated on
+# sleeper-service 2026-06-11). The MacBook has no reachable sshd, so darwin
+# secrets are encrypted to the user key only until a Mac key is added.
+#
+# After adding/removing recipients: sops updatekeys secrets/<host>/<file>
+keys:
+  - &user_elijah age1ptuayprnecag3e3spdhfvaa70654dyzcguexa4sr7xrl32j8sp0qw360ne
+  - &host_sleeper_service age1jpj9umjvcfphhdtf8kxjyah6m8g4mqwgrghxfvp5eunyp2d8qufsswd42m
+  - &host_limiting_factor age18mhyn8el676gll79vh7q6fa5e5u8gh8jccv9yhw5hyyrwjln5qsqdd9u74
+
+creation_rules:
+  - path_regex: secrets/sleeper-service/[^/]+$
+    key_groups:
+      - age:
+          - *user_elijah
+          - *host_sleeper_service
+  - path_regex: secrets/wsl/[^/]+$
+    key_groups:
+      - age:
+          - *user_elijah
+          - *host_limiting_factor
+  - path_regex: secrets/darwin/[^/]+$
+    key_groups:
+      - age:
+          - *user_elijah
+  # Shared secrets readable by every current machine.
+  - path_regex: secrets/[^/]+$
+    key_groups:
+      - age:
+          - *user_elijah
+          - *host_sleeper_service
+          - *host_limiting_factor
