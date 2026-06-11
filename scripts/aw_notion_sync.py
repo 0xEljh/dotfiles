@@ -808,7 +808,9 @@ def find_or_create_time_accounting_page(notion: Client, date_str: str) -> str:
     created_page = notion.pages.create(
         parent={"data_source_id": NOTION_DATASOURCE_ID},
         properties={
-            "Name": {"title": [{"text": {"content": date_str}}]},
+            # Key by the stable property ID "title" so renames of the title
+            # column in Notion (currently named "") cannot break creation.
+            "title": {"title": [{"text": {"content": date_str}}]},
             "Date": {"date": {"start": date_str}},
         },
     )

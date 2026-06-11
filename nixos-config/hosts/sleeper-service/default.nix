@@ -18,6 +18,7 @@ in
     ./services/acme.nix
     ./services/nginx-acme.nix
     (import ./services/web-apps.nix { inherit user; })
+    (import ./services/telegram-bot.nix { inherit user; })
   ]
   ++ lib.optional (builtins.pathExists ./hardware-configuration.nix) ./hardware-configuration.nix
   ++ lib.optional (builtins.pathExists ./networking.nix) ./networking.nix;
