@@ -21,7 +21,7 @@ in
       domain = "0xeljh.com";
       extraDomainNames = [ "*.0xeljh.com" ];
       dnsProvider = "namesilo";
-      credentialsFile = "/var/lib/secrets/acme-0xeljh.env";
+      environmentFile = "/var/lib/secrets/acme-0xeljh.env";
       # Use a public resolver to follow propagation from NameSilo's
       # authoritative nameservers (DNSOWL) rather than the box's local
       # resolver, which may cache stale negatives.
