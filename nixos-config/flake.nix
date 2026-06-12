@@ -147,8 +147,8 @@
           ];
         };
 
-        # WSL Configuration
-        wsl = nixpkgs.lib.nixosSystem {
+        # NixOS on WSL inside central-node
+        contents-may-differ = nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
           specialArgs = inputs // { inherit nixos-wsl; };
           modules = [

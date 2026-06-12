@@ -99,6 +99,12 @@ in
   # ============================================================================
   # NETWORKING / FIREWALL
   # ============================================================================
+
+  # NixOS-WSL writes this through to /etc/wsl.conf, and the tailnet machine
+  # name follows it (node was never renamed in the admin console). Takes
+  # effect on the next WSL distro restart.
+  networking.hostName = "contents-may-differ";
+
   # Trust the Tailscale interface so user services (e.g. openportal on :8765)
   # are reachable from other devices on the tailnet without per-port rules.
   # The wider internet is still gated by the default-deny firewall.

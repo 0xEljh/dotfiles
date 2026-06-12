@@ -13,7 +13,8 @@
 keys:
   - &user_elijah age1ptuayprnecag3e3spdhfvaa70654dyzcguexa4sr7xrl32j8sp0qw360ne
   - &host_sleeper_service age1jpj9umjvcfphhdtf8kxjyah6m8g4mqwgrghxfvp5eunyp2d8qufsswd42m
-  # WSL inside central-node (tailnet `nixos`), registered 2026-06-12.
+  # WSL inside central-node (hostname/tailnet `contents-may-differ`),
+  # registered 2026-06-12.
   - &host_wsl age12t298h9gsmu3j8lpw0ywpzggzl7sfcsv0ts7kz9yqfdp72e03auq0hjnl2
 
 creation_rules:
