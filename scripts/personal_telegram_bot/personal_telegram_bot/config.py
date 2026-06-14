@@ -12,6 +12,11 @@ from .providers import aw_hours
 
 DEFAULT_ENV_FILE = Path.home() / ".config" / "personal-telegram-bot" / "bot.env"
 DEFAULT_DB_PATH = Path.home() / ".local" / "state" / "personal-telegram-bot" / "state.sqlite3"
+# Phone telemetry lives in its own database: different lifecycle (telemetry vs
+# bot bookkeeping), and it keeps the hot WAL file out of the git-synced repo.
+DEFAULT_LIFE_DB_PATH = (
+    Path.home() / ".local" / "state" / "personal-telegram-bot" / "life_events.sqlite3"
+)
 
 # Units and endpoints hosted on sleeper-service; override with
 # HEALTH_SYSTEMD_UNITS / HEALTH_HTTP_URLS (comma-separated).
@@ -53,6 +58,10 @@ class Config:
     health_urls: list[str]
     aw_data_dir: Path
     aw_max_age_hours: float
+    life_db_path: Path
+    life_ingest_token: str | None
+    life_ingest_bind: str
+    life_ingest_port: int
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -82,4 +91,10 @@ class Config:
             health_urls=_parse_csv(env.get("HEALTH_HTTP_URLS", ",".join(DEFAULT_HEALTH_URLS))),
             aw_data_dir=Path(env.get("AW_DATA_DIR", str(aw_hours.DEFAULT_AW_DATA_DIR))),
             aw_max_age_hours=float(env.get("AW_DATA_MAX_AGE_HOURS", str(aw_hours.DEFAULT_MAX_AGE_HOURS))),
+            life_db_path=Path(env.get("LIFE_DB", str(DEFAULT_LIFE_DB_PATH))),
+            life_ingest_token=env.get("LIFE_INGEST_TOKEN") or None,
+            # nginx (hooks.0xeljh.com) is the sole entrypoint and terminates
+            # TLS, so the app binds loopback only — no direct public/tailnet port.
+            life_ingest_bind=env.get("LIFE_INGEST_BIND", "127.0.0.1"),
+            life_ingest_port=int(env.get("LIFE_INGEST_PORT", "8830")),
         )

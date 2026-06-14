@@ -13,7 +13,11 @@
     format = "dotenv";
     sopsFile = ../../secrets/sleeper-service/telegram-bot.env;
     key = "";
-    restartUnits = [ "personal-telegram-bot.service" ];
+    restartUnits = [
+      "personal-telegram-bot.service"
+      "personal-telegram-bot-t3-pairing.service"
+      "personal-telegram-bot-ingest.service"
+    ];
   };
 
   sops.secrets."acme-namesilo.env" = {

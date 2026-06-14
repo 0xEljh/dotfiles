@@ -56,6 +56,38 @@ in
         };
       };
 
+    personal-telegram-bot-t3-pairing =
+      let base = botService "watch t3-pairing";
+      in base // {
+        description = "Publish T3 Code pairing keys via Telegram";
+        wantedBy = [ "multi-user.target" ];
+        serviceConfig = base.serviceConfig // {
+          Type = "simple";
+          Restart = "always";
+          RestartSec = "5s";
+          KillSignal = "SIGINT";
+          TimeoutStopSec = "30s";
+        };
+      };
+
+    # Tailnet-only HTTP endpoint for phone life events (Sleep as Android
+    # webhooks, MacroDroid screen events). No firewall change: the port is not
+    # publicly allowed and tailscale0 is a trusted interface; the URL token
+    # gates other tailnet peers.
+    personal-telegram-bot-ingest =
+      let base = botService "serve-ingest";
+      in base // {
+        description = "Life-event ingest endpoint (sleep, screen sessions)";
+        wantedBy = [ "multi-user.target" ];
+        serviceConfig = base.serviceConfig // {
+          Type = "simple";
+          Restart = "always";
+          RestartSec = "5s";
+          KillSignal = "SIGINT";
+          TimeoutStopSec = "30s";
+        };
+      };
+
     personal-telegram-bot-morning =
       mkOneshot "Morning Notion Bread digest via Telegram" "send morning";
 
@@ -80,11 +112,15 @@ in
 
   systemd.timers = {
     personal-telegram-bot-morning = {
-      description = "Morning digest at 09:30 local time";
+      # Fallback only: the digest is normally sent the moment a wake event
+      # (sleep_tracking_stopped / alarm_alert_dismiss) reaches the ingest
+      # service. If no wake arrives by noon (untracked night, phone offline),
+      # this sends it anyway. SQLite dedupe makes wake + this idempotent.
+      description = "Morning digest noon fallback (wake-triggered is primary)";
       wantedBy = [ "timers.target" ];
       timerConfig = {
         Unit = "personal-telegram-bot-morning.service";
-        OnCalendar = "*-*-* 09:30:00";
+        OnCalendar = "*-*-* 12:00:00";
         # Catch up after downtime; SQLite dedupe prevents double sends.
         Persistent = true;
       };

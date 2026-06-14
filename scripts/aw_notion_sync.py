@@ -24,6 +24,7 @@ import json
 import glob
 import argparse
 import re
+import subprocess
 from datetime import datetime, timedelta, time, date
 from collections import defaultdict
 from urllib.parse import urlparse
@@ -60,6 +61,13 @@ NOTION_DATASOURCE_ID = os.getenv("NOTION_TIME_ACCOUNTING_DATASOURCE_ID")
 
 # How many hours into "today" we continue to update "yesterday"
 FREEZE_HOURS = int(os.getenv("FREEZE_HOURS", "2"))
+
+# Sleep enrichment: the telegram bot owns the sleep reducer (life_events.sqlite3
+# + pairing logic), so we shell out to its CLI per date rather than re-deriving
+# sleep here. Single source of truth; best-effort so AW sync never depends on it.
+BOT_DIR = os.path.join(current_dir, "personal_telegram_bot")
+SLEEP_HOURS_PROPERTY = "Sleep Hours"  # number property — add it to the database once
+BIO_HOUR_VALUE = "bio"  # hourly select option for sleep (Notion auto-creates it)
 
 # Websites considered as "coding activity"
 CODING_SITES = {
@@ -819,6 +827,33 @@ def find_or_create_time_accounting_page(notion: Client, date_str: str) -> str:
     return page_id
 
 
+def fetch_sleep_summary(date_str: str) -> dict | None:
+    """Sleep summary for date_str from the telegram bot CLI (single source of
+    the sleep reducer). Best-effort: returns None on any failure so the AW sync
+    continues. Shape: {"sleep": {...,"duration_hours":7.55} | None,
+    "sleeping_hours": [0,1,...]}."""
+    try:
+        proc = subprocess.run(
+            ["uv", "run", "--frozen", "--project", BOT_DIR,
+             "botctl", "sleep-summary", "--date", date_str, "--json"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=BOT_DIR,
+        )
+    except Exception as e:
+        print(f"  sleep-summary subprocess error for {date_str}: {e}")
+        return None
+    if proc.returncode != 0:
+        print(f"  sleep-summary failed for {date_str}: {proc.stderr.strip()[:200]}")
+        return None
+    try:
+        return json.loads(proc.stdout)
+    except json.JSONDecodeError as e:
+        print(f"  sleep-summary bad JSON for {date_str}: {e}")
+        return None
+
+
 def sync_date(journal_date: date, notion: Client) -> bool:
     """
     Sync ActivityWatch data for a specific journal date to Notion.
@@ -885,6 +920,19 @@ def sync_date(journal_date: date, notion: Client) -> bool:
                 hourly_updates[prop_name] = {"select": {"name": suggested_value}}
                 updated_hours.append(f"{prop_name}: {suggested_value}")
 
+        # Tag sleeping hours as "bio". Fills empty hours only — an explicit AW
+        # work classification above wins, and a manually-set hour is respected.
+        sleep_summary = fetch_sleep_summary(date_str)
+        for hour in (sleep_summary or {}).get("sleeping_hours", []):
+            prop_name = get_hour_property_name(hour)
+            if prop_name in hourly_updates:
+                continue
+            current_select = page_properties.get(prop_name, {}).get("select")
+            if current_select and current_select.get("name"):
+                continue
+            hourly_updates[prop_name] = {"select": {"name": BIO_HOUR_VALUE}}
+            updated_hours.append(f"{prop_name}: {BIO_HOUR_VALUE}")
+
         # Apply hourly property updates if any
         if hourly_updates:
             notion.pages.update(page_id=page_id, properties=hourly_updates)
@@ -894,6 +942,24 @@ def sync_date(journal_date: date, notion: Client) -> bool:
 
         if skipped_hours:
             print(f"Skipped {len(skipped_hours)} already-filled hours")
+
+        # Headline sleep duration → page property. Separate update with its own
+        # guard so a missing "Sleep Hours" property can't break the bio tags.
+        sleep_record = (sleep_summary or {}).get("sleep")
+        if sleep_record:
+            try:
+                notion.pages.update(
+                    page_id=page_id,
+                    properties={
+                        SLEEP_HOURS_PROPERTY: {"number": sleep_record["duration_hours"]}
+                    },
+                )
+                print(f"Set {SLEEP_HOURS_PROPERTY} = {sleep_record['duration_hours']}h")
+            except Exception as e:
+                print(
+                    f"Skipped {SLEEP_HOURS_PROPERTY} (add a number property named "
+                    f"'{SLEEP_HOURS_PROPERTY}' to the database): {str(e)[:120]}"
+                )
 
         # Clear existing AW blocks
         find_and_clear_existing_blocks(notion, page_id)

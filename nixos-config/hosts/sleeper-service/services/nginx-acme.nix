@@ -24,6 +24,10 @@ in
     recommendedProxySettings = true;
     recommendedTlsSettings = true;
 
+    # Per-source-IP cap for the public webhook vhost. A phone sends a handful
+    # of events a day; 10 r/s (burst 20) is invisible to it but bounds abuse.
+    appendHttpConfig = "limit_req_zone $binary_remote_addr zone=hooks:1m rate=10r/s;";
+
     virtualHosts = {
       # Ad hoc dev/staging entry points for common local app ports.
       "dev-3000.0xeljh.com" = mkProxyHost 3000;
@@ -50,6 +54,21 @@ in
           "/" = {
             proxyPass = "http://127.0.0.1:18002";
           };
+        };
+      };
+
+      # Phone life-event webhooks (Sleep as Android, later MacroDroid/OwnTracks).
+      # The auth token rides in the URL path because Sleep as Android cannot set
+      # headers, so access_log is off to keep it out of logs (the app logs each
+      # request to journald with the token redacted). Rate-limited via the
+      # `hooks` zone below; the app still validates token + payload itself.
+      "hooks.0xeljh.com" = {
+        enableACME = true;
+        forceSSL = true;
+        extraConfig = "access_log off;";
+        locations."/" = {
+          proxyPass = "http://127.0.0.1:8830";
+          extraConfig = "limit_req zone=hooks burst=20 nodelay;";
         };
       };
 

@@ -5,6 +5,7 @@ from typing import Iterable
 
 from .providers.health import CheckResult, Transition
 from .providers.notion_todos import Task
+from .providers.sleep import SleepSummary, duration_hm
 
 MAX_TASKS_PER_SECTION = 15
 MAX_JOURNAL_CHARS = 900
@@ -32,8 +33,20 @@ def _section(header: str, tasks: list[Task], today: date) -> list[str]:
     return lines
 
 
-def format_morning_digest(overdue: list[Task], due_today: list[Task], today: date) -> str:
+def format_sleep_line(sleep: SleepSummary) -> str:
+    window = f"{sleep.start:%H:%M}–{sleep.end:%H:%M}"
+    return f"😴 Slept {duration_hm(sleep.duration_seconds)} ({window})"
+
+
+def format_morning_digest(
+    overdue: list[Task],
+    due_today: list[Task],
+    today: date,
+    sleep: SleepSummary | None = None,
+) -> str:
     header = f"Good morning ☀️ {today.strftime('%a %d %b')}"
+    if sleep:
+        header = f"{header}\n{format_sleep_line(sleep)}"
     if not overdue and not due_today:
         return f"{header}\n\nNo tasks due today and nothing outstanding. Clear runway."
 

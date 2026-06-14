@@ -31,9 +31,9 @@ Then rebuild; `restartUnits` restarts the consuming service automatically
   (`age-keygen -o ~/.config/sops/age/keys.txt`), add its public key to
   `.sops.yaml`, and run `sops updatekeys secrets/**/*.env`.
 - Host keys come from each machine's `/etc/ssh/ssh_host_ed25519_key.pub` via
-  `ssh-to-age`; sleeper-service and limiting-factor (WSL) are in `.sops.yaml`.
-  The MacBook has no reachable sshd, so `secrets/darwin/` currently encrypts
-  to the user key only.
+  `ssh-to-age`; sleeper-service and the WSL machine (tailnet `nixos`, inside
+  central-node) are registered. The MacBook has no reachable sshd — register
+  a key from it (command in `.sops.yaml`) before giving it secrets.
 
 ## Outstanding
 

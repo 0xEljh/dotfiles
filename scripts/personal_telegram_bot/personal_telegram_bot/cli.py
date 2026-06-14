@@ -10,8 +10,12 @@ from .db import StateDB
 from .formatters import (
     format_health_alert,
     format_health_summary,
-    format_morning_digest,
     format_unit_failure,
+)
+from .t3_pairing import (
+    format_t3_pairing_message,
+    pairing_dedupe_key,
+    watch_t3_pairing_journal,
 )
 from .telegram_api import send_message
 
@@ -31,37 +35,62 @@ def send_test(cfg: Config, args) -> int:
 
 
 def send_morning(cfg: Config, args) -> int:
-    from .providers.notion_todos import fetch_due_tasks
+    from .digests import deliver_morning_digest
 
-    if not cfg.notion_token or not cfg.bread_datasource_id:
-        print("NOTION_TOKEN / NOTION_BREAD_DATASOURCE_ID not configured", file=sys.stderr)
-        return 1
+    sent = deliver_morning_digest(
+        cfg, trigger="timer", force=args.force, dry_run=args.dry_run
+    )
+    if not sent:
+        print(f"Morning digest already sent for {datetime.now(cfg.tz).date().isoformat()}")
+    return 0
 
-    today = datetime.now(cfg.tz).date()
-    date_key = today.isoformat()
-    db = StateDB(cfg.db_path)
-    if not args.force and not args.dry_run and db.was_sent("morning", date_key):
-        print(f"Morning digest already sent for {date_key}; use --force to resend")
-        return 0
 
+def run_sleep_summary(args) -> int:
+    """Emit the sleep summary for a date as JSON or text. Deliberately does NOT
+    build a full Config (no Telegram token) so the Notion sync — which runs
+    under dotfiles-sync.service without the bot secret — can call it."""
+    import json
+    import os
+    from pathlib import Path
+    from zoneinfo import ZoneInfo
+
+    from .config import DEFAULT_LIFE_DB_PATH
+    from .life_events import LifeEventsDB
+    from .providers.sleep import duration_hm, sleep_for_date, sleeping_hours_for_date
+
+    tz = ZoneInfo(os.environ.get("TARGET_TZ", "Asia/Singapore"))
+    life_db_path = Path(os.environ.get("LIFE_DB", str(DEFAULT_LIFE_DB_PATH)))
+    if args.date:
+        wake_date = datetime.strptime(args.date, "%Y-%m-%d").date()
+    else:
+        wake_date = datetime.now(tz).date()
+
+    db = LifeEventsDB(life_db_path)
     try:
-        overdue, due_today = fetch_due_tasks(cfg.notion_token, cfg.bread_datasource_id, today)
-        text = format_morning_digest(overdue, due_today, today)
-    except Exception as exc:
-        # Surface the failure on Telegram without leaking tokens or payloads.
-        db.log_event("morning-error", {"error": f"{type(exc).__name__}: {exc}"})
-        _deliver(
-            cfg,
-            f"⚠️ Morning digest failed ({type(exc).__name__}). "
-            "Inspect with: journalctl -u personal-telegram-bot-morning",
-            args.dry_run,
-        )
-        raise
+        summary = sleep_for_date(db, wake_date, tz)
+        hours = sleeping_hours_for_date(db, wake_date, tz)
+    finally:
+        db.close()
 
-    message_id = _deliver(cfg, text, args.dry_run)
-    if not args.dry_run:
-        db.record_sent("morning", date_key, message_id)
-        db.log_event("morning-sent", {"overdue": len(overdue), "due_today": len(due_today)})
+    payload: dict = {"date": wake_date.isoformat(), "sleep": None, "sleeping_hours": hours}
+    if summary is not None:
+        payload["sleep"] = {
+            "start": summary.start.isoformat(),
+            "end": summary.end.isoformat(),
+            "duration_seconds": summary.duration_seconds,
+            "duration_hours": round(summary.duration_seconds / 3600, 2),
+            "duration_text": duration_hm(summary.duration_seconds),
+        }
+
+    if args.json:
+        print(json.dumps(payload))
+    elif summary is not None:
+        print(
+            f"{payload['date']}: {payload['sleep']['duration_text']} "
+            f"({summary.start:%H:%M}–{summary.end:%H:%M}); sleeping hours {hours}"
+        )
+    else:
+        print(f"{payload['date']}: no sleep recorded")
     return 0
 
 
@@ -152,11 +181,52 @@ def send_failure(cfg: Config, args) -> int:
     return 0
 
 
+def watch_t3_pairing(cfg: Config, args) -> int:
+    db = StateDB(cfg.db_path)
+    for pairing in watch_t3_pairing_journal(args.unit, args.since):
+        dedupe_key = pairing_dedupe_key(pairing)
+        if not args.force and not args.dry_run and db.was_sent("t3-pairing", dedupe_key):
+            continue
+
+        message_id = _deliver(cfg, format_t3_pairing_message(pairing, args.label), args.dry_run)
+        if not args.dry_run:
+            db.record_sent("t3-pairing", dedupe_key, message_id)
+            db.log_event(
+                "t3-pairing-sent",
+                {
+                    "unit": args.unit,
+                    "has_connection_string": pairing.connection_string is not None,
+                    "has_pairing_url": pairing.pairing_url is not None,
+                },
+            )
+        if args.once:
+            return 0
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="botctl", description="sleeper-service personal Telegram bot")
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("run", help="start the long-polling bot daemon")
+    sub.add_parser("serve-ingest", help="serve the tailnet life-event ingest endpoint")
+
+    sleep_summary = sub.add_parser(
+        "sleep-summary", help="emit sleep summary for a date (no Telegram token needed)"
+    )
+    sleep_summary.add_argument("--date", help="YYYY-MM-DD (default: today in TARGET_TZ)")
+    sleep_summary.add_argument("--json", action="store_true", help="emit JSON")
+
+    watch = sub.add_parser("watch", help="watch local event streams")
+    watch_sub = watch.add_subparsers(dest="kind", required=True)
+    t3_pairing = watch_sub.add_parser("t3-pairing", help="publish new T3 pairing keys")
+    t3_pairing.add_argument("--unit", default="t3-serve", help="user systemd unit to watch")
+    t3_pairing.add_argument("--since", default="now", help="journalctl --since value")
+    t3_pairing.add_argument("--label", default="nervous energy", help="label shown in Telegram")
+    t3_pairing.add_argument("--dry-run", action="store_true", help="print instead of sending")
+    t3_pairing.add_argument("--force", action="store_true", help="bypass dedupe")
+    t3_pairing.add_argument("--once", action="store_true", help="exit after the first pairing key")
+    t3_pairing.set_defaults(func=watch_t3_pairing)
 
     send = sub.add_parser("send", help="send a one-off message")
     send_sub = send.add_subparsers(dest="kind", required=True)
@@ -175,12 +245,22 @@ def main(argv: list[str] | None = None) -> int:
         p.set_defaults(func=func)
 
     args = parser.parse_args(argv)
+
+    # Token-free path: must not construct Config (which requires the bot secret).
+    if args.command == "sleep-summary":
+        return run_sleep_summary(args)
+
     cfg = Config.from_env()
 
     if args.command == "run":
         from .bot import run
 
         run(cfg)
+        return 0
+    if args.command == "serve-ingest":
+        from .ingest_server import serve
+
+        serve(cfg)
         return 0
     return args.func(cfg, args)
 
