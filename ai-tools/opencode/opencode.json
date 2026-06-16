@@ -1,8 +1,36 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "model": "openai/gpt-5.5",
-  "small_model": "opencode-go/kimi-k2.6",
-  "plugin": ["opencode-gemini-auth@latest"],
+  "small_model": "opencode-go/kimi-k2.7-code",
+  "plugin": [
+    "opencode-gemini-auth@latest"
+  ],
+  "agent": {
+    "reviewer": {
+      "description": "Reviews proposals, plans, and designs. This GLM-5.1 driven agent is intended for independent (cross-model) review of current specs.",
+      "mode": "subagent",
+      "model": "opencode-go/glm-5.1",
+      "permission": {
+        "read": "allow",
+        "glob": "allow",
+        "grep": "allow",
+        "list": "allow",
+        "bash": "allow",
+        "webfetch": "allow",
+        "websearch": "allow",
+        "lsp": "allow",
+        "skill": "allow",
+        "question": "allow",
+        "edit": "deny",
+        "task": {
+          "*": "allow",
+          "general": "deny",
+          "reviewer*": "deny"
+        }
+      },
+      "prompt": "Review the design document for design issues, overlooked considerations, blindspots. Flag alternatives that may not have been considered. Highlight logic errors too."
+    }
+  },
   "provider": {
     "google": {
       "models": {
