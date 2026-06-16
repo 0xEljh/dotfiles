@@ -62,7 +62,7 @@ What activation does:
   - `~/.claude/CLAUDE.md`
   - `~/.codex/AGENTS.md`
 
-Note: `ai-tools/opencode/opencode.json` and `ai-tools/claude-code/settings.json` are currently uninitialised; if missing, activation warns and proceeds on best-effort.
+Note: `ai-tools/claude-code/settings.json` is currently uninitialised; if missing, activation warns and proceeds on best-effort.
 
 ### 2a) T3 Code remote agents (mobile + cross-device)
 
