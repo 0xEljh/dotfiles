@@ -40,7 +40,6 @@ in
       vim
     ] ++ (import ../../modules/shared/packages.nix { inherit pkgs; });
 
-  # Emacs launchd agent removed
 
   system = {
     checks.verifyNixPath = false;

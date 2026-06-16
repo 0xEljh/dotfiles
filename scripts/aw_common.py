@@ -60,7 +60,6 @@ CODING_APPS = {
     "vim",
     "nvim",
     "neovim",
-    "emacs",
     "nano",
     "xcode",
     "android studio",

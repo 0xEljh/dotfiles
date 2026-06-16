@@ -98,6 +98,7 @@
             ];
           };
           overlays = [
+            (import ./overlays/10-yabai-fix.nix)
             (import ./overlays/20-notion-cat.nix)
           ] ++ (if llm-agents != null then [ llm-agents.overlays.default ] else []);
         };

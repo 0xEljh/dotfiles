@@ -83,4 +83,3 @@ with pkgs; [
   sops
 ]
 ++ lib.optionals (pkgs ? llm-agents && pkgs.llm-agents ? opencode) [ llm-agents.opencode ]
-++ lib.optionals (pkgs ? llm-agents && pkgs.llm-agents ? codex) [ llm-agents.codex ]

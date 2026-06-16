@@ -48,8 +48,5 @@
     link_config "$AI_TOOLS/claude-code/agents"        "$HOME/.claude/agents"
     concat_with_separator "$AI_TOOLS/shared/AI.md" "$AI_TOOLS/claude-code/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
 
-    # Codex CLI (OpenAI). Reads ~/.codex/AGENTS.md as the global instruction file.
-    link_config "$AI_TOOLS/shared/skills" "$HOME/.codex/skills"
-    concat_with_separator "$AI_TOOLS/shared/AI.md" "$AI_TOOLS/codex/AGENTS.md" "$HOME/.codex/AGENTS.md"
   '';
 }
