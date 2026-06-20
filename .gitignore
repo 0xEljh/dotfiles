@@ -6,10 +6,12 @@
 
 # data files
 *.json
-!ai-tools/opencode/opencode.json
 
 # generated Codex/OpenAI system skills mirror
 ai-tools/shared/skills/.system/
+
+!ai-tools/claude-code/mcp.json
+!ai-tools/opencode/opencode.json
 
 # python files
 __pycache__

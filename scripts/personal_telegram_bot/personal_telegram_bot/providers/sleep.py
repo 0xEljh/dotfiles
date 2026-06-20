@@ -15,6 +15,10 @@ from ..life_events import LifeEventsDB
 
 # Longer pairs are treated as tracking left running, not sleep.
 MAX_PLAUSIBLE_SLEEP_HOURS = 16
+# Shorter pairs are treated as a tracking blip or nap, not a night's sleep — the
+# user is reliably asleep at least this long. Filters out the over-sensitive
+# short intervals automatic tracking produces.
+MIN_PLAUSIBLE_SLEEP_HOURS = 3
 # An hour counts as "asleep" for the Notion overlay if at least this much of it
 # overlaps the sleep interval (mirrors the AW hourly thresholds' coarseness).
 SLEEPING_HOUR_MIN_MINUTES = 30.0
@@ -56,7 +60,9 @@ def _pair_intervals(events) -> list[tuple[datetime, datetime]]:
     return [
         (start, end)
         for start, end in intervals
-        if end - start <= timedelta(hours=MAX_PLAUSIBLE_SLEEP_HOURS)
+        if timedelta(hours=MIN_PLAUSIBLE_SLEEP_HOURS)
+        <= end - start
+        <= timedelta(hours=MAX_PLAUSIBLE_SLEEP_HOURS)
     ]
 
 

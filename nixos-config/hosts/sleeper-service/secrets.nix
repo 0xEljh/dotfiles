@@ -15,7 +15,6 @@
     key = "";
     restartUnits = [
       "personal-telegram-bot.service"
-      "personal-telegram-bot-t3-pairing.service"
       "personal-telegram-bot-ingest.service"
     ];
   };

@@ -57,10 +57,17 @@ def test_format_hour_report():
         top_tools=[("Claude Code", 1800), ("Neovim", 600)],
     )
     text = format_hour_report(report)
-    assert "Deep Work" in text
-    assert "2pm-3pm" in text
-    assert "55m" in text
-    assert "Claude Code" in text
+    assert "🛠 <b>2–3pm · Deep Work</b>" in text  # glyph + bold header
+    assert "55m active" in text
+    assert "Claude Code 30m" in text
+    assert "Neovim 10m" in text
+
+
+def test_format_hour_report_shallow_glyph():
+    report = HourReport(hour=9, classification="Shallow Work", active_seconds=3000, top_tools=[])
+    text = format_hour_report(report)
+    assert "✍️ <b>9–10am · Shallow Work</b>" in text
+    assert "50m active" in text
 
 
 def touch(path, age_hours, now_ts):

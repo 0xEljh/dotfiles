@@ -123,6 +123,87 @@ def normalize_macrodroid(
     )
 
 
+def normalize_phone(
+    payload: dict, received_at: datetime, default_tz: ZoneInfo
+) -> LifeEvent:
+    """Normalize a phone app-foreground event: {"app": ..., "package": ?, "ts": iso?}.
+
+    Posted by a MacroDroid "Application Launched" macro per app switch. The app
+    name is mirrored into `value1` so two different apps foregrounded in the same
+    second produce distinct event_ids (the dedupe key includes value1) rather
+    than collapsing to one row; same-app redelivery still dedupes.
+    """
+    app = payload.get("app")
+    if not isinstance(app, str) or not app:
+        raise ValueError("payload missing 'app'")
+    event = payload.get("event") or "app_foreground"
+    kept: dict = {"event": event, "app": app, "value1": app}
+    package = payload.get("package")
+    if isinstance(package, str) and package:
+        kept["package"] = package
+    observed = received_at
+    ts = payload.get("ts")
+    if isinstance(ts, str) and ts:
+        kept["ts"] = ts
+        try:
+            parsed = datetime.fromisoformat(ts)
+            observed = parsed if parsed.tzinfo else parsed.replace(tzinfo=default_tz)
+        except ValueError:
+            pass  # unparseable phone clock: receive time is close enough
+    return LifeEvent(
+        source="phone",
+        event_type=event,
+        observed_at=observed,
+        state=None,
+        payload=kept,
+    )
+
+
+def normalize_owntracks(payload: dict, received_at: datetime) -> LifeEvent | None:
+    """Normalize an OwnTracks (HTTP mode) message into a place event.
+
+    Stores NAMED PLACES ONLY — raw lat/lon are deliberately dropped: the reducer
+    needs the region name, not coordinates, and keeping coordinates out of the
+    store is the privacy posture. `tst` is a Unix epoch (UTC). Returns None for
+    messages carrying no place (region-less pings, or non-location/transition
+    types), which the caller accepts with a 2xx but does not store.
+    """
+    observed = received_at
+    tst = payload.get("tst")
+    if isinstance(tst, (int, float)) and tst > 0:
+        try:
+            observed = datetime.fromtimestamp(tst, tz=timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            pass
+
+    mtype = payload.get("_type")
+    if mtype == "transition":
+        desc = payload.get("desc")
+        event = payload.get("event")
+        if not isinstance(desc, str) or not desc or event not in ("enter", "leave"):
+            return None
+        return LifeEvent(
+            source="owntracks",
+            event_type="place_enter" if event == "enter" else "place_leave",
+            observed_at=observed,
+            state=desc,
+            payload={"desc": desc, "event": event, "rid": payload.get("rid"), "value1": desc},
+        )
+    if mtype == "location":
+        regions = payload.get("inregions")
+        if isinstance(regions, list) and regions:
+            place = str(regions[0])
+            return LifeEvent(
+                source="owntracks",
+                event_type="place_present",
+                observed_at=observed,
+                state=place,
+                payload={"inregions": list(regions), "value1": place},
+            )
+        return None  # region-less ping: nothing to account, and no coords kept
+    return None  # waypoint / lwt / card / etc. — not needed for accounting
+
+
 class LifeEventsDB:
     def __init__(self, path: Path | str):
         path = Path(path)

@@ -20,7 +20,18 @@ let
     serviceConfig = {
       User = user;
       WorkingDirectory = botDir;
-      Environment = [ "HOME=${homeDir}" ];
+      Environment = [
+        "HOME=${homeDir}"
+        # Non-secret config (kept out of the sops env): the Bread board URL the
+        # morning digest links in its footer.
+        "NOTION_BREAD_URL=https://app.notion.com/p/Get-that-bread-132300d83b7f801f9ab7c346ee3e10e6"
+        # Local-hour window [floor, ceiling) the wake-triggered digest may fire
+        # in; outside it the noon fallback timer covers it. Filters pre-dawn SAA
+        # stirs / early alarms and late-morning nap-stops. (Mirrors the code
+        # defaults; here so the window is tunable without a code edit.)
+        "WAKE_GATE_HOUR=7"
+        "WAKE_GATE_HOUR_END=11"
+      ];
       EnvironmentFile = envFile;
       ExecStart = "${pkgs.uv}/bin/uv run --frozen botctl ${command}";
     };
@@ -46,20 +57,6 @@ in
       let base = botService "run";
       in base // {
         description = "Personal Telegram bot (long-polling daemon)";
-        wantedBy = [ "multi-user.target" ];
-        serviceConfig = base.serviceConfig // {
-          Type = "simple";
-          Restart = "always";
-          RestartSec = "5s";
-          KillSignal = "SIGINT";
-          TimeoutStopSec = "30s";
-        };
-      };
-
-    personal-telegram-bot-t3-pairing =
-      let base = botService "watch t3-pairing";
-      in base // {
-        description = "Publish T3 Code pairing keys via Telegram";
         wantedBy = [ "multi-user.target" ];
         serviceConfig = base.serviceConfig // {
           Type = "simple";

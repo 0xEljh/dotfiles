@@ -1,4 +1,5 @@
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from personal_telegram_bot.formatters import (
     MAX_TASKS_PER_SECTION,
@@ -8,6 +9,7 @@ from personal_telegram_bot.formatters import (
 )
 from personal_telegram_bot.providers.health import Transition
 from personal_telegram_bot.providers.notion_todos import Task
+from personal_telegram_bot.providers.sleep import SleepSummary
 
 
 def task(title, status="Not started", start=None, end=None):
@@ -19,31 +21,84 @@ TODAY = date(2026, 6, 11)
 
 def test_morning_digest_empty():
     text = format_morning_digest([], [], TODAY)
-    assert "no tasks" in text.lower()
-    assert "overdue" not in text.lower()
+    assert "clear runway" in text.lower()
 
 
-def test_morning_digest_sections():
+def test_triage_puts_today_before_overdue():
     overdue = [task("Old thing", status="Postponed", start=date(2026, 6, 9))]
     due_today = [task("Ship bot", status="In progress", start=TODAY)]
     text = format_morning_digest(overdue, due_today, TODAY)
-    assert "Ship bot" in text
-    assert "Old thing" in text
+    assert "Ship bot" in text and "Old thing" in text
+    assert text.index("Ship bot") < text.index("Old thing")  # today comes first
+    assert "Today" in text
+    assert "Also overdue" in text  # demoted when today tasks exist
+
+
+def test_overdue_only_uses_plain_header():
+    text = format_morning_digest([task("Old thing", start=date(2026, 6, 9))], [], TODAY)
     assert "Overdue" in text
-    assert "Due today" in text
-    # overdue items show their due date
-    assert "2026-06-09" in text
+    assert "Also overdue" not in text
 
 
-def test_morning_digest_counts_total():
-    overdue = [task(f"o{i}") for i in range(2)]
-    due_today = [task(f"d{i}") for i in range(3)]
+def test_overdue_shows_relative_lateness():
+    text = format_morning_digest([task("Old", start=date(2026, 6, 9))], [], TODAY)
+    assert "2 days late" in text  # TODAY = 6/11
+    assert "(9 Jun)" in text
+
+
+def test_task_links_to_its_notion_page():
+    linked = Task(
+        title="Linked", status="Not started", due_start=TODAY, due_end=None,
+        url="https://notion.so/abc",
+    )
+    text = format_morning_digest([], [linked], TODAY)
+    assert '<a href="https://notion.so/abc">Linked</a>' in text
+    assert "↗" not in text  # link styling is enough; no redundant arrow
+
+
+def test_task_without_url_renders_plain():
+    text = format_morning_digest([], [task("NoLink", start=TODAY)], TODAY)
+    assert "NoLink" in text
+    assert "<a href" not in text
+
+
+def test_html_special_chars_are_escaped():
+    nasty = Task(
+        title="Fix <x> & <y>", status="Not started", due_start=TODAY, due_end=None, url=None
+    )
+    text = format_morning_digest([], [nasty], TODAY)
+    assert "&lt;x&gt; &amp; &lt;y&gt;" in text
+
+
+def test_sleep_appears_in_footer():
+    tz = ZoneInfo("Asia/Singapore")
+    sleep = SleepSummary(
+        start=datetime(2026, 6, 10, 23, 48, tzinfo=tz),
+        end=datetime(2026, 6, 11, 7, 21, tzinfo=tz),
+    )
+    text = format_morning_digest([], [], TODAY, sleep=sleep)
+    assert "😴 7h33m" in text
+
+
+def test_board_link_only_when_configured():
+    with_board = format_morning_digest(
+        [], [task("x", start=TODAY)], TODAY, board_url="https://notion.so/board"
+    )
+    assert '<a href="https://notion.so/board">' in with_board
+    assert "Bread board" in with_board
+    without = format_morning_digest([], [task("x", start=TODAY)], TODAY)
+    assert "Bread board" not in without
+
+
+def test_morning_digest_counts_total_in_footer():
+    overdue = [task(f"o{i}", start=date(2026, 6, 9)) for i in range(2)]
+    due_today = [task(f"d{i}", start=TODAY) for i in range(3)]
     text = format_morning_digest(overdue, due_today, TODAY)
-    assert "5" in text
+    assert "5 open" in text
 
 
 def test_morning_digest_truncates_long_sections():
-    due_today = [task(f"task {i}") for i in range(MAX_TASKS_PER_SECTION + 4)]
+    due_today = [task(f"task {i}", start=TODAY) for i in range(MAX_TASKS_PER_SECTION + 4)]
     text = format_morning_digest([], due_today, TODAY)
     assert f"task {MAX_TASKS_PER_SECTION - 1}" in text
     assert f"task {MAX_TASKS_PER_SECTION}" not in text

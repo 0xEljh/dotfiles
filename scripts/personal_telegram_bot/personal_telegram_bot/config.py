@@ -62,6 +62,13 @@ class Config:
     life_ingest_token: str | None
     life_ingest_bind: str
     life_ingest_port: int
+    # Optional URL of the Bread board, linked in the morning digest footer.
+    bread_url: str | None = None
+    # Local-hour window [floor, ceiling) the wake-triggered morning digest may
+    # fire in; outside it the noon fallback timer sends the digest. Filters
+    # pre-dawn SAA stirs / early alarms and late-morning nap-stops.
+    wake_gate_hour: int = 7
+    wake_gate_hour_end: int = 11
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -97,4 +104,7 @@ class Config:
             # TLS, so the app binds loopback only — no direct public/tailnet port.
             life_ingest_bind=env.get("LIFE_INGEST_BIND", "127.0.0.1"),
             life_ingest_port=int(env.get("LIFE_INGEST_PORT", "8830")),
+            bread_url=env.get("NOTION_BREAD_URL") or None,
+            wake_gate_hour=int(env.get("WAKE_GATE_HOUR", "7")),
+            wake_gate_hour_end=int(env.get("WAKE_GATE_HOUR_END", "11")),
         )

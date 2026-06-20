@@ -47,6 +47,7 @@ Inputs:
 - Shared base: `ai-tools/shared/AI.md`
 - OpenCode layer: `ai-tools/opencode/AGENTS.md`
 - Claude layer: `ai-tools/claude-code/CLAUDE.md`
+- Claude MCP: `ai-tools/claude-code/mcp.json`
 - Codex layer: `ai-tools/codex/AGENTS.md`
 
 Wiring:
@@ -61,6 +62,7 @@ What activation does:
   - `~/.config/opencode/AGENTS.md`
   - `~/.claude/CLAUDE.md`
   - `~/.codex/AGENTS.md`
+- Merges `ai-tools/claude-code/mcp.json` into `~/.claude.json` so Claude Code MCP servers are declarative without replacing Claude's auth/state file.
 
 Note: `ai-tools/claude-code/settings.json` is currently uninitialised; if missing, activation warns and proceeds on best-effort.
 

@@ -33,7 +33,9 @@ def _cfg(tmp_path):
 def _capture_sends(monkeypatch):
     sent = []
     monkeypatch.setattr(
-        digests, "send_message", lambda token, chat, text: sent.append(text) or 99
+        digests,
+        "send_message",
+        lambda token, chat, text, parse_mode=None: sent.append(text) or 99,
     )
     return sent
 
@@ -67,7 +69,7 @@ def test_includes_sleep_line_when_available(tmp_path, monkeypatch):
     digests.deliver_morning_digest(cfg, trigger="wake", now=NOW)
 
     assert len(sent) == 1
-    assert "Slept 7h33m" in sent[0]
+    assert "😴 7h33m" in sent[0]
 
 
 def test_digest_sends_even_without_sleep_data(tmp_path, monkeypatch):
@@ -76,7 +78,7 @@ def test_digest_sends_even_without_sleep_data(tmp_path, monkeypatch):
     monkeypatch.setattr(notion_todos, "fetch_due_tasks", lambda *a, **k: ([], []))
 
     assert digests.deliver_morning_digest(cfg, trigger="timer", now=NOW) is True
-    assert "Slept" not in sent[0]
+    assert "😴" not in sent[0]
 
 
 def test_dry_run_does_not_record_or_send(tmp_path, monkeypatch):

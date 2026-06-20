@@ -20,7 +20,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 from zoneinfo import ZoneInfo
 
-from .life_events import LifeEvent, LifeEventsDB, normalize_macrodroid, normalize_saa
+from .life_events import (
+    LifeEvent,
+    LifeEventsDB,
+    normalize_macrodroid,
+    normalize_owntracks,
+    normalize_phone,
+    normalize_saa,
+)
 
 if TYPE_CHECKING:
     from .config import Config
@@ -32,20 +39,47 @@ _TOKEN_PATTERN = re.compile(r"(/ingest/[^/\s\"]+/)[^/\s\"]+")
 # digest, whichever arrives first (the digest dedupes per day).
 WAKE_TRIGGER_EVENTS = {"sleep_tracking_stopped", "alarm_alert_dismiss"}
 
+# Local-hour window [floor, ceiling) the wake-triggered digest may fire in.
+# Pre-floor events (mid-night stirs, early alarm dismissals) and post-ceiling
+# nap-stops are false positives; outside the window the noon fallback timer
+# (telegram-bot.nix) sends the digest instead.
+WAKE_GATE_HOUR_DEFAULT = 7
+WAKE_GATE_HOUR_END_DEFAULT = 11
+
 
 def redact_token(text: str) -> str:
     return _TOKEN_PATTERN.sub(r"\1<token>", text)
 
 
-def _normalize(source_key: str, payload: dict, received_at: datetime, tz: ZoneInfo) -> LifeEvent:
+def wake_should_fire(
+    event: LifeEvent, tz: ZoneInfo, gate_hour: int, gate_hour_end: int
+) -> bool:
+    """True if `event` is a wake trigger whose local observed-hour falls in
+    [gate_hour, gate_hour_end). Gating on the event's own time (not now) means a
+    late redelivery can't fire a digest at the wrong hour; storage is unaffected,
+    so a gated stop still closes its sleep interval for later reducers."""
+    if event.source != "sleep_as_android" or event.event_type not in WAKE_TRIGGER_EVENTS:
+        return False
+    hour = event.observed_at.astimezone(tz).hour
+    return gate_hour <= hour < gate_hour_end
+
+
+def _normalize(
+    source_key: str, payload: dict, received_at: datetime, tz: ZoneInfo
+) -> LifeEvent | None:
     if source_key == "saa":
         return normalize_saa(payload, received_at)
     if source_key == "macrodroid":
         return normalize_macrodroid(payload, received_at, default_tz=tz)
+    if source_key == "phone":
+        return normalize_phone(payload, received_at, default_tz=tz)
+    if source_key == "owntracks":
+        # May return None (region-less ping / non-place message): accepted, not stored.
+        return normalize_owntracks(payload, received_at)
     raise KeyError(source_key)
 
 
-SOURCE_KEYS = ("saa", "macrodroid")
+SOURCE_KEYS = ("saa", "macrodroid", "phone", "owntracks")
 
 
 class IngestHandler(BaseHTTPRequestHandler):
@@ -94,26 +128,36 @@ class IngestHandler(BaseHTTPRequestHandler):
             self._respond(400, {"error": "invalid payload"})
             return
 
-        db = LifeEventsDB(self.server.db_path)
-        try:
-            stored = db.insert(event)
-        finally:
-            db.close()
+        # A normalizer may legitimately return None (e.g. an OwnTracks region-less
+        # ping): accept it with a 2xx so the phone doesn't retry, but store nothing.
+        stored = False
+        if event is not None:
+            db = LifeEventsDB(self.server.db_path)
+            try:
+                stored = db.insert(event)
+            finally:
+                db.close()
 
-        # Fire the wake hook regardless of dedupe, so a redelivery can still
-        # retry a digest that failed the first time; the digest dedupes per day.
-        # The hook MUST be non-blocking (production spawns a thread) so the
-        # phone's webhook isn't held open on Notion/Telegram.
-        if (
-            self.server.on_wake is not None
-            and event.source == "sleep_as_android"
-            and event.event_type in WAKE_TRIGGER_EVENTS
-        ):
-            self.server.on_wake()
+            # Fire the wake hook regardless of dedupe, so a redelivery can still
+            # retry a digest that failed the first time; the digest dedupes per day.
+            # The hook MUST be non-blocking (production spawns a thread) so the
+            # phone's webhook isn't held open on Notion/Telegram.
+            if self.server.on_wake is not None and wake_should_fire(
+                event,
+                self.server.default_tz,
+                self.server.wake_gate_hour,
+                self.server.wake_gate_hour_end,
+            ):
+                self.server.on_wake()
 
-        self._respond(200, {"stored": stored})
+        # OwnTracks wants a 2xx with a JSON array of commands; an empty array
+        # means "nothing to do". Other sources get the simple stored flag.
+        if source_key == "owntracks":
+            self._respond(200, [])
+        else:
+            self._respond(200, {"stored": stored})
 
-    def _respond(self, code: int, obj: dict) -> None:
+    def _respond(self, code: int, obj: object) -> None:
         body = json.dumps(obj).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
@@ -139,11 +183,15 @@ class IngestServer(ThreadingHTTPServer):
         db_path: Path | str,
         default_tz: ZoneInfo,
         on_wake: Callable[[], None] | None = None,
+        wake_gate_hour: int = WAKE_GATE_HOUR_DEFAULT,
+        wake_gate_hour_end: int = WAKE_GATE_HOUR_END_DEFAULT,
     ):
         self.token = token
         self.db_path = Path(db_path)
         self.default_tz = default_tz
         self.on_wake = on_wake
+        self.wake_gate_hour = wake_gate_hour
+        self.wake_gate_hour_end = wake_gate_hour_end
         # Fail fast at boot on a bad path, and create the schema once; request
         # threads then open short-lived connections (WAL handles concurrency).
         LifeEventsDB(self.db_path).close()
@@ -157,8 +205,12 @@ def build_server(
     db_path: Path | str,
     default_tz: ZoneInfo,
     on_wake: Callable[[], None] | None = None,
+    wake_gate_hour: int = WAKE_GATE_HOUR_DEFAULT,
+    wake_gate_hour_end: int = WAKE_GATE_HOUR_END_DEFAULT,
 ) -> IngestServer:
-    return IngestServer(bind, port, token, db_path, default_tz, on_wake)
+    return IngestServer(
+        bind, port, token, db_path, default_tz, on_wake, wake_gate_hour, wake_gate_hour_end
+    )
 
 
 def serve(cfg: "Config") -> None:
@@ -190,6 +242,8 @@ def serve(cfg: "Config") -> None:
         cfg.life_db_path,
         cfg.tz,
         on_wake=on_wake,
+        wake_gate_hour=cfg.wake_gate_hour,
+        wake_gate_hour_end=cfg.wake_gate_hour_end,
     )
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     host, port = server.server_address[:2]

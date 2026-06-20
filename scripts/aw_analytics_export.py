@@ -16,6 +16,7 @@ Outputs a single JSON file with:
 - AI chat usage breakdown
 - Planning vs Development ratio
 - Top apps and total time
+- Phone foreground app usage from the telegram bot reducer
 
 Usage:
   uv run aw_analytics_export.py
@@ -36,6 +37,7 @@ from aw_common import (
     AW_DATA_DIR,
     CODING_APPS,
     EXCLUDED_APPS,
+    PHONE_PLANNING_APPS,
     PLANNING_APPS,
     TARGET_TZ,
     TERMINAL_APPS,
@@ -44,12 +46,14 @@ from aw_common import (
     coding_app_display_name,
     detect_terminal_tool,
     extract_host_from_bucket,
+    fetch_phone_hours,
     filter_events_by_afk,
     get_browser_dev_tool_name,
     get_planning_site_name,
     match_ai_chat_site,
     normalize_app_name,
     parse_timestamp,
+    phone_app_category,
 )
 
 DEFAULT_OUTPUT_DIR = Path.home() / "digital-garden" / "data"
@@ -101,12 +105,26 @@ def load_aw_data_for_date_range(start_date: date, end_date: date) -> dict[date, 
     return dict(data_by_date)
 
 
+def load_phone_hours_for_date_range(
+    start_date: date, end_date: date
+) -> dict[date, dict[int, dict[str, float]]]:
+    """Load phone foreground app usage for every date in the requested range."""
+    data_by_date = {}
+    current = start_date
+    while current <= end_date:
+        hours = fetch_phone_hours(current.isoformat())
+        if hours:
+            data_by_date[current] = hours
+        current += timedelta(days=1)
+    return data_by_date
+
+
 # ============================================================================
 # Aggregation Functions
 # ============================================================================
 
 
-def aggregate_day_data(day_data: dict) -> dict:
+def aggregate_day_data(day_data: dict, phone_hours: dict | None = None) -> dict:
     """
     Aggregate a single day's ActivityWatch data.
 
@@ -117,6 +135,7 @@ def aggregate_day_data(day_data: dict) -> dict:
     - top_apps: {app_name: seconds}
     - totals: {dev_time, planning_time, ai_chat_time, active_time}
     """
+    phone_hours = phone_hours or {}
     dev_tools = defaultdict(float)
     ai_chats = defaultdict(float)
     planning_apps = defaultdict(float)
@@ -205,6 +224,27 @@ def aggregate_day_data(day_data: dict) -> dict:
         dev_tool_name = get_browser_dev_tool_name(url, title)
         if dev_tool_name:
             dev_tools[dev_tool_name] += duration
+
+    # Process phone foreground app usage. Phone time is device-time, so it is
+    # additive with desktop time just like multiple desktop hosts are additive.
+    for apps in phone_hours.values():
+        for phone_app, seconds in apps.items():
+            duration = seconds or 0
+            if duration <= 0:
+                continue
+
+            app = normalize_app_name(phone_app)
+            label = phone_app
+            all_apps[label] += duration
+
+            category = phone_app_category(phone_app)
+            if category == "coding":
+                dev_tools[label] += duration
+            elif category == "planning":
+                planning_apps[label] += duration
+
+            if app in AI_CHAT_APPS or app in PHONE_PLANNING_APPS:
+                ai_chats[ai_chat_app_display_name(app)] += duration
 
     # Calculate totals
     dev_time = sum(dev_tools.values())
@@ -390,10 +430,15 @@ def generate_all_reports(lookback_days: int = 30) -> dict:
     all_data = load_aw_data_for_date_range(start_date, today)
     print(f"Loaded data for {len(all_data)} days")
 
+    phone_data = load_phone_hours_for_date_range(start_date, today)
+    print(f"Loaded phone data for {len(phone_data)} days")
+
     # Generate daily aggregates
     daily_aggregates = {}
-    for d in sorted(all_data.keys()):
-        daily_aggregates[d] = aggregate_day_data(all_data[d])
+    for d in sorted(set(all_data.keys()) | set(phone_data.keys())):
+        daily_aggregates[d] = aggregate_day_data(
+            all_data.get(d, {}), phone_hours=phone_data.get(d, {})
+        )
 
     # Generate daily reports
     daily_reports = []

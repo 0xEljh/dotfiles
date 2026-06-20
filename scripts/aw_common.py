@@ -9,7 +9,9 @@ prepends the script's directory to `sys.path[0]`) can resolve the import.
 from __future__ import annotations
 
 import os
+import json
 import re
+import subprocess
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
@@ -25,6 +27,55 @@ TARGET_TZ = ZoneInfo(os.getenv("TARGET_TZ", "Asia/Singapore"))
 
 # Where ActivityWatch JSON dumps live (defaults to scripts/aw-data/).
 AW_DATA_DIR = os.getenv("AW_DATA_DIR", os.path.join(_THIS_DIR, "aw-data"))
+
+# Telegram bot project that owns phone/sleep life-event reducers.
+BOT_DIR = os.path.join(_THIS_DIR, "personal_telegram_bot")
+
+
+def botctl_summary(subcommand: str, date_str: str) -> dict | None:
+    """Run a token-free `botctl <subcommand> --date D --json` summary."""
+    try:
+        proc = subprocess.run(
+            [
+                "uv",
+                "run",
+                "--frozen",
+                "--project",
+                BOT_DIR,
+                "botctl",
+                subcommand,
+                "--date",
+                date_str,
+                "--json",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=BOT_DIR,
+        )
+    except Exception as e:
+        print(f"  {subcommand} subprocess error for {date_str}: {e}")
+        return None
+
+    if proc.returncode != 0:
+        print(f"  {subcommand} failed for {date_str}: {proc.stderr.strip()[:200]}")
+        return None
+
+    try:
+        return json.loads(proc.stdout)
+    except json.JSONDecodeError as e:
+        print(f"  {subcommand} bad JSON for {date_str}: {e}")
+        return None
+
+
+def fetch_phone_hours(date_str: str) -> dict[int, dict[str, float]]:
+    """Per-hour {app: seconds} of phone foreground use for date_str."""
+    summary = botctl_summary("phone-summary", date_str)
+    hours = (summary or {}).get("hours", {})
+    return {
+        int(hour): {app: float(seconds) for app, seconds in apps.items()}
+        for hour, apps in hours.items()
+    }
 
 
 # ============================================================================
@@ -233,6 +284,31 @@ EXCLUDED_APPS = {
 }
 
 
+# Phone apps that fold into the desktop work categories. Most relevant apps
+# already overlap by name (Claude → AI_CHAT_APPS, Notion/Obsidian → PLANNING_APPS,
+# VS Code → CODING_APPS); these are the mobile-only extras with no desktop twin.
+PHONE_CODING_APPS = {
+    "termux",
+    "termius",
+    "juicessh",
+    "connectbot",
+    "pydroid 3",
+    "pydroid",
+    "github",  # GitHub mobile
+    "working copy",
+    "spck editor",
+    "acode",
+    "code editor",
+    "dcoder",
+}
+PHONE_PLANNING_APPS = {
+    "gemini",  # Google Gemini app
+    "perplexity",
+    "copilot",
+    "poe",
+}
+
+
 # ============================================================================
 # Display-name dispatch tables
 # ============================================================================
@@ -423,6 +499,19 @@ def normalize_app_name(app: str) -> str:
     if app.endswith(".exe"):
         app = app[:-4]
     return app
+
+
+def phone_app_category(app: str) -> str | None:
+    """Categorise a phone app into the SAME work buckets as the desktop
+    classifier, reusing the desktop taxonomy where names overlap plus the mobile
+    supplement. Returns 'coding' (→ Deep Work), 'planning' (→ Shallow Work), or
+    None (comms/social/uncategorised — counts as activity but not work)."""
+    name = normalize_app_name(app)
+    if name in CODING_APPS or name in PHONE_CODING_APPS:
+        return "coding"
+    if name in AI_CHAT_APPS or name in PLANNING_APPS or name in PHONE_PLANNING_APPS:
+        return "planning"
+    return None
 
 
 def detect_terminal_tool(title: str) -> str | None:

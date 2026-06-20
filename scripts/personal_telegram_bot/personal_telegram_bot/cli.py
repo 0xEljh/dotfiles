@@ -12,19 +12,14 @@ from .formatters import (
     format_health_summary,
     format_unit_failure,
 )
-from .t3_pairing import (
-    format_t3_pairing_message,
-    pairing_dedupe_key,
-    watch_t3_pairing_journal,
-)
 from .telegram_api import send_message
 
 
-def _deliver(cfg: Config, text: str, dry_run: bool) -> int | None:
+def _deliver(cfg: Config, text: str, dry_run: bool, parse_mode: str | None = None) -> int | None:
     if dry_run:
         print(text)
         return None
-    return send_message(cfg.telegram_token, cfg.default_chat_id, text)
+    return send_message(cfg.telegram_token, cfg.default_chat_id, text, parse_mode=parse_mode)
 
 
 def send_test(cfg: Config, args) -> int:
@@ -94,6 +89,101 @@ def run_sleep_summary(args) -> int:
     return 0
 
 
+def run_phone_summary(args) -> int:
+    """Emit per-hour phone app-usage for a date as JSON or text. Token-free, like
+    sleep-summary, so the Notion sync can call it without the bot secret."""
+    import json
+    import os
+    from collections import defaultdict
+    from pathlib import Path
+    from zoneinfo import ZoneInfo
+
+    from .config import DEFAULT_LIFE_DB_PATH
+    from .life_events import LifeEventsDB
+    from .providers.phone_usage import phone_hours_for_date
+
+    tz = ZoneInfo(os.environ.get("TARGET_TZ", "Asia/Singapore"))
+    life_db_path = Path(os.environ.get("LIFE_DB", str(DEFAULT_LIFE_DB_PATH)))
+    if args.date:
+        target = datetime.strptime(args.date, "%Y-%m-%d").date()
+    else:
+        target = datetime.now(tz).date()
+
+    db = LifeEventsDB(life_db_path)
+    try:
+        hours = phone_hours_for_date(db, target, tz)
+    finally:
+        db.close()
+
+    by_app: dict[str, float] = defaultdict(float)
+    for apps in hours.values():
+        for app, seconds in apps.items():
+            by_app[app] += seconds
+    top_apps = sorted(by_app.items(), key=lambda kv: -kv[1])
+    total_seconds = sum(by_app.values())
+
+    payload = {
+        "date": target.isoformat(),
+        "hours": {str(hour): apps for hour, apps in sorted(hours.items())},
+        "total_seconds": total_seconds,
+        "top_apps": top_apps,
+    }
+
+    if args.json:
+        print(json.dumps(payload))
+    elif hours:
+        top = ", ".join(f"{app} {round(s / 60)}m" for app, s in top_apps[:3])
+        print(f"{payload['date']}: phone {round(total_seconds / 60)}m over {len(hours)} hours ({top})")
+    else:
+        print(f"{payload['date']}: no phone activity recorded")
+    return 0
+
+
+def run_location_summary(args) -> int:
+    """Emit per-hour dominant place + dwell-per-place for a date as JSON or text.
+    Token-free, like sleep-summary, so the Notion sync can call it."""
+    import json
+    import os
+    from pathlib import Path
+    from zoneinfo import ZoneInfo
+
+    from .config import DEFAULT_LIFE_DB_PATH
+    from .life_events import LifeEventsDB
+    from .providers.location import dwell_for_date, place_for_hours
+
+    tz = ZoneInfo(os.environ.get("TARGET_TZ", "Asia/Singapore"))
+    life_db_path = Path(os.environ.get("LIFE_DB", str(DEFAULT_LIFE_DB_PATH)))
+    if args.date:
+        target = datetime.strptime(args.date, "%Y-%m-%d").date()
+    else:
+        target = datetime.now(tz).date()
+
+    db = LifeEventsDB(life_db_path)
+    try:
+        hours = place_for_hours(db, target, tz)
+        dwell = dwell_for_date(db, target, tz)
+    finally:
+        db.close()
+
+    payload = {
+        "date": target.isoformat(),
+        "hours": {str(hour): place for hour, place in sorted(hours.items())},
+        "dwell": dwell,
+    }
+
+    if args.json:
+        print(json.dumps(payload))
+    elif dwell:
+        places = ", ".join(
+            f"{place} {round(seconds / 3600, 1)}h"
+            for place, seconds in sorted(dwell.items(), key=lambda kv: -kv[1])
+        )
+        print(f"{payload['date']}: {places}")
+    else:
+        print(f"{payload['date']}: no location recorded")
+    return 0
+
+
 def send_hour(cfg: Config, args) -> int:
     from .formatters import format_hour_report
     from .providers.aw_hours import classify_previous_hour, previous_hour
@@ -111,7 +201,7 @@ def send_hour(cfg: Config, args) -> int:
         print(f"No classification for {date_key} (no data or below thresholds)")
         return 0
 
-    message_id = _deliver(cfg, format_hour_report(report), args.dry_run)
+    message_id = _deliver(cfg, format_hour_report(report), args.dry_run, parse_mode="HTML")
     if not args.dry_run:
         db.record_sent("hour", date_key, message_id)
         db.log_event("hour-sent", {"hour": date_key, "classification": report.classification})
@@ -181,29 +271,6 @@ def send_failure(cfg: Config, args) -> int:
     return 0
 
 
-def watch_t3_pairing(cfg: Config, args) -> int:
-    db = StateDB(cfg.db_path)
-    for pairing in watch_t3_pairing_journal(args.unit, args.since):
-        dedupe_key = pairing_dedupe_key(pairing)
-        if not args.force and not args.dry_run and db.was_sent("t3-pairing", dedupe_key):
-            continue
-
-        message_id = _deliver(cfg, format_t3_pairing_message(pairing, args.label), args.dry_run)
-        if not args.dry_run:
-            db.record_sent("t3-pairing", dedupe_key, message_id)
-            db.log_event(
-                "t3-pairing-sent",
-                {
-                    "unit": args.unit,
-                    "has_connection_string": pairing.connection_string is not None,
-                    "has_pairing_url": pairing.pairing_url is not None,
-                },
-            )
-        if args.once:
-            return 0
-    return 0
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="botctl", description="sleeper-service personal Telegram bot")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -217,16 +284,17 @@ def main(argv: list[str] | None = None) -> int:
     sleep_summary.add_argument("--date", help="YYYY-MM-DD (default: today in TARGET_TZ)")
     sleep_summary.add_argument("--json", action="store_true", help="emit JSON")
 
-    watch = sub.add_parser("watch", help="watch local event streams")
-    watch_sub = watch.add_subparsers(dest="kind", required=True)
-    t3_pairing = watch_sub.add_parser("t3-pairing", help="publish new T3 pairing keys")
-    t3_pairing.add_argument("--unit", default="t3-serve", help="user systemd unit to watch")
-    t3_pairing.add_argument("--since", default="now", help="journalctl --since value")
-    t3_pairing.add_argument("--label", default="nervous energy", help="label shown in Telegram")
-    t3_pairing.add_argument("--dry-run", action="store_true", help="print instead of sending")
-    t3_pairing.add_argument("--force", action="store_true", help="bypass dedupe")
-    t3_pairing.add_argument("--once", action="store_true", help="exit after the first pairing key")
-    t3_pairing.set_defaults(func=watch_t3_pairing)
+    phone_summary = sub.add_parser(
+        "phone-summary", help="emit phone app-usage for a date (no Telegram token needed)"
+    )
+    phone_summary.add_argument("--date", help="YYYY-MM-DD (default: today in TARGET_TZ)")
+    phone_summary.add_argument("--json", action="store_true", help="emit JSON")
+
+    location_summary = sub.add_parser(
+        "location-summary", help="emit place/dwell for a date (no Telegram token needed)"
+    )
+    location_summary.add_argument("--date", help="YYYY-MM-DD (default: today in TARGET_TZ)")
+    location_summary.add_argument("--json", action="store_true", help="emit JSON")
 
     send = sub.add_parser("send", help="send a one-off message")
     send_sub = send.add_subparsers(dest="kind", required=True)
@@ -249,6 +317,10 @@ def main(argv: list[str] | None = None) -> int:
     # Token-free path: must not construct Config (which requires the bot secret).
     if args.command == "sleep-summary":
         return run_sleep_summary(args)
+    if args.command == "phone-summary":
+        return run_phone_summary(args)
+    if args.command == "location-summary":
+        return run_location_summary(args)
 
     cfg = Config.from_env()
 

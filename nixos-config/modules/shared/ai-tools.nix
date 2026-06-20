@@ -27,6 +27,24 @@
       fi
     }
 
+    merge_claude_mcp() {
+      local src="$1" dest="$HOME/.claude.json" tmp
+      if [ -f "$src" ]; then
+        mkdir -p "$(dirname "$dest")"
+        [ -f "$dest" ] || printf '{}' > "$dest"
+        tmp="$(mktemp)"
+        if ${pkgs.jq}/bin/jq -s '.[0] * {mcpServers: ((.[0].mcpServers // {}) * (.[1].mcpServers // {}))}' "$dest" "$src" > "$tmp"; then
+          mv "$tmp" "$dest"
+          echo "Merged Claude MCP: $src -> $dest"
+        else
+          rm -f "$tmp"
+          echo "Warning: Failed to merge Claude MCP config: $src"
+        fi
+      else
+        echo "Warning: Source not found: $src"
+      fi
+    }
+
     # OpenCode
     link_config "$AI_TOOLS/opencode/opencode.json" "$HOME/.config/opencode/opencode.json"
     link_config "$AI_TOOLS/shared/skills"          "$HOME/.config/opencode/skills"
@@ -38,6 +56,7 @@
     link_config "$AI_TOOLS/claude-code/settings.json" "$HOME/.claude/settings.json"
     link_config "$AI_TOOLS/shared/skills"             "$HOME/.claude/skills"
     link_config "$AI_TOOLS/claude-code/agents"        "$HOME/.claude/agents"
+    merge_claude_mcp "$AI_TOOLS/claude-code/mcp.json"
     concat_with_separator "$AI_TOOLS/shared/AI.md" "$AI_TOOLS/claude-code/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
 
   '';

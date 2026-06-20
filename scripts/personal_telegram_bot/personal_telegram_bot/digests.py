@@ -54,7 +54,9 @@ def deliver_morning_digest(
 
         try:
             overdue, due_today = fetch_due_tasks(cfg.notion_token, cfg.bread_datasource_id, today)
-            text = format_morning_digest(overdue, due_today, today, sleep=sleep)
+            text = format_morning_digest(
+                overdue, due_today, today, sleep=sleep, board_url=cfg.bread_url
+            )
         except Exception as exc:
             db.log_event("morning-error", {"trigger": trigger, "error": f"{type(exc).__name__}: {exc}"})
             if not dry_run:
@@ -70,7 +72,9 @@ def deliver_morning_digest(
             print(text)
             return True
 
-        message_id = send_message(cfg.telegram_token, cfg.default_chat_id, text)
+        message_id = send_message(
+            cfg.telegram_token, cfg.default_chat_id, text, parse_mode="HTML"
+        )
         db.record_sent("morning", date_key, message_id)
         db.log_event(
             "morning-sent",

@@ -5,15 +5,22 @@ import httpx
 TELEGRAM_MESSAGE_LIMIT = 4096
 
 
-def send_message(token: str, chat_id: int, text: str) -> int:
-    """Send a plain-text message; returns the Telegram message id."""
+def send_message(
+    token: str, chat_id: int, text: str, parse_mode: str | None = None
+) -> int:
+    """Send a message; returns the Telegram message id. Plain text by default;
+    pass parse_mode='HTML' (or 'MarkdownV2') to enable formatting/links — the
+    caller is then responsible for escaping dynamic content."""
+    payload: dict = {
+        "chat_id": chat_id,
+        "text": text[:TELEGRAM_MESSAGE_LIMIT],
+        "disable_web_page_preview": True,
+    }
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
     resp = httpx.post(
         f"https://api.telegram.org/bot{token}/sendMessage",
-        json={
-            "chat_id": chat_id,
-            "text": text[:TELEGRAM_MESSAGE_LIMIT],
-            "disable_web_page_preview": True,
-        },
+        json=payload,
         timeout=30,
     )
     data = resp.json()

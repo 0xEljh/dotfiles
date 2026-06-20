@@ -1,7 +1,7 @@
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from personal_telegram_bot.formatters import format_morning_digest, format_sleep_line
+from personal_telegram_bot.formatters import format_sleep_line
 from personal_telegram_bot.life_events import LifeEvent, LifeEventsDB
 from personal_telegram_bot.providers.sleep import (
     SleepSummary,
@@ -112,6 +112,49 @@ def test_orphan_stop_is_ignored(tmp_path):
     assert last_night_sleep(db, now=NOW) is None
 
 
+def test_short_interval_is_not_counted_as_sleep(tmp_path):
+    # A short tracking blip (auto-start noise) is not a night's sleep.
+    db = _db_with(
+        tmp_path,
+        [
+            _sleep_event("sleep_tracking_started", _dt("2026-06-14 00:59")),
+            _sleep_event("sleep_tracking_stopped", _dt("2026-06-14 01:15")),
+        ],
+    )
+
+    assert sleep_for_date(db, date(2026, 6, 14), TZ) is None
+    assert last_night_sleep(db, now=NOW) is None
+    assert sleeping_hours_for_date(db, date(2026, 6, 14), TZ) == []
+
+
+def test_interval_below_three_hour_minimum_is_not_sleep(tmp_path):
+    # 2h30m clears a nap but not a night: below the 3h floor, it is not sleep.
+    db = _db_with(
+        tmp_path,
+        [
+            _sleep_event("sleep_tracking_started", _dt("2026-06-14 01:00")),
+            _sleep_event("sleep_tracking_stopped", _dt("2026-06-14 03:30")),
+        ],
+    )
+
+    assert sleep_for_date(db, date(2026, 6, 14), TZ) is None
+
+
+def test_interval_meeting_three_hour_minimum_is_sleep(tmp_path):
+    # Exactly 3h passes — the floor is inclusive.
+    db = _db_with(
+        tmp_path,
+        [
+            _sleep_event("sleep_tracking_started", _dt("2026-06-14 01:00")),
+            _sleep_event("sleep_tracking_stopped", _dt("2026-06-14 04:00")),
+        ],
+    )
+
+    summary = sleep_for_date(db, date(2026, 6, 14), TZ)
+    assert summary is not None
+    assert summary.duration_seconds == timedelta(hours=3).total_seconds()
+
+
 def test_summary_times_are_in_now_timezone(tmp_path):
     db = _db_with(
         tmp_path,
@@ -153,22 +196,6 @@ def test_format_sleep_line_subhour_duration():
     summary = SleepSummary(start=_dt("2026-06-14 14:00"), end=_dt("2026-06-14 14:45"))
 
     assert format_sleep_line(summary) == "😴 Slept 45m (14:00–14:45)"
-
-
-def test_morning_digest_includes_sleep_line():
-    summary = SleepSummary(start=_dt("2026-06-13 23:48"), end=_dt("2026-06-14 07:21"))
-
-    text = format_morning_digest([], [], date(2026, 6, 14), sleep=summary)
-
-    assert "Slept 7h33m" in text
-    assert text.index("Good morning") < text.index("Slept")
-
-
-def test_morning_digest_without_sleep_is_unchanged():
-    text = format_morning_digest([], [], date(2026, 6, 14))
-
-    assert "Slept" not in text
-    assert "No tasks due today" in text
 
 
 # --- sleep_for_date: explicit-date attribution (Notion daily sync) ---

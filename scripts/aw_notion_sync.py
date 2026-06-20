@@ -24,12 +24,13 @@ import json
 import glob
 import argparse
 import re
-import subprocess
 from datetime import datetime, timedelta, time, date
 from collections import defaultdict
 from urllib.parse import urlparse
 from notion_client import Client
 from dotenv import load_dotenv
+
+from notion_day import Contribution, PRIORITY_BIO, PRIORITY_WORK, write_day_page
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(current_dir, ".env"))
@@ -44,16 +45,19 @@ from aw_common import (  # noqa: E402
     TARGET_TZ,
     TERMINAL_APPS,
     ai_chat_app_display_name,
+    botctl_summary,
     build_not_afk_periods_by_host,
     coding_app_display_name,
     detect_terminal_tool,
     extract_host_from_bucket,
+    fetch_phone_hours,
     filter_events_by_afk,
     get_browser_dev_tool_name,
     get_planning_site_name,
     match_ai_chat_site,
     normalize_app_name,
     parse_timestamp,
+    phone_app_category,
 )
 
 NOTION_API_KEY = os.getenv("NOTION_TIME_ACCOUNTANT_SECRET")
@@ -65,7 +69,6 @@ FREEZE_HOURS = int(os.getenv("FREEZE_HOURS", "2"))
 # Sleep enrichment: the telegram bot owns the sleep reducer (life_events.sqlite3
 # + pairing logic), so we shell out to its CLI per date rather than re-deriving
 # sleep here. Single source of truth; best-effort so AW sync never depends on it.
-BOT_DIR = os.path.join(current_dir, "personal_telegram_bot")
 SLEEP_HOURS_PROPERTY = "Sleep Hours"  # number property — add it to the database once
 BIO_HOUR_VALUE = "bio"  # hourly select option for sleep (Notion auto-creates it)
 
@@ -425,12 +428,16 @@ def format_duration(seconds: float) -> str:
         return f"{hours}h {mins}m" if mins else f"{hours}h"
 
 
-def compute_hourly_stats(all_data: dict) -> dict:
+def compute_hourly_stats(all_data: dict, phone_hours: dict | None = None) -> dict:
     """
     Compute stats for each hour from merged ActivityWatch data.
 
+    phone_hours (optional): {hour: {app: seconds}} of phone foreground use, merged
+    in as activity so a phone-only hour is no longer empty.
+
     Returns dict: {hour: {stats}}
     """
+    phone_hours = phone_hours or {}
     # Separate buckets by type
     window_events = []
     web_events = []
@@ -464,8 +471,8 @@ def compute_hourly_stats(all_data: dict) -> dict:
     window_by_hour = bucket_events_by_hour(window_events)
     web_by_hour = bucket_events_by_hour(web_events)
 
-    # Get all hours with activity
-    all_hours = set(window_by_hour.keys()) | set(web_by_hour.keys())
+    # Get all hours with activity (phone-only hours count too)
+    all_hours = set(window_by_hour.keys()) | set(web_by_hour.keys()) | set(phone_hours.keys())
 
     hourly_stats = {}
     for hour in sorted(all_hours):
@@ -474,6 +481,12 @@ def compute_hourly_stats(all_data: dict) -> dict:
 
         # Aggregate app time
         app_time = aggregate_app_time(hour_window)
+
+        # Merge phone foreground time as activity. Like multi-device desktop
+        # time, this can push an hour's active_time past 60 minutes — active_time
+        # is device-time, not wall-clock.
+        for app, seconds in phone_hours.get(hour, {}).items():
+            app_time[app] = app_time.get(app, 0) + seconds
 
         # Aggregate site time
         site_time = aggregate_site_time(hour_web)
@@ -510,6 +523,18 @@ def compute_hourly_stats(all_data: dict) -> dict:
 
         # Planning time (Notion, Logseq, etc. + AI chats)
         planning_tools = aggregate_planning_time(hour_window, hour_web, ai_chat_time)
+        planning_total = sum(planning_tools.values())
+
+        # Fold categorised phone apps into the SAME work buckets as desktop tools,
+        # so phone dev/planning time counts toward Deep/Shallow Work identically
+        # (uncategorised phone apps stay as activity only). Recompute the totals.
+        for app, seconds in phone_hours.get(hour, {}).items():
+            category = phone_app_category(app)
+            if category is None:
+                continue
+            bucket = coding_tools if category == "coding" else planning_tools
+            bucket[app] = bucket.get(app, 0) + seconds
+        coding_tools_total = sum(coding_tools.values())
         planning_total = sum(planning_tools.values())
 
         # Top 5 apps
@@ -828,156 +853,89 @@ def find_or_create_time_accounting_page(notion: Client, date_str: str) -> str:
 
 
 def fetch_sleep_summary(date_str: str) -> dict | None:
-    """Sleep summary for date_str from the telegram bot CLI (single source of
-    the sleep reducer). Best-effort: returns None on any failure so the AW sync
-    continues. Shape: {"sleep": {...,"duration_hours":7.55} | None,
-    "sleeping_hours": [0,1,...]}."""
-    try:
-        proc = subprocess.run(
-            ["uv", "run", "--frozen", "--project", BOT_DIR,
-             "botctl", "sleep-summary", "--date", date_str, "--json"],
-            capture_output=True,
-            text=True,
-            timeout=60,
-            cwd=BOT_DIR,
+    """Sleep summary for date_str. Shape: {"sleep": {...,"duration_hours":7.55}
+    | None, "sleeping_hours": [0,1,...]}."""
+    return botctl_summary("sleep-summary", date_str)
+
+
+def build_activity_contribution(date_str: str, existing_props: dict) -> Contribution:
+    """Desktop ActivityWatch: hourly Deep/Shallow-Work classification + the stats
+    table. On a day with no AW data this returns an EMPTY contribution rather than
+    aborting the whole page — other signals (sleep, …) still write."""
+    journal_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    aw_data = load_aw_data_for_journal_day(journal_date)
+    phone_hours = fetch_phone_hours(date_str)
+    if not aw_data and not phone_hours:
+        print(f"No desktop or phone activity for {date_str}")
+        return Contribution.empty()
+
+    if aw_data:
+        print(
+            f"Processing {sum(len(v) for v in aw_data.values())} events from {len(aw_data)} buckets"
         )
-    except Exception as e:
-        print(f"  sleep-summary subprocess error for {date_str}: {e}")
-        return None
-    if proc.returncode != 0:
-        print(f"  sleep-summary failed for {date_str}: {proc.stderr.strip()[:200]}")
-        return None
-    try:
-        return json.loads(proc.stdout)
-    except json.JSONDecodeError as e:
-        print(f"  sleep-summary bad JSON for {date_str}: {e}")
-        return None
+    hourly_stats = compute_hourly_stats(aw_data, phone_hours=phone_hours)
+    if not hourly_stats:
+        print("No hourly stats computed")
+        return Contribution.empty()
+
+    print(f"Computed stats for {len(hourly_stats)} hours: {sorted(hourly_stats.keys())}")
+    hour_tags: dict[int, tuple[str, int]] = {}
+    for hour, stats in hourly_stats.items():
+        value = determine_hourly_select_value(stats)
+        if value:
+            hour_tags[hour] = (value, PRIORITY_WORK)
+    return Contribution(hour_tags=hour_tags, blocks=build_notion_blocks(hourly_stats))
+
+
+def build_sleep_contribution(date_str: str, existing_props: dict) -> Contribution:
+    """Sleep overlay: tag the asleep clock-hours "bio" and write the headline
+    `Sleep Hours` number. Sourced from the bot CLI (single source of the sleep
+    reducer); best-effort, so a missing/failed summary just yields nothing."""
+    summary = fetch_sleep_summary(date_str)
+    if not summary:
+        return Contribution.empty()
+    hour_tags = {
+        hour: (BIO_HOUR_VALUE, PRIORITY_BIO)
+        for hour in summary.get("sleeping_hours", [])
+    }
+    number_props: dict[str, float] = {}
+    sleep_record = summary.get("sleep")
+    if sleep_record and sleep_record.get("duration_hours") is not None:
+        number_props[SLEEP_HOURS_PROPERTY] = sleep_record["duration_hours"]
+    return Contribution(hour_tags=hour_tags, number_props=number_props)
+
+
+def _replace_aw_blocks(notion: Client, page_id: str, blocks: list) -> None:
+    """Swap the page's existing AW stats table for freshly rendered blocks."""
+    find_and_clear_existing_blocks(notion, page_id)
+    notion.blocks.children.append(block_id=page_id, children=blocks)
 
 
 def sync_date(journal_date: date, notion: Client) -> bool:
-    """
-    Sync ActivityWatch data for a specific journal date to Notion.
-    Returns True on success, False on failure.
-    """
+    """Sync the Notion day page for a journal date from all available signals.
+    Returns True if the page was synced (even with no AW data), False only if
+    the page itself could not be ensured."""
     date_str = journal_date.strftime("%Y-%m-%d")
     print(f"\n{'=' * 50}")
-    print(f"Syncing ActivityWatch data for: {date_str} (tz: {TARGET_TZ})")
+    print(f"Syncing day page for: {date_str} (tz: {TARGET_TZ})")
 
     try:
-        page_id = find_or_create_time_accounting_page(notion, date_str)
-    except Exception as e:
-        print(f"Notion Error: {e}")
-        import traceback
-
-        traceback.print_exc()
-        return False
-
-    # Load ActivityWatch data with timezone-aware filtering
-    aw_data = load_aw_data_for_journal_day(journal_date)
-    if not aw_data:
-        print(f"No ActivityWatch data found for {date_str}")
-        return False
-
-    print(
-        f"Processing {sum(len(v) for v in aw_data.values())} events from {len(aw_data)} buckets"
-    )
-
-    # Compute hourly stats
-    hourly_stats = compute_hourly_stats(aw_data)
-    if not hourly_stats:
-        print("No hourly stats computed")
-        return False
-
-    print(
-        f"Computed stats for {len(hourly_stats)} hours: {sorted(hourly_stats.keys())}"
-    )
-
-    # Build Notion blocks
-    blocks = build_notion_blocks(hourly_stats)
-
-    try:
-        # Update hourly select properties based on activity rules
-        page_details = notion.pages.retrieve(page_id=page_id)
-        page_properties = page_details.get("properties", {})
-
-        hourly_updates = {}
-        skipped_hours = []
-        updated_hours = []
-
-        for hour, stats in hourly_stats.items():
-            prop_name = get_hour_property_name(hour)
-            prop_data = page_properties.get(prop_name, {})
-
-            # Check if property exists and is empty (no select value)
-            current_select = prop_data.get("select")
-            if current_select and current_select.get("name"):
-                skipped_hours.append(f"{prop_name} (already: {current_select['name']})")
-                continue
-
-            # Determine suggested value
-            suggested_value = determine_hourly_select_value(stats)
-            if suggested_value:
-                hourly_updates[prop_name] = {"select": {"name": suggested_value}}
-                updated_hours.append(f"{prop_name}: {suggested_value}")
-
-        # Tag sleeping hours as "bio". Fills empty hours only — an explicit AW
-        # work classification above wins, and a manually-set hour is respected.
-        sleep_summary = fetch_sleep_summary(date_str)
-        for hour in (sleep_summary or {}).get("sleeping_hours", []):
-            prop_name = get_hour_property_name(hour)
-            if prop_name in hourly_updates:
-                continue
-            current_select = page_properties.get(prop_name, {}).get("select")
-            if current_select and current_select.get("name"):
-                continue
-            hourly_updates[prop_name] = {"select": {"name": BIO_HOUR_VALUE}}
-            updated_hours.append(f"{prop_name}: {BIO_HOUR_VALUE}")
-
-        # Apply hourly property updates if any
-        if hourly_updates:
-            notion.pages.update(page_id=page_id, properties=hourly_updates)
-            print(f"Updated {len(hourly_updates)} hourly properties:")
-            for update_info in updated_hours:
-                print(f"  → {update_info}")
-
-        if skipped_hours:
-            print(f"Skipped {len(skipped_hours)} already-filled hours")
-
-        # Headline sleep duration → page property. Separate update with its own
-        # guard so a missing "Sleep Hours" property can't break the bio tags.
-        sleep_record = (sleep_summary or {}).get("sleep")
-        if sleep_record:
-            try:
-                notion.pages.update(
-                    page_id=page_id,
-                    properties={
-                        SLEEP_HOURS_PROPERTY: {"number": sleep_record["duration_hours"]}
-                    },
-                )
-                print(f"Set {SLEEP_HOURS_PROPERTY} = {sleep_record['duration_hours']}h")
-            except Exception as e:
-                print(
-                    f"Skipped {SLEEP_HOURS_PROPERTY} (add a number property named "
-                    f"'{SLEEP_HOURS_PROPERTY}' to the database): {str(e)[:120]}"
-                )
-
-        # Clear existing AW blocks
-        find_and_clear_existing_blocks(notion, page_id)
-
-        # Append new blocks
-        notion.blocks.children.append(block_id=page_id, children=blocks)
-
-        print(
-            f"Success: Updated page with {len(blocks)} blocks for {len(hourly_stats)} hours"
+        write_day_page(
+            notion,
+            date_str,
+            [build_activity_contribution, build_sleep_contribution],
+            ensure_page=find_or_create_time_accounting_page,
+            replace_blocks=_replace_aw_blocks,
         )
-        return True
-
     except Exception as e:
         print(f"Notion Error: {e}")
         import traceback
 
         traceback.print_exc()
         return False
+
+    print(f"Success: synced day page for {date_str}")
+    return True
 
 
 def determine_dates_to_sync(args) -> list[date]:
