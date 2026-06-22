@@ -10,6 +10,25 @@ let
     };
   };
 
+  mkMcpProxyHost = port: {
+    enableACME = true;
+    forceSSL = true;
+    locations = {
+      "= /mcp".extraConfig = "return 307 /mcp/;";
+      "/mcp/" = {
+        proxyPass = "http://127.0.0.1:${toString port}";
+        extraConfig = ''
+          limit_req zone=mcp burst=20 nodelay;
+          proxy_buffering off;
+          proxy_cache off;
+          proxy_read_timeout 1h;
+          proxy_send_timeout 1h;
+        '';
+      };
+      "/".extraConfig = "return 404;";
+    };
+  };
+
   mkRedirectHost = canonicalHost: {
     enableACME = true;
     forceSSL = true;
@@ -26,7 +45,10 @@ in
 
     # Per-source-IP cap for the public webhook vhost. A phone sends a handful
     # of events a day; 10 r/s (burst 20) is invisible to it but bounds abuse.
-    appendHttpConfig = "limit_req_zone $binary_remote_addr zone=hooks:1m rate=10r/s;";
+    appendHttpConfig = ''
+      limit_req_zone $binary_remote_addr zone=hooks:1m rate=10r/s;
+      limit_req_zone $binary_remote_addr zone=mcp:1m rate=2r/s;
+    '';
 
     virtualHosts = {
       # Ad hoc dev/staging entry points for common local app ports.
@@ -35,6 +57,11 @@ in
       "dev-5173.0xeljh.com" = mkProxyHost 5173;
       "dev-8000.0xeljh.com" = mkProxyHost 8000;
       "dev-19000.0xeljh.com" = mkProxyHost 19000;
+
+      # Public Streamable HTTP MCP endpoint for arXiv research tools.
+      # ChatGPT developer-mode connectors should use:
+      #   https://arxiv-mcp.0xeljh.com/mcp
+      "arxiv-mcp.0xeljh.com" = mkMcpProxyHost 18003;
 
       # Kodo Go API. SSE stream endpoint must not be buffered, so it gets a
       # dedicated regex location that overrides proxy_buffering for that one route.

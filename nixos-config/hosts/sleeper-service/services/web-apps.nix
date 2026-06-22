@@ -7,6 +7,9 @@ let
   vampPostgresContainerName = "vamp-tutor-postgres";
   kodoApiPort = 18002;
   kodoMLPort = 18001;
+  arxivMcpPort = 18003;
+  arxivMcpHost = "arxiv-mcp.0xeljh.com";
+  arxivMcpStorageDir = "/var/lib/arxiv-mcp/papers";
   homeDir = "/home/${user}";
   syncScript = "${homeDir}/dotfiles/scripts/run-sync.sh";
   kodoDir = "${homeDir}/kodo-app";
@@ -94,6 +97,34 @@ in
         RestartSec = "5s";
         KillSignal = "SIGINT";
         KillMode = "control-group";
+        TimeoutStopSec = "30s";
+      };
+    };
+
+    arxiv-mcp = {
+      description = "arXiv MCP server";
+      after = [ "network-online.target" ];
+      wants = [ "network-online.target" ];
+      wantedBy = [ "multi-user.target" ];
+
+      serviceConfig = {
+        Type = "simple";
+        User = user;
+        StateDirectory = "arxiv-mcp";
+        Environment = [
+          "HOME=${homeDir}"
+          "TRANSPORT=streamable-http"
+          "HOST=127.0.0.1"
+          "PORT=${toString arxivMcpPort}"
+          "ALLOWED_HOSTS=${arxivMcpHost}"
+          "ALLOWED_ORIGINS=https://chatgpt.com,https://chat.openai.com,https://platform.openai.com"
+          "MAX_RESULTS=50"
+          "REQUEST_TIMEOUT=60"
+        ];
+        ExecStart = "${pkgs.uv}/bin/uvx --from arxiv-mcp-server[pdf] arxiv-mcp-server --storage-path ${arxivMcpStorageDir}";
+        Restart = "always";
+        RestartSec = "5s";
+        KillSignal = "SIGINT";
         TimeoutStopSec = "30s";
       };
     };

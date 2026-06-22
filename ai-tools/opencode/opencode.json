@@ -31,6 +31,30 @@
       "prompt": "Review the design document for design issues, overlooked considerations, blindspots. Flag alternatives that may not have been considered. Highlight logic errors too."
     }
   },
+  "mcp": {
+    "arxiv": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--from",
+        "arxiv-mcp-server[pdf]",
+        "arxiv-mcp-server"
+      ],
+      "enabled": true,
+      "timeout": 60000
+    },
+    "playwright": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "@playwright/mcp@latest",
+        "--headless"
+      ],
+      "enabled": true,
+      "timeout": 60000
+    }
+  },
   "provider": {
     "google": {
       "models": {

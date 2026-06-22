@@ -98,6 +98,7 @@ in
       mkOneshot "Telegram alert for failed unit %i" "send failure --unit %i";
 
     nginx = notifyOnFailure;
+    arxiv-mcp = notifyOnFailure;
     kodo-api = notifyOnFailure;
     kodo-ml = notifyOnFailure;
     vamp-tutor-backend = notifyOnFailure;
