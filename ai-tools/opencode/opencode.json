@@ -7,9 +7,9 @@
   ],
   "agent": {
     "reviewer": {
-      "description": "Reviews proposals, plans, and designs. This GLM-5.1 driven agent is intended for independent (cross-model) review of current specs.",
+      "description": "Reviews proposals, plans, and designs. This GLM-5.2 driven agent is intended for independent (cross-model) review of current specs.",
       "mode": "subagent",
-      "model": "opencode-go/glm-5.1",
+      "model": "opencode-go/glm-5.2",
       "permission": {
         "read": "allow",
         "glob": "allow",
