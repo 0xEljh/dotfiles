@@ -25,10 +25,9 @@ in
 		# Plain HTTP on the tailnet IP. The tailnet itself is the auth boundary;
 		# we skip Tailscale HTTPS to avoid leaking device names into public CT logs.
 		bindToTailscaleIp = true;
-		# Upstream 0.0.27 + open PRs #2673 (OpenCode event stream fix) and
-		# #2811 (OpenCode skills, parser hardened). Rebuild recipe and combined
-		# diff: docs/patches/t3-0.0.27-pr2673-2811.0.patch + design doc.
-		t3Package = "file:/home/elijah/.local/share/t3/t3-0.0.27-pr2673-2811.0.tgz";
+		# Upstream 0.0.28 nightly + PR #2673 (OpenCode event stream fix).
+		# The old 0.0.27 patched tarball remains on disk for rollback.
+		t3Package = "file:/home/elijah/.local/share/t3/t3-0.0.28-nightly.20260621.614-pr2673-sessionttl.0.tgz";
 	};
 
 	home = {

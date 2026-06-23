@@ -37,8 +37,8 @@ in
     bindToTailscaleIp = true;
     # Same patched build as sleeper-service. Copy the tarball here BEFORE
     # rebuilding, or t3-serve will crash-loop on a missing file:
-    #   scp sleeper-service:.local/share/t3/t3-0.0.27-pr2673-2811.0.tgz ~/.local/share/t3/
-    t3Package = "file:/home/elijah/.local/share/t3/t3-0.0.27-pr2673-2811.0.tgz";
+    #   scp sleeper-service:.local/share/t3/t3-0.0.28-nightly.20260621.614-pr2673-sessionttl.0.tgz ~/.local/share/t3/
+    t3Package = "file:/home/elijah/.local/share/t3/t3-0.0.28-nightly.20260621.614-pr2673-sessionttl.0.tgz";
   };
 
   home = {
