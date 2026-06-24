@@ -1,0 +1,669 @@
+apps/desktop/package.json --- JSON
+1 {                                     1 {
+2   "name": "@t3tools/desktop",         2   "name": "@t3tools/desktop",
+3   "version": "0.0.26",                3   "version": "0.0.27-pr2673-2811.0",
+4   "private": true,                    4   "private": true,
+5   "type": "module",                   5   "type": "module",
+6   "main": "dist-electron/main.cjs",   6   "main": "dist-electron/main.cjs",
+
+apps/server/package.json --- 1/2 --- JSON
+ 1  1 {
+ 2  2   "name": "t3",
+ 3  .   "version": "0.0.26",
+ 4  .   "license": "MIT",
+ 5  3   "repository": {
+ 6  4     "type": "git",
+ 7  5     "url": "https://github.com/pingdotgg/t3code",
+
+apps/server/package.json --- 2/2 --- JSON
+10   "bin": {                             8   "bin": {
+11     "t3": "./dist/bin.mjs"             9     "t3": "./dist/bin.mjs"
+12   },                                  10   },
+13   "files": [                          .. 
+14     "dist"                            .. 
+15   ],                                  .. 
+16   "type": "module",                   11   "type": "module",
+17   "scripts": {                        .. 
+18     "dev": "node --watch src/bin.ts"  12   "version": "0.0.27-pr2673-2811.0",
+.. ,                                     .. 
+19     "build:bundle": "vp pack",        13   "engines": {
+20     "start": "node dist/bin.mjs",     14     "node": "^22.16 || ^23.11 || >=2
+..                                       .. 4.10"
+21     "typecheck": "tsgo --noEmit",     15   },
+22     "test": "vp test run"             16   "files": [
+..                                       17     "dist"
+23   },                                  18   ],
+24   "dependencies": {                   19   "dependencies": {
+25     "@anthropic-ai/claude-agent-sdk"  20     "@anthropic-ai/claude-agent-sdk"
+.. : "^0.3.154",                         .. : "^0.3.154",
+26     "@effect/platform-bun": "catalog  21     "@effect/platform-bun": "4.0.0-b
+.. :",                                   .. eta.78",
+27     "@effect/platform-node": "catalo  22     "@effect/platform-node": "4.0.0-
+.. g:",                                  .. beta.78",
+28     "@effect/platform-node-shared":   23     "@effect/platform-node-shared": 
+.. "catalog:",                           .. "4.0.0-beta.78",
+29     "@effect/sql-sqlite-bun": "catal  24     "@effect/sql-sqlite-bun": "4.0.0
+.. og:",                                 .. -beta.78",
+30     "@opencode-ai/sdk": "^1.3.15",    25     "@opencode-ai/sdk": "^1.3.15",
+31     "@pierre/diffs": "catalog:",      26     "@pierre/diffs": "1.1.20",
+32     "effect": "catalog:",             27     "effect": "4.0.0-beta.78",
+33     "node-pty": "^1.1.0"              28     "node-pty": "^1.1.0"
+34   },                                  29   },
+35   "devDependencies": {                30   "overrides": {
+..                                       31     "@clerk/clerk-js>@base-org/accou
+..                                       .. nt": "-",
+..                                       32     "@clerk/clerk-js>@coinbase/walle
+..                                       .. t-sdk": "-",
+..                                       33     "@clerk/clerk-js>@solana/wallet-
+..                                       .. adapter-base": "-",
+..                                       34     "@clerk/clerk-js>@solana/wallet-
+..                                       .. adapter-react": "-",
+..                                       35     "@clerk/clerk-js>@solana/wallet-
+..                                       .. standard": "-",
+..                                       36     "@clerk/clerk-js>@wallet-standar
+..                                       .. d/core": "-",
+36     "@effect/vitest": "catalog:",     37     "@effect/atom-react": "4.0.0-bet
+..                                       .. a.78",
+..                                       38     "@effect/platform-bun": "4.0.0-b
+..                                       .. eta.78",
+37     "@t3tools/contracts": "workspace  39     "@effect/platform-node": "4.0.0-
+.. :*",                                  .. beta.78",
+38     "@t3tools/shared": "workspace:*"  40     "@effect/platform-node-shared": 
+.. ,                                     .. "4.0.0-beta.78",
+39     "@t3tools/tailscale": "workspace  41     "@effect/sql-pg": "4.0.0-beta.78
+.. :*",                                  .. ",
+40     "@t3tools/web": "workspace:*",    42     "@effect/sql-sqlite-bun": "4.0.0
+..                                       .. -beta.78",
+41     "@types/bun": "1.3.14",           43     "@effect/vitest": "4.0.0-beta.78
+..                                       .. ",
+..                                       44     "@effect/vitest>@vitest/runner":
+..                                       ..  "-",
+..                                       45     "@effect/vitest>vitest": "-",
+42     "@types/node": "catalog:",        46     "@types/node": "24.12.4",
+43     "effect-acp": "workspace:*",      47     "effect": "4.0.0-beta.78",
+44     "effect-codex-app-server": "work  48     "vite": "npm:@voidzero-dev/vite-
+.. space:*",                             .. plus-core@0.1.24",
+45     "vite-plus": "catalog:"           49     "vitest": "npm:@voidzero-dev/vit
+..                                       .. e-plus-test@0.1.24",
+..                                       50     "yaml": "^2.9.0"
+46   },                                  51   }
+47   "engines": {                        .. 
+48     "node": "^22.16 || ^23.11 || >=2  .. 
+.. 4.10"                                 .. 
+49   }                                   .. 
+50 }                                     52 }
+
+apps/server/src/provider/Drivers/OpenCodeDriver.ts --- 1/3 --- TypeScript
+ 18  18 import * as Effect from "effect/Effect";
+ 19  19 import * as FileSystem from "effect/FileSystem";
+ 20  20 import * as Path from "effect/Path";
+ ..  21 import * as Layer from "effect/Layer";
+ 21  22 import * as Schema from "effect/Schema";
+ 22  23 import * as Stream from "effect/Stream";
+ 23  24 import { HttpClient } from "effect/unstable/http";
+ 24  25 import { ChildProcessSpawner } from "effect/unstable/process";
+ ..  26 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
+ 25  27 
+ 26  28 import { makeOpenCodeTextGeneration } from "../../textGeneration/OpenCodeTextGeneration.ts";
+ 27  29 import { ServerConfig } from "../../config.ts";
+
+apps/server/src/provider/Drivers/OpenCodeDriver.ts --- 2/3 --- TypeScript
+142 144         processEnv,
+143 145       ).pipe(
+... 146         Effect.map(stampIdentity),
+... 147         Effect.provideService(OpenCodeRuntime, openCodeRuntime),
+... 148         Effect.provide(Layer.merge(Path.layer, NodeFileSystem.layer)),
+... 149       );
+144 150 
+145 151       const snapshot = yield* makeManagedServerProvider<OpenCodeSettings>({
+
+apps/server/src/provider/Drivers/OpenCodeDriver.ts --- 3/3 --- TypeScript
+148 154         streamSettings: Stream.never,
+149 155         haveSettingsChanged: () => false,
+150 156         initialSnapshot: (settings) =>
+151 157           makePendingOpenCodeProvider(settings, serverConfig.cwd).pipe(
+... 158             Effect.map(stampIdentity),
+... 159             Effect.provide(Layer.merge(Path.layer, NodeFileSystem.layer)),
+... 160           ),
+152 161         checkProvider,
+153 162         enrichSnapshot: ({ snapshot, publishSnapshot }) =>
+
+apps/server/src/provider/Layers/OpenCodeAdapter.test.ts --- 1/4 --- TypeScript
+ 63  63     closeError: null as Error | null,
+ 64  64     messages: [] as MessageEntry[],
+ 65  65     subscribedEvents: [] as unknown[],
+ ..  66     subscribedEventDirectory: process.cwd(),
+ ..  67     globalEventCalls: 0,
+ ..  68     keepSubscriptionOpen: false,
+ 66  69   },
+ 67  70   reset() {
+ 68  71     this.state.startCalls.length = 0;
+
+apps/server/src/provider/Layers/OpenCodeAdapter.test.ts --- 2/4 --- TypeScript
+ 76  79     this.state.closeError = null;
+ 77  80     this.state.messages = [];
+ 78  81     this.state.subscribedEvents = [];
+ ..  82     this.state.subscribedEventDirectory = process.cwd();
+ ..  83     this.state.globalEventCalls = 0;
+ ..  84     this.state.keepSubscriptionOpen = false;
+ 79  85   },
+ 80  86 };
+ ..  87 
+ ..  88 function toGlobalEvent(event: unknown, directory: string): unknown {
+ ..  89   return event && typeof event === "object" && "payload" in event
+ ..  90     ? event
+ ..  91     : {
+ ..  92         directory,
+ ..  93         payload: event,
+ ..  94       };
+ ..  95 }
+ 81  96 
+ 82  97 const OpenCodeRuntimeTestDouble: OpenCodeRuntimeShape = {
+ 83  98   startOpenCodeServerProcess: ({ binaryPath }) =>
+
+apps/server/src/provider/Layers/OpenCodeAdapter.test.ts --- 3/4 --- TypeScript
+158               : runtimeMock.state.m  173               : runtimeMock.state.m
+... essages;                             ... essages;
+159         },                           174         },
+160       },                             175       },
+161       event: {                       176       global: {
+162         subscribe: async () => ({    177         event: async (options?: { s
+...                                      ... ignal?: AbortSignal }) => {
+...                                      178           runtimeMock.state.globalE
+...                                      ... ventCalls += 1;
+...                                      179           return {
+163           stream: (async function*   180             stream: (async function
+... () {                                 ... * () {
+...                                      181               let index = 0;
+...                                      182               while (!options?.sign
+...                                      ... al?.aborted) {
+164             for (const event of run  183                 if (index < runtime
+... timeMock.state.subscribedEvents) {   ... Mock.state.subscribedEvents.length)
+...                                      ...  {
+165               yield event;           184                   yield toGlobalEve
+...                                      ... nt(
+...                                      185                     runtimeMock.sta
+...                                      ... te.subscribedEvents[index++],
+...                                      186                     runtimeMock.sta
+...                                      ... te.subscribedEventDirectory,
+...                                      187                   );
+...                                      188                   continue;
+166             }                        189                 }
+...                                      190                 if (!runtimeMock.st
+...                                      ... ate.keepSubscriptionOpen) {
+...                                      191                   break;
+...                                      192                 }
+...                                      193                 await Effect.runPro
+...                                      ... mise(Effect.sleep("5 millis"));
+...                                      194               }
+167           })(),                      195             })(),
+...                                      196           };
+168         }),                          197         },
+169       },                             198       },
+...                                      199       event: {
+...                                      200         subscribe: async () => {
+...                                      201           throw new Error("OpenCode
+...                                      ... Adapter should use global.event for
+...                                      ...  runtime events");
+...                                      202         },
+...                                      203       },
+170     }) as unknown as ReturnType<Ope  204     }) as unknown as ReturnType<Ope
+... nCodeRuntimeShape["createOpenCodeSd  ... nCodeRuntimeShape["createOpenCodeSd
+... kClient"]>,                          ... kClient"]>,
+171   loadOpenCodeInventory: () =>       205   loadOpenCodeInventory: () =>
+172     Effect.fail(                     206     Effect.fail(
+
+apps/server/src/provider/Layers/OpenCodeAdapter.test.ts --- 4/4 --- TypeScript
+654 688     }),
+655 689   );
+... 690 
+... 691   it.effect("streams current OpenCode global event payloads for the session directory", () =>
+... 692     Effect.gen(function* () {
+... 693       const adapter = yield* OpenCodeAdapter;
+... 694       const threadId = asThreadId("thread-opencode-current-event-shape");
+... 695       runtimeMock.state.keepSubscriptionOpen = true;
+... 696       runtimeMock.state.subscribedEventDirectory = "/repo/current-event-shape";
+... 697       const eventsFiber = yield* adapter.streamEvents.pipe(
+... 698         Stream.filter((event) => event.threadId === threadId),
+... 699         Stream.filter((event) => event.type === "content.delta"),
+... 700         Stream.take(1),
+... 701         Stream.runCollect,
+... 702         Effect.forkChild,
+... 703       );
+... 704 
+... 705       yield* adapter.startSession({
+... 706         provider: ProviderDriverKind.make("opencode"),
+... 707         threadId,
+... 708         cwd: "/repo/current-event-shape",
+... 709         runtimeMode: "full-access",
+... 710       });
+... 711       const turn = yield* adapter.sendTurn({
+... 712         threadId,
+... 713         input: "Fix it",
+... 714         modelSelection: {
+... 715           instanceId: ProviderInstanceId.make("opencode"),
+... 716           model: "openai/gpt-5",
+... 717         },
+... 718       });
+... 719 
+... 720       runtimeMock.state.subscribedEvents.push(
+... 721         {
+... 722           type: "message.updated",
+... 723           properties: {
+... 724             sessionID: "http://127.0.0.1:9999/session",
+... 725             info: {
+... 726               id: "msg-assistant-current-shape",
+... 727               role: "assistant",
+... 728             },
+... 729           },
+... 730         },
+... 731         {
+... 732           type: "message.part.updated",
+... 733           properties: {
+... 734             sessionID: "http://127.0.0.1:9999/session",
+... 735             part: {
+... 736               id: "prt-assistant-current-shape",
+... 737               sessionID: "http://127.0.0.1:9999/session",
+... 738               messageID: "msg-assistant-current-shape",
+... 739               type: "text",
+... 740               text: "Hello",
+... 741               time: {
+... 742                 start: 1_778_000_000_000,
+... 743               },
+... 744             },
+... 745           },
+... 746         },
+... 747       );
+... 748 
+... 749       const events = Array.from(yield* Fiber.join(eventsFiber).pipe(Effect.timeout("1 second")));
+... 750       assert.deepEqual(
+... 751         events.map((event) => event.type),
+... 752         ["content.delta"],
+... 753       );
+... 754       assert.equal(runtimeMock.state.globalEventCalls, 1);
+... 755       const delta = events.find((event) => event.type === "content.delta");
+... 756       assert.equal(delta?.turnId, turn.turnId);
+... 757       if (delta?.type === "content.delta") {
+... 758         assert.equal(delta.payload.delta, "Hello");
+... 759       }
+... 760     }),
+... 761   );
+656 762 
+657 763   it.effect("writes provider-native observability records using the session thread id", () =>
+658 764     Effect.gen(function* () {
+
+apps/server/src/provider/Layers/OpenCodeAdapter.ts --- 1/5 --- TypeScript
+ 58 }                                     58 }
+ 59                                       59 
+ 60 type OpenCodeSubscribedEvent =        60 type OpenCodeSubscribedEvent =
+ 61   Awaited<ReturnType<OpencodeClien    61   Awaited<ReturnType<OpencodeClien
+ .. t["event"]["subscribe"]>> extends     .. t["global"]["event"]>> extends {
+ .. {                                     .. 
+ 62     readonly stream: AsyncIterable    62     readonly stream: AsyncIterable
+ .. <infer TEvent>;                       .. <infer TEvent>;
+ 63   }                                   63   }
+ 64     ? TEvent                          64     ? TEvent extends { readonly pa
+ ..                                       .. yload: infer TPayload }
+ ..                                       65       ? TPayload
+ ..                                       66       : never
+ 65     : never;                          67     : never;
+ 66                                       68 
+ 67 interface OpenCodeSessionContext {    69 interface OpenCodeSessionContext {
+
+apps/server/src/provider/Layers/OpenCodeAdapter.ts --- 2/5 --- TypeScript
+ 86    * so concurrent callers can rac    88    * so concurrent callers can rac
+ .. e the transition safely via `getAn    .. e the transition safely via `getAn
+ .. dSet`.                                .. dSet`.
+ 87    */                                 89    */
+ 88   readonly stopped: Ref.Ref<boolea    90   readonly stopped: Ref.Ref<boolea
+ .. n>;                                   .. n>;
+ 89   /**                                 91   /**
+ 90    * Sole lifecycle handle for the    92    * Sole lifecycle handle for the
+ ..  session. Closing this scope:         ..  session. Closing this scope:
+ 91    *   - aborts the `AbortControll    93    *   - aborts the `AbortControll
+ .. er` registered as a finalizer         .. er` registered as a finalizer
+ 92    *     (cancels the in-flight `e    94    *     (cancels the in-flight `g
+ .. vent.subscribe` fetch),               .. lobal.event` fetch),
+ 93    *   - interrupts the event-pump    95    *   - interrupts the event-pump
+ ..  and server-exit fibers forked        ..  and server-exit fibers forked
+ 94    *     via `Effect.forkIn(sessio    96    *     via `Effect.forkIn(sessio
+ .. nScope)`,                             .. nScope)`,
+ 95    *   - tears down the OpenCode s    97    *   - tears down the OpenCode s
+ .. erver process for scope-owned serv    .. erver process for scope-owned serv
+ .. ers.                                  .. ers.
+ 96    */                                 98    */
+ 97   readonly sessionScope: Scope.Clo    99   readonly sessionScope: Scope.Clo
+ .. seable;                               .. seable;
+ 98 }                                    100 }
+ 99                                      101 
+
+apps/server/src/provider/Layers/OpenCodeAdapter.ts --- 3/5 --- TypeScript
+963     const startEventPump = Effect.   965     const startEventPump = Effect.
+... fn("startEventPump")(function* (co   ... fn("startEventPump")(function* (co
+... ntext: OpenCodeSessionContext) {     ... ntext: OpenCodeSessionContext) {
+964       // One AbortController per s   966       // One AbortController per s
+... ession scope. The finalizer fires    ... ession scope. The finalizer fires 
+... when                                 ... when
+965       // the scope closes (explici   967       // the scope closes (explici
+... t stop, unexpected exit, or layer    ... t stop, unexpected exit, or layer
+966       // shutdown) and cancels the   968       // shutdown) and cancels the
+...  in-flight `event.subscribe` fetch   ...  in-flight `global.event` fetch so
+...  so                                  ... 
+967       // the async iterable unwind   969       // the async iterable unwind
+... s cleanly.                           ... s cleanly.
+968       const eventsAbortController    970       const eventsAbortController 
+... = new AbortController();             ... = new AbortController();
+969       yield* Scope.addFinalizer(     971       yield* Scope.addFinalizer(
+
+apps/server/src/provider/Layers/OpenCodeAdapter.ts --- 4/5 --- TypeScript
+974       // Fibers forked into `conte   976       // Fibers forked into `conte
+... xt.sessionScope` are interrupted     ... xt.sessionScope` are interrupted
+975       // automatically when the sc   977       // automatically when the sc
+... ope closes — no bookkeeping requir   ... ope closes — no bookkeeping requir
+... ed.                                  ... ed.
+976       yield* Effect.flatMap(         978       yield* Effect.flatMap(
+977         runOpenCodeSdk("event.subs   979         runOpenCodeSdk("global.eve
+... cribe", () =>                        ... nt", () =>
+978           context.client.event.sub   980           context.client.global.ev
+... scribe(undefined, {                  ... ent({
+979             signal: eventsAbortCon   981             signal: eventsAbortCon
+... troller.signal,                      ... troller.signal,
+980           }),                        982           }),
+981         ),                           983         ),
+
+apps/server/src/provider/Layers/OpenCodeAdapter.ts --- 5/5 --- TypeScript
+984             subscription.stream,     986             subscription.stream,
+985             (cause) =>               987             (cause) =>
+986               new OpenCodeRuntimeE   988               new OpenCodeRuntimeE
+... rror({                               ... rror({
+987                 operation: "event.   989                 operation: "global
+... subscribe",                          ... .event",
+988                 detail: openCodeRu   990                 detail: openCodeRu
+... ntimeErrorDetail(cause),             ... ntimeErrorDetail(cause),
+989                 cause,               991                 cause,
+990               }),                    992               }),
+991           ).pipe(Stream.runForEach   993           ).pipe(
+... ((event) => handleSubscribedEvent(   ... 
+... context, event))),                   ... 
+...                                      994             Stream.runForEach((eve
+...                                      ... nt) => {
+...                                      995               if (!("directory" in
+...                                      ...  event) || event.directory !== con
+...                                      ... text.directory) {
+...                                      996                 return Effect.void
+...                                      ... ;
+...                                      997               }
+...                                      998               return handleSubscri
+...                                      ... bedEvent(context, event.payload);
+...                                      999             }),
+...                                     1000           ),
+992       ).pipe(                       1001       ).pipe(
+993         Effect.exit,                1002         Effect.exit,
+
+apps/server/src/provider/Layers/OpenCodeProvider.ts --- 1/10 --- TypeScript
+  3   3   type ModelCapabilities,
+  4   4   type OpenCodeSettings,
+  5   5   type ServerProviderModel,
+  .   6   type ServerProviderSkill,
+  6   7 } from "@t3tools/contracts";
+  7   8 import * as Cause from "effect/Cause";
+  8   9 import * as Data from "effect/Data";
+  9  10 import * as DateTime from "effect/DateTime";
+ 10  11 import * as Effect from "effect/Effect";
+ ..  12 import * as FileSystem from "effect/FileSystem";
+ ..  13 import * as Path from "effect/Path";
+ 11  14 
+ 12  15 import { createModelCapabilities } from "@t3tools/shared/model";
+ 13  16 import { compareSemverVersions } from "@t3tools/shared/semver";
+
+apps/server/src/provider/Layers/OpenCodeProvider.ts --- 2/10 --- TypeScript
+219 222   });
+220 223 }
+... 224 
+... 225 const SKILLS_DIR_NAME = ".agents";
+... 226 const SKILLS_SUBDIR_NAME = "skills";
+... 227 const SKILL_FILE_NAME = "SKILL.md";
+... 228 
+... 229 function readFrontmatterScalar(frontmatter: string, key: string): string | undefined {
+... 230   const lines = frontmatter.split("\n");
+... 231   const keyPattern = new RegExp(`^${key}:\\s*(.*)$`);
+... 232 
+... 233   for (let i = 0; i < lines.length; i++) {
+... 234     const match = lines[i]!.match(keyPattern);
+... 235     if (!match) {
+... 236       continue;
+... 237     }
+... 238 
+... 239     const inline = match[1]!.trim();
+... 240     const block = inline.match(/^([>|])[+-]?\s*(?:#.*)?$/);
+... 241     if (!block) {
+... 242       // Quoted values keep embedded `#`; only unquoted scalars get
+... 243       // trailing-comment stripping.
+... 244       const quoted = inline.match(/^(["'])([\s\S]*?)\1\s*(?:#.*)?$/);
+... 245       return quoted ? quoted[2]!.trim() : inline.replace(/\s+#.*$/, "").trim();
+... 246     }
+... 247 
+... 248     // Block scalar: collect the following more-indented lines.
+... 249     const collected: Array<string> = [];
+... 250     for (let j = i + 1; j < lines.length; j++) {
+... 251       const line = lines[j]!;
+... 252       if (line.trim().length === 0) {
+... 253         collected.push("");
+... 254         continue;
+... 255       }
+... 256       if (!/^[ \t]/.test(line)) {
+... 257         break;
+... 258       }
+... 259       collected.push(line.trim());
+... 260     }
+... 261     while (collected.length > 0 && collected[collected.length - 1] === "") {
+... 262       collected.pop();
+... 263     }
+... 264     return block[1] === "|"
+... 265       ? collected.join("\n").trim()
+... 266       : collected.join(" ").replace(/\s+/g, " ").trim();
+... 267   }
+... 268 
+... 269   return undefined;
+... 270 }
+... 271 
+... 272 function parseSkillFrontmatter(
+... 273   content: string,
+... 274 ): { name: string; description?: string; displayName?: string } | null {
+... 275   // Tolerate BOM and CRLF; fences must be lone `---` lines.
+... 276   const frontmatterMatch = content.match(/^\uFEFF?---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/);
+... 277   if (!frontmatterMatch) {
+... 278     return null;
+... 279   }
+... 280 
+... 281   const frontmatter = frontmatterMatch[1]!.replace(/\r\n/g, "\n");
+... 282   const name = readFrontmatterScalar(frontmatter, "name");
+... 283   if (!name) {
+... 284     return null;
+... 285   }
+... 286 
+... 287   // ServerProviderSkill requires TrimmedNonEmptyString for these fields, and
+... 288   // an empty string would fail schema decode for the whole provider snapshot,
+... 289   // so only emit fields whose parsed value is non-empty.
+... 290   const description = readFrontmatterScalar(frontmatter, "description");
+... 291   const displayName = readFrontmatterScalar(frontmatter, "displayName");
+... 292 
+... 293   const result: { name: string; description?: string; displayName?: string } = { name };
+... 294   if (description) {
+... 295     result.description = description;
+... 296   }
+... 297   if (displayName) {
+... 298     result.displayName = displayName;
+... 299   }
+... 300   return result;
+... 301 }
+... 302 
+... 303 function loadOpenCodeSkills(
+... 304   cwd: string,
+... 305 ): Effect.Effect<ReadonlyArray<ServerProviderSkill>, never, FileSystem.FileSystem | Path.Path> {
+... 306   return Effect.gen(function* () {
+... 307     const fs = yield* FileSystem.FileSystem;
+... 308     const path = yield* Path.Path;
+... 309 
+... 310     const skillsDir = path.join(cwd, SKILLS_DIR_NAME, SKILLS_SUBDIR_NAME);
+... 311     const entriesExit = yield* Effect.exit(fs.readDirectory(skillsDir, { recursive: false }));
+... 312 
+... 313     if (entriesExit._tag !== "Success") {
+... 314       return [];
+... 315     }
+... 316 
+... 317     const skills: Array<ServerProviderSkill> = [];
+... 318 
+... 319     // readDirectory order is platform-dependent; sort for a stable snapshot.
+... 320     for (const entryName of [...entriesExit.value].sort()) {
+... 321       const fullPath = path.join(skillsDir, entryName);
+... 322       const statExit = yield* Effect.exit(fs.stat(fullPath));
+... 323 
+... 324       if (statExit._tag !== "Success" || statExit.value.type !== "Directory") {
+... 325         continue;
+... 326       }
+... 327 
+... 328       const contentExit = yield* Effect.exit(
+... 329         fs.readFileString(path.join(fullPath, SKILL_FILE_NAME)),
+... 330       );
+... 331 
+... 332       if (contentExit._tag !== "Success") {
+... 333         continue;
+... 334       }
+... 335 
+... 336       const parsed = parseSkillFrontmatter(contentExit.value);
+... 337       if (!parsed) {
+... 338         continue;
+... 339       }
+... 340 
+... 341       // Slice by code point so a 200-char cut can't split a surrogate pair.
+... 342       const descriptionChars = parsed.description ? Array.from(parsed.description) : undefined;
+... 343       const shortDescription =
+... 344         descriptionChars && descriptionChars.length > 200
+... 345           ? descriptionChars.slice(0, 200).join("") + "..."
+... 346           : parsed.description;
+... 347 
+... 348       const skill: ServerProviderSkill = {
+... 349         name: parsed.name,
+... 350         // Codex skills carry the SKILL.md file path, not the directory;
+... 351         // keep the same convention here.
+... 352         path: path.join(fullPath, SKILL_FILE_NAME),
+... 353         enabled: true,
+... 354         ...(parsed.description !== undefined ? { description: parsed.description } : {}),
+... 355         ...(parsed.displayName !== undefined ? { displayName: parsed.displayName } : {}),
+... 356         ...(shortDescription !== undefined ? { shortDescription } : {}),
+... 357       };
+... 358       skills.push(skill);
+... 359     }
+... 360 
+... 361     return skills;
+... 362   });
+... 363 }
+221 364 
+222 365 function flattenOpenCodeModels(input: OpenCodeInventory): ReadonlyArray<ServerProviderModel> {
+223 366   const connected = new Set(input.providerList.connected);
+
+apps/server/src/provider/Layers/OpenCodeProvider.ts --- 3/10 --- TypeScript
+254 397 
+255 398 export const makePendingOpenCodeProvider = (
+256 399   openCodeSettings: OpenCodeSettings,
+... 400   cwd: string,
+257 401 ): Effect.Effect<ServerProviderDraft, never, FileSystem.FileSystem | Path.Path> =>
+258 402   Effect.gen(function* () {
+259 403     const checkedAt = yield* Effect.map(DateTime.now, DateTime.formatIso);
+260 404     const models = providerModelsFromSettings(
+
+apps/server/src/provider/Layers/OpenCodeProvider.ts --- 4/10 --- TypeScript
+263 407       openCodeSettings.customModels,
+264 408       DEFAULT_OPENCODE_MODEL_CAPABILITIES,
+265 409     );
+... 410     const skills = yield* loadOpenCodeSkills(cwd);
+266 411 
+267 412     if (!openCodeSettings.enabled) {
+268 413       return buildServerProvider({
+269 414         presentation: OPENCODE_PRESENTATION,
+270 415         enabled: false,
+271 416         checkedAt,
+272 417         models,
+... 418         skills,
+273 419         probe: {
+274 420           installed: false,
+275 421           version: null,
+
+apps/server/src/provider/Layers/OpenCodeProvider.ts --- 5/10 --- TypeScript
+288 434       enabled: true,
+289 435       checkedAt,
+290 436       models,
+... 437       skills,
+291 438       probe: {
+292 439         installed: false,
+293 440         version: null,
+
+apps/server/src/provider/Layers/OpenCodeProvider.ts --- 6/10 --- TypeScript
+305 452 ): Effect.fn.Return<
+... 453   ServerProviderDraft,
+... 454   never,
+... 455   OpenCodeRuntime | FileSystem.FileSystem | Path.Path
+... 456 > {
+306 457   const openCodeRuntime = yield* OpenCodeRuntime;
+307 458   const checkedAt = DateTime.formatIso(yield* DateTime.now);
+308 459   const customModels = openCodeSettings.customModels;
+309 460   const isExternalServer = openCodeSettings.serverUrl.trim().length > 0;
+... 461 
+... 462   const skills = yield* loadOpenCodeSkills(cwd);
+310 463 
+311 464   const fallback = (cause: unknown, version: string | null = null) => {
+312 465     const failure = formatOpenCodeProbeError({
+
+apps/server/src/provider/Layers/OpenCodeProvider.ts --- 7/10 --- TypeScript
+324 477         customModels,
+325 478         DEFAULT_OPENCODE_MODEL_CAPABILITIES,
+326 479       ),
+... 480       skills,
+327 481       probe: {
+328 482         installed: failure.installed,
+329 483         version,
+
+apps/server/src/provider/Layers/OpenCodeProvider.ts --- 8/10 --- TypeScript
+345 499         customModels,
+346 500         DEFAULT_OPENCODE_MODEL_CAPABILITIES,
+347 501       ),
+... 502       skills,
+348 503       probe: {
+349 504         installed: false,
+350 505         version: null,
+
+apps/server/src/provider/Layers/OpenCodeProvider.ts --- 9/10 --- TypeScript
+396 551           customModels,
+397 552           DEFAULT_OPENCODE_MODEL_CAPABILITIES,
+398 553         ),
+... 554         skills,
+399 555         probe: {
+400 556           installed: true,
+401 557           version,
+
+apps/server/src/provider/Layers/OpenCodeProvider.ts --- 10/10 --- TypeScript
+447 603     enabled: true,
+448 604     checkedAt,
+449 605     models,
+... 606     skills,
+450 607     probe: {
+451 608       installed: true,
+452 609       version,
+
+apps/web/package.json --- JSON
+1 {                                     1 {
+2   "name": "@t3tools/web",             2   "name": "@t3tools/web",
+3   "version": "0.0.26",                3   "version": "0.0.27-pr2673-2811.0",
+4   "private": true,                    4   "private": true,
+5   "type": "module",                   5   "type": "module",
+6   "scripts": {                        6   "scripts": {
+
+packages/contracts/package.json --- JSON
+1 {                                     1 {
+2   "name": "@t3tools/contracts",       2   "name": "@t3tools/contracts",
+3   "version": "0.0.26",                3   "version": "0.0.27-pr2673-2811.0",
+4   "private": true,                    4   "private": true,
+5   "files": [                          5   "files": [
+6     "dist"                            6     "dist"
+
