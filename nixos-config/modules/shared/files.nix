@@ -69,6 +69,8 @@
       alias la="eza -a --group --icons";
       alias lt="eza -T --level=2 --git-ignore --icons";
       alias tree="eza -T --icons";
+      
+      alias tmux0="tmux a -t 0";
 
       if command -v zoxide >/dev/null 2>&1; then
         eval "$(zoxide init zsh)"

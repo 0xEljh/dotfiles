@@ -1,0 +1,11 @@
+version: 2
+updates:
+  - package-ecosystem: "nix"
+    directory: "/nixos-config"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "uv"
+    directory: "/scripts/personal_telegram_bot"
+    schedule:
+      interval: "weekly"
