@@ -5,6 +5,12 @@ let
   homeDir = "/home/${user}";
   botDir = "${homeDir}/dotfiles/scripts/personal_telegram_bot";
   envFile = config.sops.secrets."telegram-bot.env".path;
+  # Plaintext dotenv the aw/dotfiles-sync pipeline already maintains. Reused
+  # (optional — `-` prefix below) so the evening standdown's deep link can read
+  # the Time-Accountant Notion secret + datasource id without duplicating them
+  # into sops. Loaded BEFORE the sops env so sops still wins for the keys they
+  # share (TARGET_TZ, NOTION_BREAD_DATASOURCE_ID); the bot ignores the rest.
+  awEnvFile = "${homeDir}/dotfiles/scripts/.env";
 
   botService = command: {
     after = [ "network-online.target" ];
@@ -38,7 +44,7 @@ let
         # secret; access is gated by the integration token, not the id/URL.
         "NOTION_TIME_ACCOUNTING_URL=https://app.notion.com/p/2ba300d83b7f8068befee670fc059a37?v=2ba300d83b7f806cb5ea000c128857fe"
       ];
-      EnvironmentFile = envFile;
+      EnvironmentFile = [ "-${awEnvFile}" envFile ];
       ExecStart = "${pkgs.uv}/bin/uv run --frozen botctl ${command}";
     };
   };

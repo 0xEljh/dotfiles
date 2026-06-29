@@ -58,6 +58,8 @@ class Config:
     health_urls: list[str]
     aw_data_dir: Path
     aw_max_age_hours: float
+    aw_systematic_after_hours: float
+    aw_stale_reminder_hours: int
     life_db_path: Path
     life_ingest_token: str | None
     life_ingest_bind: str
@@ -104,6 +106,12 @@ class Config:
             health_urls=_parse_csv(env.get("HEALTH_HTTP_URLS", ",".join(DEFAULT_HEALTH_URLS))),
             aw_data_dir=Path(env.get("AW_DATA_DIR", str(aw_hours.DEFAULT_AW_DATA_DIR))),
             aw_max_age_hours=float(env.get("AW_DATA_MAX_AGE_HOURS", str(aw_hours.DEFAULT_MAX_AGE_HOURS))),
+            aw_systematic_after_hours=float(
+                env.get("AW_SYSTEMATIC_AFTER_HOURS", str(aw_hours.DEFAULT_SYSTEMATIC_AFTER_HOURS))
+            ),
+            aw_stale_reminder_hours=int(
+                env.get("AW_STALE_REMINDER_HOURS", str(aw_hours.DEFAULT_STALE_REMINDER_HOURS))
+            ),
             life_db_path=Path(env.get("LIFE_DB", str(DEFAULT_LIFE_DB_PATH))),
             life_ingest_token=env.get("LIFE_INGEST_TOKEN") or None,
             # nginx (hooks.0xeljh.com) is the sole entrypoint and terminates

@@ -6,12 +6,14 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from .health import CheckResult
+from .health import CheckResult, Transition
 
 # Repo scripts/ directory, where aw_notion_sync.py and aw-data/ live.
 SCRIPTS_DIR = Path(os.environ.get("AW_SCRIPTS_DIR", Path(__file__).resolve().parents[3]))
 DEFAULT_AW_DATA_DIR = SCRIPTS_DIR / "aw-data"
 DEFAULT_MAX_AGE_HOURS = 26  # > 1 day: laptops sleeping overnight is not an incident
+DEFAULT_SYSTEMATIC_AFTER_HOURS = 24
+DEFAULT_STALE_REMINDER_HOURS = 12
 TOP_TOOLS_SHOWN = 3
 
 
@@ -41,6 +43,58 @@ def check_aw_freshness(
         name="aw-data",
         ok=age_hours <= max_age_hours,
         detail=f"newest push {newest.name}, {age_hours:.1f}h ago",
+    )
+
+
+def _parse_since(raw: str) -> datetime:
+    return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+
+
+def stale_aw_hours(existing_row, now: datetime) -> float | None:
+    if not existing_row or existing_row["status"] != "fail":
+        return None
+    since = _parse_since(existing_row["since"])
+    if since.tzinfo is None and now.tzinfo is not None:
+        since = since.replace(tzinfo=now.tzinfo)
+    elif since.tzinfo is not None and now.tzinfo is None:
+        since = since.replace(tzinfo=None)
+    return (now - since).total_seconds() / 3600
+
+
+def stale_aw_reminder_window_key(
+    existing_row,
+    result: CheckResult,
+    now: datetime,
+    systematic_after_hours: float = DEFAULT_SYSTEMATIC_AFTER_HOURS,
+    reminder_every_hours: int = DEFAULT_STALE_REMINDER_HOURS,
+) -> str | None:
+    """Return a dedupe key for sustained aw-data failures, otherwise None."""
+    if result.name != "aw-data" or result.ok:
+        return None
+    stale_hours = stale_aw_hours(existing_row, now)
+    if stale_hours is None or stale_hours < systematic_after_hours:
+        return None
+    window = now.hour // reminder_every_hours
+    return f"aw-data/{now.strftime('%Y-%m-%d')}/{window}"
+
+
+def stale_aw_reminder_transition(
+    existing_row,
+    result: CheckResult,
+    now: datetime,
+    systematic_after_hours: float = DEFAULT_SYSTEMATIC_AFTER_HOURS,
+) -> Transition | None:
+    """Build a stable fail->fail reminder once aw-data staleness is systematic."""
+    stale_hours = stale_aw_hours(existing_row, now)
+    if result.name != "aw-data" or result.ok:
+        return None
+    if stale_hours is None or stale_hours < systematic_after_hours:
+        return None
+    return Transition(
+        name=result.name,
+        old="fail",
+        new="fail",
+        detail=f"systematic stale for {stale_hours:.1f}h: {result.detail}",
     )
 
 

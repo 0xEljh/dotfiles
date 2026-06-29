@@ -1,10 +1,17 @@
 import os
+from types import SimpleNamespace
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
+from personal_telegram_bot import cli
+from personal_telegram_bot.config import Config
+from personal_telegram_bot.db import StateDB
 from personal_telegram_bot.providers.aw_hours import (
     HourReport,
     build_hour_report,
     check_aw_freshness,
+    stale_aw_reminder_transition,
+    stale_aw_reminder_window_key,
     previous_hour,
 )
 from personal_telegram_bot.formatters import format_hour_report
@@ -95,3 +102,78 @@ def test_aw_freshness_no_data(tmp_path):
     result = check_aw_freshness(tmp_path, max_age_hours=26, now_ts=1_781_000_000)
     assert not result.ok
     assert result.name == "aw-data"
+
+
+def test_aw_stale_reminder_waits_for_systematic_threshold():
+    result = check_aw_freshness("/missing", max_age_hours=26, now_ts=1_781_000_000)
+    row = {"status": "fail", "since": "2026-06-20T00:00:00+08:00"}
+    now = datetime.fromisoformat("2026-06-20T12:00:00+08:00")
+
+    assert stale_aw_reminder_window_key(row, result, now, systematic_after_hours=24, reminder_every_hours=12) is None
+    assert stale_aw_reminder_transition(row, result, now, systematic_after_hours=24) is None
+
+
+def test_aw_stale_reminder_marks_systematic_failures():
+    result = check_aw_freshness("/missing", max_age_hours=26, now_ts=1_781_000_000)
+    row = {"status": "fail", "since": "2026-06-20T00:00:00+08:00"}
+    now = datetime.fromisoformat("2026-06-21T06:00:00+08:00")
+
+    key = stale_aw_reminder_window_key(row, result, now, systematic_after_hours=24, reminder_every_hours=12)
+    transition = stale_aw_reminder_transition(row, result, now, systematic_after_hours=24)
+
+    assert key == "aw-data/2026-06-21/0"
+    assert transition is not None
+    assert transition.old == "fail"
+    assert transition.new == "fail"
+    assert "systematic" in transition.detail
+
+
+def test_send_health_periodically_alerts_systematic_aw_staleness(tmp_path, monkeypatch):
+    tz = ZoneInfo("Asia/Singapore")
+    db_path = tmp_path / "state.sqlite3"
+    db = StateDB(db_path)
+    db.set_health_status(
+        "aw-data",
+        "fail",
+        detail="no aw-data files",
+        now="2026-06-20T00:00:00+08:00",
+    )
+
+    cfg = Config(
+        telegram_token="tok",
+        default_chat_id=1,
+        allowed_user_ids=frozenset(),
+        notion_token=None,
+        bread_datasource_id=None,
+        tz=tz,
+        db_path=db_path,
+        health_units=[],
+        health_urls=[],
+        aw_data_dir=tmp_path / "aw-data",
+        aw_max_age_hours=26.0,
+        aw_systematic_after_hours=24.0,
+        aw_stale_reminder_hours=12,
+        life_db_path=tmp_path / "life.sqlite3",
+        life_ingest_token=None,
+        life_ingest_bind="127.0.0.1",
+        life_ingest_port=8830,
+    )
+    monkeypatch.setattr(
+        cli,
+        "datetime",
+        type(
+            "FixedDateTime",
+            (datetime,),
+            {"now": classmethod(lambda cls, tz=None: datetime(2026, 6, 21, 6, 0, tzinfo=tz))},
+        ),
+    )
+    sent = []
+    monkeypatch.setattr(cli, "_deliver", lambda cfg, text, dry_run, parse_mode=None: sent.append(text) or 1)
+
+    args = SimpleNamespace(force=False, dry_run=False)
+    cli.send_health(cfg, args)
+    cli.send_health(cfg, args)
+
+    assert len(sent) == 1
+    assert "still failing" in sent[0]
+    assert "systematic" in sent[0]

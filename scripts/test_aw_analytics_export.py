@@ -65,6 +65,35 @@ class PhoneAggregationTests(unittest.TestCase):
         self.assertEqual(0.5, daily["summary"]["dev_time"]["hours"])
         self.assertEqual("Termux", daily["dev_tools_breakdown"][0]["name"])
 
+    def test_generate_reports_warns_when_desktop_data_is_stale(self) -> None:
+        today = date(2026, 6, 20)
+
+        class FixedDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return datetime.combine(today, time(12, 0), tzinfo=tz)
+
+        with (
+            patch.object(aw_analytics_export, "datetime", FixedDateTime),
+            patch.object(
+                aw_analytics_export,
+                "load_aw_data_for_date_range",
+                return_value={date(2026, 6, 18): {}},
+            ),
+            patch.object(
+                aw_analytics_export,
+                "load_phone_hours_for_date_range",
+                return_value={today: {10: {"Termux": 1800.0}}},
+            ),
+        ):
+            reports = aw_analytics_export.generate_all_reports(lookback_days=3)
+
+        quality = reports["data_quality"]
+        self.assertEqual("2026-06-18", quality["latest_desktop_date"])
+        self.assertEqual("2026-06-20", quality["latest_phone_date"])
+        self.assertEqual(2, quality["desktop_days_behind_today"])
+        self.assertTrue(quality["warnings"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -119,6 +119,42 @@ def load_phone_hours_for_date_range(
     return data_by_date
 
 
+def build_data_quality(all_data: dict, phone_data: dict, today: date) -> dict:
+    """Summarise source freshness so stale desktop data is visible downstream."""
+    latest_desktop_date = max(all_data.keys()) if all_data else None
+    latest_phone_date = max(phone_data.keys()) if phone_data else None
+    warnings = []
+
+    desktop_days_behind_today = None
+    if latest_desktop_date:
+        desktop_days_behind_today = (today - latest_desktop_date).days
+        if desktop_days_behind_today > 1:
+            warnings.append(
+                "Desktop ActivityWatch data is stale: latest desktop date is "
+                f"{latest_desktop_date.isoformat()}, {desktop_days_behind_today} "
+                "days behind the report date. Recent reports may be phone-only."
+            )
+    else:
+        warnings.append(
+            "No desktop ActivityWatch data was loaded. Reports are phone-only if phone data exists."
+        )
+
+    if latest_desktop_date and latest_phone_date and latest_phone_date > latest_desktop_date:
+        warnings.append(
+            "Phone data is newer than desktop ActivityWatch data: latest phone date is "
+            f"{latest_phone_date.isoformat()}."
+        )
+
+    return {
+        "latest_desktop_date": latest_desktop_date.isoformat()
+        if latest_desktop_date
+        else None,
+        "latest_phone_date": latest_phone_date.isoformat() if latest_phone_date else None,
+        "desktop_days_behind_today": desktop_days_behind_today,
+        "warnings": warnings,
+    }
+
+
 # ============================================================================
 # Aggregation Functions
 # ============================================================================
@@ -433,6 +469,10 @@ def generate_all_reports(lookback_days: int = 30) -> dict:
     phone_data = load_phone_hours_for_date_range(start_date, today)
     print(f"Loaded phone data for {len(phone_data)} days")
 
+    data_quality = build_data_quality(all_data, phone_data, today)
+    for warning in data_quality["warnings"]:
+        print(f"WARNING: {warning}")
+
     # Generate daily aggregates
     daily_aggregates = {}
     for d in sorted(set(all_data.keys()) | set(phone_data.keys())):
@@ -530,6 +570,7 @@ def generate_all_reports(lookback_days: int = 30) -> dict:
         "generated_at": datetime.now(TARGET_TZ).isoformat(),
         "timezone": str(TARGET_TZ),
         "lookback_days": lookback_days,
+        "data_quality": data_quality,
         "daily": daily_reports,
         "weekly": weekly_reports,
         "monthly": monthly_reports,

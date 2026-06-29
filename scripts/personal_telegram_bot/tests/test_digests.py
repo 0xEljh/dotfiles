@@ -24,6 +24,8 @@ def _cfg(tmp_path):
         health_urls=[],
         aw_data_dir=tmp_path,
         aw_max_age_hours=26.0,
+        aw_systematic_after_hours=24.0,
+        aw_stale_reminder_hours=12,
         life_db_path=tmp_path / "life.sqlite3",
         life_ingest_token=None,
         life_ingest_bind="127.0.0.1",

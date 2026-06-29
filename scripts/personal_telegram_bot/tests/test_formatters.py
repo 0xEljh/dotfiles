@@ -116,6 +116,23 @@ def test_health_alert_failure_and_recovery():
     assert "recovered" in text.lower()
 
 
+def test_health_alert_systematic_stale_aw_reminder():
+    transitions = [
+        Transition(
+            name="aw-data",
+            old="fail",
+            new="fail",
+            detail="systematic stale for 30.0h: newest push aw_Mac.json, 40.0h ago",
+        )
+    ]
+
+    text = format_health_alert(transitions)
+
+    assert "aw-data" in text
+    assert "still failing" in text
+    assert "systematic" in text
+
+
 def test_unit_failure_mentions_unit_and_journalctl():
     text = format_unit_failure("kodo-api.service", journal_tail=None)
     assert "kodo-api.service" in text

@@ -220,26 +220,56 @@ def send_hour(cfg: Config, args) -> int:
 
 
 def send_health(cfg: Config, args) -> int:
-    from .providers.aw_hours import check_aw_freshness
+    from .providers.aw_hours import (
+        check_aw_freshness,
+        stale_aw_reminder_transition,
+        stale_aw_reminder_window_key,
+    )
     from .providers.health import diff_transitions, run_all
 
     db = StateDB(cfg.db_path)
     results = run_all(cfg.health_units, cfg.health_urls)
-    results.append(check_aw_freshness(cfg.aw_data_dir, cfg.aw_max_age_hours))
+    aw_result = check_aw_freshness(cfg.aw_data_dir, cfg.aw_max_age_hours)
+    results.append(aw_result)
     transitions = diff_transitions(db.get_health_statuses(), results)
+    now = datetime.now(cfg.tz)
+    aw_row = db.get_health_row(aw_result.name)
+    aw_reminder_key = stale_aw_reminder_window_key(
+        aw_row,
+        aw_result,
+        now,
+        cfg.aw_systematic_after_hours,
+        cfg.aw_stale_reminder_hours,
+    )
+    aw_reminder = stale_aw_reminder_transition(
+        aw_row,
+        aw_result,
+        now,
+        cfg.aw_systematic_after_hours,
+    )
+    if (
+        aw_reminder
+        and aw_reminder_key
+        and (args.dry_run or not db.was_sent("aw-data-systematic", aw_reminder_key))
+    ):
+        transitions.append(aw_reminder)
 
+    sent_transition_alert = False
     if args.force:
         _deliver(cfg, format_health_summary(results), args.dry_run)
     elif transitions:
         _deliver(cfg, format_health_alert(transitions), args.dry_run)
+        sent_transition_alert = True
     else:
         print("No health transitions")
 
     if not args.dry_run:
         for result in results:
             db.set_health_status(result.name, result.status, result.detail)
-        if transitions:
+        if sent_transition_alert:
             db.record_sent("health-alert", datetime.now(cfg.tz).isoformat(timespec="seconds"), None)
+            if aw_reminder and aw_reminder_key and aw_reminder in transitions:
+                db.record_sent("aw-data-systematic", aw_reminder_key, None)
             db.log_event(
                 "health-transitions",
                 {t.name: f"{t.old}->{t.new}" for t in transitions},
