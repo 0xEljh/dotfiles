@@ -20,7 +20,7 @@ load_dotenv(os.path.join(current_dir, ".env"))
 NOTION_API_KEY = os.getenv("NOTION_TIME_ACCOUNTANT_SECRET")
 NOTION_DATASOURCE_ID = os.getenv("NOTION_TIME_ACCOUNTING_DATASOURCE_ID")
 NOTION_BREAD_DATASOURCE_ID = os.getenv("NOTION_BREAD_DATASOURCE_ID")
-TARGET_TIMEZONE = ZoneInfo(os.getenv("CURRENT_TIMEZONE", "America/New_York"))
+TARGET_TIMEZONE = ZoneInfo(os.getenv("CURRENT_TIMEZONE", "Asia/Singapore"))
 
 def main():
     today_str = datetime.now(TARGET_TIMEZONE).strftime("%Y-%m-%d")

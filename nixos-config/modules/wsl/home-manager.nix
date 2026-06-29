@@ -139,6 +139,7 @@ in
       '';
       Environment = [
         "PYTHONUNBUFFERED=1"
+        "TARGET_TZ=Asia/Singapore"
         "PATH=${awPushPath}"
       ];
       TimeoutStartSec = "15min";

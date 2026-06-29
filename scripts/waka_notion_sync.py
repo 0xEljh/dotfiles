@@ -35,7 +35,7 @@ NOTION_DATASOURCE_ID = os.getenv("NOTION_TIME_ACCOUNTING_DATASOURCE_ID")
 
 # Journal timezone: the timezone used for defining "a day" in Notion
 # Should match your WakaTime account timezone setting
-TARGET_TZ = ZoneInfo(os.getenv("TARGET_TZ", "America/New_York"))
+TARGET_TZ = ZoneInfo(os.getenv("TARGET_TZ", "Asia/Singapore"))
 
 # How many hours into "today" we continue to update "yesterday"
 FREEZE_HOURS = int(os.getenv("FREEZE_HOURS", "2"))

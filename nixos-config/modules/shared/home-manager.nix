@@ -60,6 +60,7 @@ let name = "elijah";
       alias lt="eza -T --level=2 --git-ignore --icons";
       alias tree="eza -T --icons";
       alias ncat="notion-cat";
+      alias tmux0="tmux a -t 0";
       alias tmux-reset="tmux kill-server 2>/dev/null; rm -rf ~/.cache/tmux/resurrect/*; tmux";
 
       # zoxide
