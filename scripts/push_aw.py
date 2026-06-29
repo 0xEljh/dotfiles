@@ -15,7 +15,7 @@ from collections import Counter
 from zoneinfo import ZoneInfo
 
 # --- CONFIGURATION ---
-SLEEPER_SERVICE_ALIAS = "contabo"
+SLEEPER_SERVICE_ALIAS = "sleeper-service"
 SLEEPER_SERVICE_DEST_DIR = "~/dotfiles/scripts/aw-data/"  # Ensure this folder exists on sleeper-service
 TARGET_TZ = ZoneInfo(os.getenv("TARGET_TZ", "Asia/Singapore"))
 # ---------------------
