@@ -2,6 +2,11 @@
 
 let
   cfg = config.services.t3Serve;
+  playwrightBrowserExecutable =
+    if pkgs.stdenv.hostPlatform.isDarwin then
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    else
+      lib.getExe pkgs.chromium;
   t3PackageSpec =
     if cfg.t3Package == null then "t3@${cfg.t3Version}" else cfg.t3Package;
   t3PackageArg = lib.escapeShellArg t3PackageSpec;
@@ -145,6 +150,7 @@ in
           "HOME=%h"
           "XDG_CONFIG_HOME=%h/.config"
           "XDG_CACHE_HOME=%h/.cache"
+          "PLAYWRIGHT_MCP_EXECUTABLE_PATH=${playwrightBrowserExecutable}"
         ];
       };
 

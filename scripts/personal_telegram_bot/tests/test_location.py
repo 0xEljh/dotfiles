@@ -16,7 +16,11 @@ from personal_telegram_bot.life_events import (
     LifeEventsDB,
     normalize_owntracks,
 )
-from personal_telegram_bot.providers.location import dwell_for_date, place_for_hours
+from personal_telegram_bot.providers.location import (
+    current_place,
+    dwell_for_date,
+    place_for_hours,
+)
 
 TZ = ZoneInfo("Asia/Singapore")
 RECEIVED = datetime(2026, 6, 14, 4, 0, tzinfo=timezone.utc)
@@ -164,3 +168,62 @@ def test_location_summary_cli_json(tmp_path, monkeypatch, capsys):
     assert payload["date"] == "2026-06-14"
     assert payload["hours"]["9"] == "Office"
     assert round(payload["dwell"]["Office"]) == 12600
+
+
+# --- current_place: "where am I now" for the evening standdown gate ---
+
+NOW = datetime(2026, 6, 28, 21, 50, tzinfo=TZ)
+
+
+def test_current_place_after_enter(tmp_path):
+    db = _db(tmp_path, [_place_event("place_enter", "Home", datetime(2026, 6, 28, 21, 0, tzinfo=TZ))])
+    assert current_place(db, NOW) == "Home"
+
+
+def test_current_place_after_leave_is_none(tmp_path):
+    db = _db(
+        tmp_path,
+        [
+            _place_event("place_enter", "Home", datetime(2026, 6, 28, 18, 0, tzinfo=TZ)),
+            _place_event("place_leave", "Home", datetime(2026, 6, 28, 20, 0, tzinfo=TZ)),
+        ],
+    )
+    assert current_place(db, NOW) is None
+
+
+def test_current_place_latest_enter_wins(tmp_path):
+    db = _db(
+        tmp_path,
+        [
+            _place_event("place_enter", "Home", datetime(2026, 6, 28, 18, 0, tzinfo=TZ)),
+            _place_event("place_enter", "Cheryl", datetime(2026, 6, 28, 20, 0, tzinfo=TZ)),
+        ],
+    )
+    assert current_place(db, NOW) == "Cheryl"
+
+
+def test_current_place_present_ping_counts(tmp_path):
+    db = _db(tmp_path, [_place_event("place_present", "Home", datetime(2026, 6, 28, 21, 30, tzinfo=TZ))])
+    assert current_place(db, NOW) == "Home"
+
+
+def test_current_place_stale_signal_is_none(tmp_path):
+    # Last seen at 10:00, now ~21:50: older than the staleness window → unknown.
+    db = _db(tmp_path, [_place_event("place_present", "Home", datetime(2026, 6, 28, 10, 0, tzinfo=TZ))])
+    assert current_place(db, NOW) is None
+
+
+def test_current_place_ignores_future_pings(tmp_path):
+    # A ping dated after `now` (clock skew / redelivery) can't rewrite the present.
+    db = _db(
+        tmp_path,
+        [
+            _place_event("place_enter", "Home", datetime(2026, 6, 28, 21, 0, tzinfo=TZ)),
+            _place_event("place_present", "Cheryl", datetime(2026, 6, 28, 23, 0, tzinfo=TZ)),
+        ],
+    )
+    assert current_place(db, NOW) == "Home"
+
+
+def test_current_place_empty_is_none(tmp_path):
+    assert current_place(_db(tmp_path, []), NOW) is None

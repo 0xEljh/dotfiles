@@ -31,6 +31,12 @@ let
         # defaults; here so the window is tunable without a code edit.)
         "WAKE_GATE_HOUR=7"
         "WAKE_GATE_HOUR_END=11"
+        # Static fallback for the evening standdown's deep link — the day's
+        # Time-Accounting page when the Time-Accountant secret is configured in
+        # the sops env (NOTION_TIME_ACCOUNTANT_SECRET /
+        # NOTION_TIME_ACCOUNTING_DATASOURCE_ID), else this database view. Not a
+        # secret; access is gated by the integration token, not the id/URL.
+        "NOTION_TIME_ACCOUNTING_URL=https://app.notion.com/p/2ba300d83b7f8068befee670fc059a37?v=2ba300d83b7f806cb5ea000c128857fe"
       ];
       EnvironmentFile = envFile;
       ExecStart = "${pkgs.uv}/bin/uv run --frozen botctl ${command}";
@@ -88,6 +94,9 @@ in
     personal-telegram-bot-morning =
       mkOneshot "Morning Notion Bread digest via Telegram" "send morning";
 
+    personal-telegram-bot-standdown =
+      mkOneshot "Evening standdown digest (location-gated)" "send standdown";
+
     personal-telegram-bot-health =
       mkOneshot "Service health checks, Telegram alert on transitions" "send health";
 
@@ -121,6 +130,21 @@ in
         OnCalendar = "*-*-* 12:00:00";
         # Catch up after downtime; SQLite dedupe prevents double sends.
         Persistent = true;
+      };
+    };
+
+    personal-telegram-bot-standdown = {
+      # Location-gated evening digest: polls every 15 min across the late-evening
+      # / small-hours window; botctl sends only when you're at Home/Cheryl AND
+      # inside [21:45, 03:00), deduped once per day. The timer just wakes the
+      # poll — the gate lives in the bot, so the pre-21:45 ticks no-op. No
+      # Persistent: a missed standdown is stale by morning, and a catch-up fire
+      # would evaluate the location gate at the wrong time.
+      description = "Evening standdown poll (home-gated, 21:45–03:00)";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        Unit = "personal-telegram-bot-standdown.service";
+        OnCalendar = "*-*-* 21,22,23,00,01,02:00/15";
       };
     };
 

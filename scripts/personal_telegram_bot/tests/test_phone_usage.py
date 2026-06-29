@@ -174,3 +174,76 @@ def test_phone_summary_cli_json(tmp_path, monkeypatch, capsys):
     payload = json.loads(capsys.readouterr().out)
     assert payload["date"] == "2026-06-14"
     assert payload["hours"]["10"]["A"] == 1200.0
+
+
+# --- screen events as session boundaries (the idle fix) ---
+
+
+def _screen(event_type: str, when: datetime) -> LifeEvent:
+    return LifeEvent(
+        source="phone",
+        event_type=event_type,
+        observed_at=when,
+        payload={"event": event_type, "value1": event_type},
+    )
+
+
+def test_normalize_phone_screen_off_has_no_app():
+    ev = normalize_phone(
+        {"event": "screen_off"},
+        received_at=datetime(2026, 6, 14, 13, 0, tzinfo=UTC),
+        default_tz=TZ,
+    )
+    assert ev.source == "phone"
+    assert ev.event_type == "screen_off"
+    assert "app" not in ev.payload
+
+
+def test_normalize_phone_screen_on_uses_phone_clock():
+    ev = normalize_phone(
+        {"event": "screen_on", "ts": "2026-06-14T21:00:00"},
+        received_at=datetime(2026, 6, 14, 13, 0, tzinfo=UTC),
+        default_tz=TZ,
+    )
+    assert ev.event_type == "screen_on"
+    assert ev.observed_at == datetime(2026, 6, 14, 21, 0, tzinfo=TZ)
+
+
+def test_normalize_phone_unknown_appless_event_raises():
+    with pytest.raises(ValueError):
+        normalize_phone(
+            {"event": "wiggle"},
+            received_at=datetime(2026, 6, 14, 13, 0, tzinfo=UTC),
+            default_tz=TZ,
+        )
+
+
+def test_screen_off_bounds_foreground_app(tmp_path):
+    # App open, screen off 5 min later, next pickup an hour on: the app earns
+    # exactly 5 min, not the idle stretch to the next event.
+    db = _db(
+        tmp_path,
+        [
+            _ev("YouTube", datetime(2026, 6, 14, 10, 0, tzinfo=TZ)),
+            _screen("screen_off", datetime(2026, 6, 14, 10, 5, tzinfo=TZ)),
+            _ev("Chrome", datetime(2026, 6, 14, 11, 0, tzinfo=TZ)),
+        ],
+    )
+    hours = phone_hours_for_date(db, date(2026, 6, 14), TZ)
+
+    assert hours[10]["YouTube"] == 300.0  # 10:00–10:05, closed by screen_off
+    assert "YouTube" not in hours.get(11, {})  # no idle bleed into the next hour
+
+
+def test_screen_events_carry_no_app_time(tmp_path):
+    db = _db(
+        tmp_path,
+        [
+            _screen("screen_on", datetime(2026, 6, 14, 9, 0, tzinfo=TZ)),
+            _ev("Maps", datetime(2026, 6, 14, 9, 1, tzinfo=TZ)),
+            _screen("screen_off", datetime(2026, 6, 14, 9, 6, tzinfo=TZ)),
+        ],
+    )
+    hours = phone_hours_for_date(db, date(2026, 6, 14), TZ)
+
+    assert hours[9] == {"Maps": 300.0}  # 9:01–9:06; screen events add nothing

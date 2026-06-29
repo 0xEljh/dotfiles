@@ -49,11 +49,13 @@ def phone_hours_for_date(
     # Margin (>= the session cap) so the app active at 00:00 and the event that
     # closes the day's final in-day session are both in the query window.
     margin = timedelta(minutes=MAX_FOREGROUND_MINUTES + 1)
+    # All phone events, not just app_foreground: a screen_off (or any app-less
+    # event) must stay in the stream so it BOUNDS the previous app's session — the
+    # loop skips attributing time to it but uses it as the prior app's edge.
     events = db.events_between(
         day_start - margin,
         day_end + margin,
         source="phone",
-        event_types=("app_foreground",),
     )
     events = sorted(events, key=lambda e: e.observed_at)
 

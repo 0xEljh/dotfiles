@@ -123,21 +123,33 @@ def normalize_macrodroid(
     )
 
 
+# Phone events that carry no app: screen on/off bound the previous foreground
+# app (so it stops accruing idle time once the screen sleeps), and `unlocked` is
+# the pickup signal. `app_foreground` is the only event that requires an `app`.
+APPLESS_PHONE_EVENTS = {"screen_on", "screen_off", "unlocked"}
+
+
 def normalize_phone(
     payload: dict, received_at: datetime, default_tz: ZoneInfo
 ) -> LifeEvent:
-    """Normalize a phone app-foreground event: {"app": ..., "package": ?, "ts": iso?}.
+    """Normalize a phone event posted by MacroDroid: an `app_foreground` per app
+    switch ({"app": ..., "package": ?, "ts": iso?}), or an app-less screen/pickup
+    event ({"event": "screen_off"|"screen_on"|"unlocked", "ts": iso?}).
 
-    Posted by a MacroDroid "Application Launched" macro per app switch. The app
-    name is mirrored into `value1` so two different apps foregrounded in the same
-    second produce distinct event_ids (the dedupe key includes value1) rather
-    than collapsing to one row; same-app redelivery still dedupes.
+    The app name (or, for app-less events, the event name) is mirrored into
+    `value1` so two distinct things in the same second produce distinct event_ids
+    (the dedupe key includes value1) rather than collapsing; redelivery dedupes.
     """
-    app = payload.get("app")
-    if not isinstance(app, str) or not app:
-        raise ValueError("payload missing 'app'")
     event = payload.get("event") or "app_foreground"
-    kept: dict = {"event": event, "app": app, "value1": app}
+    app = payload.get("app")
+    if event == "app_foreground":
+        if not isinstance(app, str) or not app:
+            raise ValueError("app_foreground payload missing 'app'")
+    elif event not in APPLESS_PHONE_EVENTS:
+        raise ValueError(f"unsupported phone event: {event!r}")
+    kept: dict = {"event": event, "value1": app if app else event}
+    if isinstance(app, str) and app:
+        kept["app"] = app
     package = payload.get("package")
     if isinstance(package, str) and package:
         kept["package"] = package

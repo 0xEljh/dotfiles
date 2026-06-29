@@ -85,6 +85,17 @@ def format_morning_digest(
     return "\n\n".join(blocks)
 
 
+def format_standdown(target_date: date, link_url: str | None = None) -> str:
+    """Minimal evening standdown (Telegram HTML): a dated header plus an optional
+    deep link to that day's time-accounting page. Depth lives in Notion, not in
+    the message — this is a nudge + pointer, sent with parse_mode=HTML."""
+    header = f"🌙 <b>Standdown · {target_date:%a %d %b}</b>"
+    if not link_url:
+        return header
+    link = f'<a href="{html.escape(link_url, quote=True)}">📊 Time accounting →</a>'
+    return f"{header}\n\n{link}"
+
+
 def format_health_alert(transitions: list[Transition]) -> str:
     lines = ["⚠️ sleeper-service health"]
     for t in transitions:

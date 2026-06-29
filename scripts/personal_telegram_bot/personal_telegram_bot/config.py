@@ -69,6 +69,12 @@ class Config:
     # pre-dawn SAA stirs / early alarms and late-morning nap-stops.
     wake_gate_hour: int = 7
     wake_gate_hour_end: int = 11
+    # Evening standdown deep link: the day's Time-Accounting page when the
+    # Time-Accountant integration is configured (NOTION_TIME_ACCOUNTANT_SECRET +
+    # NOTION_TIME_ACCOUNTING_DATASOURCE_ID), else the static database URL below.
+    time_accounting_url: str | None = None
+    time_accountant_secret: str | None = None
+    time_accounting_datasource_id: str | None = None
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -107,4 +113,7 @@ class Config:
             bread_url=env.get("NOTION_BREAD_URL") or None,
             wake_gate_hour=int(env.get("WAKE_GATE_HOUR", "7")),
             wake_gate_hour_end=int(env.get("WAKE_GATE_HOUR_END", "11")),
+            time_accounting_url=env.get("NOTION_TIME_ACCOUNTING_URL") or None,
+            time_accountant_secret=env.get("NOTION_TIME_ACCOUNTANT_SECRET") or None,
+            time_accounting_datasource_id=env.get("NOTION_TIME_ACCOUNTING_DATASOURCE_ID") or None,
         )

@@ -102,3 +102,33 @@ def dwell_for_date(db: LifeEventsDB, wake_date: date, tz: ZoneInfo) -> dict[str,
     for place, start, end in _place_segments(db, day_start, day_end, tz):
         dwell[place] += (end - start).total_seconds()
     return dict(dwell)
+
+
+def current_place(
+    db: LifeEventsDB,
+    now: datetime,
+    max_staleness: timedelta = timedelta(hours=6),
+) -> str | None:
+    """The place you are in *now*: the most recent enter/present that hasn't been
+    closed by a `place_leave`, provided its signal is within `max_staleness`. None
+    if you've left, the last signal is too old (sparse pings → "unknown, not
+    home"), or there's nothing. Only events at or before `now` are considered, so
+    a future-dated ping (clock skew / redelivery) can't rewrite the present — the
+    same idempotency the morning wake gate relies on."""
+    events = db.events_between(
+        now - max_staleness, now + timedelta(seconds=1), source="owntracks"
+    )
+    events.sort(key=lambda e: e.observed_at)
+    current: str | None = None
+    for event in events:
+        if event.observed_at > now:
+            break
+        place = event.state
+        if not place:
+            continue
+        if event.event_type == "place_leave":
+            if current == place:
+                current = None
+        else:  # place_enter / place_present
+            current = place
+    return current

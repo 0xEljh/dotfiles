@@ -1,6 +1,18 @@
 { config, pkgs, lib, ... }:
 
+let
+  playwrightBrowserExecutable =
+    if pkgs.stdenv.hostPlatform.isDarwin then
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    else
+      lib.getExe pkgs.chromium;
+in
+
 {
+  home.sessionVariables = {
+    PLAYWRIGHT_MCP_EXECUTABLE_PATH = playwrightBrowserExecutable;
+  };
+
   home.activation.setupAITools = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     DOTFILES_DIR="$HOME/dotfiles"
     AI_TOOLS="$DOTFILES_DIR/ai-tools"

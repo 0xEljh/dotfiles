@@ -82,4 +82,8 @@ with pkgs; [
   # Secret management
   sops
 ]
+++ lib.optionals stdenv.hostPlatform.isLinux [
+  # Browser automation for Playwright MCP on Linux hosts.
+  chromium
+]
 ++ lib.optionals (pkgs ? llm-agents && pkgs.llm-agents ? opencode) [ llm-agents.opencode ]

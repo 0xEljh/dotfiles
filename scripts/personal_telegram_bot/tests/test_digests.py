@@ -1,9 +1,10 @@
+from dataclasses import replace
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import personal_telegram_bot.digests as digests
 from personal_telegram_bot.config import Config
-from personal_telegram_bot.life_events import LifeEventsDB, normalize_saa
+from personal_telegram_bot.life_events import LifeEvent, LifeEventsDB, normalize_saa
 from personal_telegram_bot.providers import notion_todos
 
 TZ = ZoneInfo("Asia/Singapore")
@@ -89,6 +90,74 @@ def test_dry_run_does_not_record_or_send(tmp_path, monkeypatch):
     digests.deliver_morning_digest(cfg, trigger="timer", dry_run=True, now=NOW)
     # Not recorded, so a real send still goes through afterwards.
     result = digests.deliver_morning_digest(cfg, trigger="timer", now=NOW)
+
+    assert result is True
+    assert len(sent) == 1
+
+
+# --- evening standdown delivery ---
+
+EVENING = datetime(2026, 6, 28, 22, 0, tzinfo=TZ)
+
+
+def _home_event(when: datetime) -> LifeEvent:
+    return LifeEvent(
+        source="owntracks",
+        event_type="place_present",
+        observed_at=when,
+        state="Home",
+        payload={"value1": "Home"},
+    )
+
+
+def _ta_cfg(tmp_path):
+    # No Time-Accountant secret → the deep-link resolver short-circuits to the
+    # static URL with no network call.
+    return replace(_cfg(tmp_path), time_accounting_url="https://ta.example/db")
+
+
+def test_standdown_fires_at_home_then_dedupes(tmp_path, monkeypatch):
+    cfg = _ta_cfg(tmp_path)
+    life = LifeEventsDB(cfg.life_db_path)
+    life.insert(_home_event(datetime(2026, 6, 28, 21, 40, tzinfo=TZ)))
+    life.close()
+    sent = _capture_sends(monkeypatch)
+
+    first = digests.deliver_evening_standdown(cfg, trigger="timer", now=EVENING)
+    second = digests.deliver_evening_standdown(cfg, trigger="timer", now=EVENING)
+
+    assert first is True and second is False
+    assert len(sent) == 1
+    assert "Standdown" in sent[0]
+    assert "https://ta.example/db" in sent[0]  # static fallback (no secret set)
+
+
+def test_standdown_skipped_when_away(tmp_path, monkeypatch):
+    cfg = _ta_cfg(tmp_path)  # no owntracks events → current_place is None
+    sent = _capture_sends(monkeypatch)
+
+    assert digests.deliver_evening_standdown(cfg, trigger="timer", now=EVENING) is False
+    assert sent == []
+
+
+def test_standdown_skipped_outside_window(tmp_path, monkeypatch):
+    cfg = _ta_cfg(tmp_path)
+    life = LifeEventsDB(cfg.life_db_path)
+    life.insert(_home_event(datetime(2026, 6, 28, 13, 45, tzinfo=TZ)))
+    life.close()
+    sent = _capture_sends(monkeypatch)
+
+    afternoon = datetime(2026, 6, 28, 14, 0, tzinfo=TZ)
+    assert digests.deliver_evening_standdown(cfg, trigger="timer", now=afternoon) is False
+    assert sent == []
+
+
+def test_standdown_force_bypasses_gate_and_dedupe(tmp_path, monkeypatch):
+    cfg = _ta_cfg(tmp_path)  # not home, daytime — force sends anyway
+    sent = _capture_sends(monkeypatch)
+
+    afternoon = datetime(2026, 6, 28, 14, 0, tzinfo=TZ)
+    result = digests.deliver_evening_standdown(cfg, trigger="manual", force=True, now=afternoon)
 
     assert result is True
     assert len(sent) == 1

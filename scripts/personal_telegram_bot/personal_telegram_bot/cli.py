@@ -40,6 +40,17 @@ def send_morning(cfg: Config, args) -> int:
     return 0
 
 
+def send_standdown(cfg: Config, args) -> int:
+    from .digests import deliver_evening_standdown
+
+    sent = deliver_evening_standdown(
+        cfg, trigger="timer", force=args.force, dry_run=args.dry_run
+    )
+    if not sent:
+        print("Standdown skipped (already sent today, or not home / outside window).")
+    return 0
+
+
 def run_sleep_summary(args) -> int:
     """Emit the sleep summary for a date as JSON or text. Deliberately does NOT
     build a full Config (no Telegram token) so the Notion sync — which runs
@@ -301,6 +312,7 @@ def main(argv: list[str] | None = None) -> int:
     for kind, func in (
         ("test", send_test),
         ("morning", send_morning),
+        ("standdown", send_standdown),
         ("hour", send_hour),
         ("health", send_health),
         ("failure", send_failure),
