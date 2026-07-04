@@ -1,7 +1,7 @@
-{ pkgs }:
+{ pkgs, fff }:
 
 with pkgs;
-let shared-packages = import ../shared/packages.nix { inherit pkgs; }; in
+let shared-packages = import ../shared/packages.nix { inherit pkgs fff; }; in
 shared-packages ++ [
   # ============================================================================
   # WSL-SPECIFIC PACKAGES

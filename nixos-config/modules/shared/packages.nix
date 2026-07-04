@@ -1,5 +1,8 @@
-{ pkgs, lib ? pkgs.lib }:
+{ pkgs, fff, lib ? pkgs.lib }:
 
+let
+  fffPackages = fff.packages.${pkgs.stdenv.hostPlatform.system};
+in
 with pkgs; [
   # General packages for development and system management
   kitty
@@ -67,6 +70,7 @@ with pkgs; [
   zoxide
   atuin
   fzf
+  fffPackages.fff-mcp
   difftastic
   nushell
   zsh-powerlevel10k

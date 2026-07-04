@@ -1,4 +1,4 @@
-{ config, pkgs, ... }:
+{ config, pkgs, fff, ... }:
 
 let
   user = "elijah";
@@ -38,7 +38,7 @@ in
   environment.systemPackages =
     with pkgs; [
       vim
-    ] ++ (import ../../modules/shared/packages.nix { inherit pkgs; });
+    ] ++ (import ../../modules/shared/packages.nix { inherit pkgs fff; });
 
 
   system = {

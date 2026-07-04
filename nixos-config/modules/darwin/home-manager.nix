@@ -1,4 +1,4 @@
-{ config, pkgs, lib, home-manager, ... }:
+{ config, pkgs, lib, home-manager, fff, ... }:
 
 let
   user = "elijah";
@@ -47,7 +47,7 @@ in
 
       home = {
         enableNixpkgsReleaseCheck = false;
-        packages = import ./packages.nix { inherit pkgs; };
+        packages = import ./packages.nix { inherit pkgs fff; };
         file = lib.mkMerge [
           sharedFiles
           additionalFiles

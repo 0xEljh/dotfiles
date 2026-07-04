@@ -35,9 +35,13 @@
       url = "github:Mic92/sops-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    fff = {
+      url = "github:dmtrKovalenko/fff";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, home-manager, nixpkgs, nixos-wsl, llm-agents, sops-nix } @inputs:
+  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, home-manager, nixpkgs, nixos-wsl, llm-agents, sops-nix, fff } @inputs:
     let
       user = "elijah";
       darwinSystems = [ "aarch64-darwin" "x86_64-darwin" ];
@@ -139,6 +143,7 @@
 	      home-manager = {
 	        useGlobalPkgs = true;
 		useUserPackages = true;
+		extraSpecialArgs = inputs;
 		backupFileExtension = "backup";
 		overwriteBackup = true;
 		users.${user} = import ./modules/sleeper-service/home-manager.nix;
@@ -158,6 +163,7 @@
               home-manager = {
                 useGlobalPkgs = true;
                 useUserPackages = true;
+                extraSpecialArgs = inputs;
                 backupFileExtension = "backup";
                 overwriteBackup = true;
                 users.${user} = import ./modules/wsl/home-manager.nix;

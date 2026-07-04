@@ -32,6 +32,7 @@ At each step, especially steps 1 and 4, ask clarifying questions where needed.
 - Create the directory if it does not exist.
 - Filename format: `<slug>-<optional-identifiers>.md`.
 - Use a short kebab-case slug based on the topic.
+- Design doc versioning is not necessary. This is already handled by having them pushed to Notion.
 
 ## Required Document Structure
 
@@ -51,7 +52,7 @@ At each step, especially steps 1 and 4, ask clarifying questions where needed.
 ### APPROACH A: <Name> (Minimal Viable)
 
 Summary: <1-2 sentences>
-Effort: <S/M/L/XL>
+Complexity: <S/M/L/XL>
 Risk: <Low/Med/High>
 Pros:
 
@@ -65,7 +66,7 @@ Pros:
 ### APPROACH B: <Name> (Ideal Architecture)
 
 Summary: <1-2 sentences>
-Effort: <S/M/L/XL>
+Complexity: <S/M/L/XL>
 Risk: <Low/Med/High>
 Pros:
 
@@ -79,7 +80,7 @@ Pros:
 ### APPROACH C: <Name> (Optional, Creative/Lateral)
 
 Summary: <1-2 sentences>
-Effort: <S/M/L/XL>
+Complexity: <S/M/L/XL>
 Risk: <Low/Med/High>
 Pros:
 

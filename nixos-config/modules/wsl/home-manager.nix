@@ -1,4 +1,4 @@
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, fff, ... }:
 
 let
   user = "elijah";
@@ -45,7 +45,7 @@ in
     enableNixpkgsReleaseCheck = false;
     username = "${user}";
     homeDirectory = "/home/${user}";
-    packages = import ./packages.nix { inherit pkgs; };
+    packages = import ./packages.nix { inherit pkgs fff; };
     file = shared-files;
     stateVersion = "24.11";
 

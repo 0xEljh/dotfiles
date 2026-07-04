@@ -1,4 +1,4 @@
-{config, pkgs, lib, ... }:
+{config, pkgs, lib, fff, ... }:
 
 let
 	user = "elijah";
@@ -38,7 +38,7 @@ in
 	    # a reliable prebuilt or more RAM.
 	    packages = lib.filter
 	      (p: !(lib.hasInfix "codex" (p.pname or p.name or "")))
-	      (import ../shared/packages.nix { inherit pkgs; });
+	      (import ../shared/packages.nix { inherit pkgs fff; });
 	    file = shared-files;
 	    stateVersion = "24.11";
 
