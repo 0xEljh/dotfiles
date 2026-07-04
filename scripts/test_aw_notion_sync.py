@@ -227,6 +227,36 @@ class PhoneMergeTests(unittest.TestCase):
         self.assertEqual({}, aw_notion_sync.compute_hourly_stats({}))
 
 
+class DesktopFilteringWarningTests(unittest.TestCase):
+    def test_warns_when_afk_filter_removes_all_desktop_activity(self) -> None:
+        all_data = {
+            "aw-watcher-window_host": [
+                {
+                    "timestamp": "2026-07-01T00:00:00+08:00",
+                    "duration": 3600,
+                    "data": {"app": "Zen", "title": "Release notes"},
+                }
+            ],
+            "aw-watcher-afk_host": [
+                {
+                    "timestamp": "2026-07-01T00:00:00+08:00",
+                    "duration": 3600,
+                    "data": {"status": "afk"},
+                }
+            ],
+        }
+
+        with patch("builtins.print") as print_mock:
+            stats = aw_notion_sync.compute_hourly_stats(
+                all_data, phone_hours={10: {"YouTube": 1800}}
+            )
+
+        self.assertIn(10, stats)
+        printed = "\n".join(str(call.args[0]) for call in print_mock.call_args_list)
+        self.assertIn("desktop ActivityWatch events", printed)
+        self.assertIn("AFK", printed)
+
+
 class PhoneClassificationTests(unittest.TestCase):
     """Phase 3a: phone dev/planning apps fold into the SAME Deep/Shallow-Work
     classification as desktop, reusing the aw_common taxonomy."""

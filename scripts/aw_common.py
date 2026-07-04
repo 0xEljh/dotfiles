@@ -107,6 +107,7 @@ CODING_APPS = {
     # AI-powered IDEs
     "windsurf",
     "cursor",
+    "devin",
     # Other editors/IDEs
     "vim",
     "nvim",
@@ -198,6 +199,7 @@ AI_CHAT_SITES = {
     "chat.openai.com",
     # Anthropic
     "claude.ai",
+    "claude.com",
     # Google
     "gemini.google.com",
     "bard.google.com",
@@ -250,6 +252,17 @@ PLANNING_APPS = {
 # Browser-based dev tools with display names for breakdown tracking.
 DEV_TOOL_SITES = {
     "colab.research.google.com": "Google Colab",
+    "devin.ai": "Devin",
+}
+
+# Browser-based planning/research sites with display names for breakdown tracking.
+PLANNING_SITES = {
+    "drive.google.com": "Google Drive",
+    "drive.usercontent.google.com": "Google Drive",
+    "mail.google.com": "Gmail",
+    "meet.google.com": "Google Meet",
+    "distill.pub": "Technical Reading",
+    "readthedocs.io": "Documentation",
 }
 
 T3_CODE_HOST = "sleeper-service.tail82ff8b.ts.net"
@@ -281,6 +294,8 @@ EXCLUDED_APPS = {
     "shellexperiencehost",  # Windows Shell
     "lockapp",  # Lock screen
     "systemsettings",  # Settings app during idle
+    # Games / shared-computer noise
+    "forzahorizon6",
 }
 
 
@@ -542,6 +557,10 @@ def get_planning_site_name(url: str) -> str | None:
     if not hostname:
         return None
 
+    for site, display_name in PLANNING_SITES.items():
+        if is_domain_or_subdomain(hostname, site):
+            return display_name
+
     if is_domain_or_subdomain(hostname, "github.com") or is_domain_or_subdomain(
         hostname, "github.io"
     ):
@@ -574,5 +593,6 @@ def get_browser_dev_tool_name(url: str, title: str = "") -> str | None:
         for prefix in JUPYTER_LOCAL_PATH_PREFIXES:
             if path.startswith(prefix):
                 return "Jupyter"
+        return "Localhost"
 
     return None

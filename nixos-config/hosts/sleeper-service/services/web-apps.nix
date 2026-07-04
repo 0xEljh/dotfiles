@@ -224,6 +224,11 @@ in
         WorkingDirectory = "${homeDir}/dotfiles/scripts";
         ExecStart = "${pkgs.bash}/bin/bash ${syncScript}";
         TimeoutStartSec = "30min";
+        Nice = 10;
+        CPUWeight = 20;
+        IOWeight = 20;
+        IOSchedulingClass = "best-effort";
+        IOSchedulingPriority = 7;
       };
     };
   };

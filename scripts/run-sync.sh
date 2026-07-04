@@ -1,7 +1,9 @@
 #!/bin/bash
 # run.sh
 
-source "$HOME/.bashrc"
+if [ -f "$HOME/.bashrc" ]; then
+  source "$HOME/.bashrc"
+fi
 # Or if you use zsh:
 # source "$HOME/.zshrc"
 

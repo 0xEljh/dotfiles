@@ -456,8 +456,19 @@ def compute_hourly_stats(all_data: dict, phone_hours: dict | None = None) -> dic
     not_afk_periods_by_host = build_not_afk_periods_by_host(afk_events_by_host)
 
     # Filter events to only include non-AFK time
+    raw_desktop_event_count = len(window_events) + len(web_events)
     window_events = filter_events_by_afk(window_events, not_afk_periods_by_host)
     web_events = filter_events_by_afk(web_events, not_afk_periods_by_host)
+    filtered_desktop_event_count = len(window_events) + len(web_events)
+
+    if raw_desktop_event_count and not filtered_desktop_event_count:
+        print(
+            "⚠️  WARNING: Loaded desktop ActivityWatch events, but AFK filtering removed all of them."
+        )
+        print(
+            "   - The desktop AFK watcher reported no not-afk periods for the loaded events."
+        )
+        print("   - If this is wrong, check aw-watcher-afk on the computer device.")
 
     # Warn if window watcher has no events (likely not running)
     if not window_events and web_events:

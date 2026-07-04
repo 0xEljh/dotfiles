@@ -95,5 +95,44 @@ class PhoneAggregationTests(unittest.TestCase):
         self.assertTrue(quality["warnings"])
 
 
+class AiTaxonomyTests(unittest.TestCase):
+    def test_devin_and_claude_web_domains_count_as_ai_planning(self) -> None:
+        aggregate = aw_analytics_export.aggregate_day_data(
+            {
+                "aw-watcher-window_test": [
+                    {
+                        "timestamp": "2026-07-02T10:00:00+08:00",
+                        "duration": 1200.0,
+                        "data": {"app": "Devin", "title": "Devin"},
+                    }
+                ],
+                "aw-watcher-web_test": [
+                    {
+                        "timestamp": "2026-07-02T10:20:00+08:00",
+                        "duration": 600.0,
+                        "data": {
+                            "url": "https://claude.com/chat/abc",
+                            "title": "Claude",
+                        },
+                    },
+                    {
+                        "timestamp": "2026-07-02T10:30:00+08:00",
+                        "duration": 300.0,
+                        "data": {
+                            "url": "https://devin.ai/sessions/abc",
+                            "title": "Devin",
+                        },
+                    },
+                ],
+            }
+        )
+
+        self.assertEqual(1200.0, aggregate["totals"]["active_time"])
+        self.assertEqual(2100.0, aggregate["totals"]["planning_time"])
+        self.assertEqual(2100.0, aggregate["totals"]["ai_chat_time"])
+        self.assertEqual(1500.0, aggregate["ai_chats"]["Devin"])
+        self.assertEqual(600.0, aggregate["ai_chats"]["Claude"])
+
+
 if __name__ == "__main__":
     unittest.main()

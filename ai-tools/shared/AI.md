@@ -5,7 +5,7 @@
 - Avoid over-engineering; keep solutions focused (which often to have a balanced approach to managing coupling, abstractions and dependencies).
 - Unless stated otherwise, backwards compatibility is NEVER a consideration. Assume that we are not working with a production environment and can always wipe all data and start afresh.
 
-If this was asked during a planning phase or discussion with the user, you should provide 2-3 design/implementation approaches wherever applicable. This is NOT optional.
+If this was asked during a planning phase or discussion with the user, you should provide at least 2-3 design/implementation approaches wherever applicable. This is NOT optional.
 
 For each approach:
 
@@ -28,7 +28,7 @@ APPROACH C: [Name] (optional — include if a meaningfully different path exists
 
 Rules:
 
-- At least 2 approaches required. 3 preferred for non-trivial designs.
+- At least 2 approaches required. 3+ preferred for non-trivial designs.
 - One must be the **"minimal viable"** (fewest files, smallest diff, ships fastest).
 - One must be the **"ideal architecture"** (best long-term trajectory, most elegant).
 - One can be **creative/lateral** (unexpected approach, different framing of the problem).

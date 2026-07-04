@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 SLEEPER_SERVICE_ALIAS = "sleeper-service"
 SLEEPER_SERVICE_DEST_DIR = "~/dotfiles/scripts/aw-data/"  # Ensure this folder exists on sleeper-service
 TARGET_TZ = ZoneInfo(os.getenv("TARGET_TZ", "Asia/Singapore"))
+WATCHER_BUCKET_PREFIXES = ("aw-watcher-window", "aw-watcher-web", "aw-watcher-afk")
 # ---------------------
 
 
@@ -53,11 +54,10 @@ def get_aw_data(target_date=None):
     base_hostname = short_hostname.rstrip("0123456789-")
 
     watcher_bucket_hostnames = []
+    watcher_bucket_ids = []
     for bucket_id, bucket in buckets.items():
-        if any(
-            x in bucket_id
-            for x in ["aw-watcher-window", "aw-watcher-web", "aw-watcher-afk"]
-        ):
+        if any(x in bucket_id for x in WATCHER_BUCKET_PREFIXES):
+            watcher_bucket_ids.append(bucket_id)
             if isinstance(bucket, dict):
                 bucket_hostname = bucket.get("hostname")
                 if bucket_hostname:
@@ -85,7 +85,14 @@ def get_aw_data(target_date=None):
         if aw_hostname is None:
             aw_hostname = Counter(watcher_bucket_hostnames).most_common(1)[0][0]
 
-    for bucket_id in buckets.keys():
+    def fetch_events(bucket_id):
+        print(f"Fetching events for: {bucket_id}")
+        return requests.get(
+            f"{base_url}/buckets/{bucket_id}/events", params=params
+        ).json()
+
+    selected_bucket_ids = []
+    for bucket_id in watcher_bucket_ids:
         bucket_id_lower = bucket_id.lower()
         # Filter 1: Only buckets for THIS computer (hostname check, case-insensitive)
         # Filter 2: Only the watchers we care about (Window, Web, AFK)
@@ -100,19 +107,33 @@ def get_aw_data(target_date=None):
         else:
             is_this_host = base_hostname in bucket_id_lower
         if is_this_host:
-            if any(
-                x in bucket_id
-                for x in ["aw-watcher-window", "aw-watcher-web", "aw-watcher-afk"]
-            ):
-                print(f"Fetching events for: {bucket_id}")
-                events = requests.get(
-                    f"{base_url}/buckets/{bucket_id}/events", params=params
-                ).json()
+            selected_bucket_ids.append(bucket_id)
 
-                # Structure: { "bucket_id": [event1, event2...] }
-                target_data[bucket_id] = events
+    for bucket_id in selected_bucket_ids:
+        # Structure: { "bucket_id": [event1, event2...] }
+        target_data[bucket_id] = fetch_events(bucket_id)
 
-    return target_data
+    if any(target_data.values()):
+        return target_data
+
+    if target_data:
+        print(
+            "Selected hostname buckets were empty; checking all watcher buckets for non-empty data."
+        )
+
+    fallback_data = {}
+    fetched_bucket_ids = set(target_data)
+    for bucket_id in watcher_bucket_ids:
+        if bucket_id in fetched_bucket_ids:
+            continue
+        events = fetch_events(bucket_id)
+        if events:
+            fallback_data[bucket_id] = events
+
+    if fallback_data:
+        return fallback_data
+
+    return {}
 
 
 def sync_to_sleeper_service(data, target_date=None):
