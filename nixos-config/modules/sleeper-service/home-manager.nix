@@ -27,7 +27,7 @@ in
 		bindToTailscaleIp = true;
 		# Upstream 0.0.28 nightly + PR #2673 (OpenCode event stream fix).
 		# The old 0.0.27 patched tarball remains on disk for rollback.
-		t3Package = "file:/home/elijah/.local/share/t3/t3-0.0.28-nightly.20260621.614-pr2673-sessionttl.0.tgz";
+		t3Package = "file:${config.home.homeDirectory}/.local/share/t3/t3-0.0.28-nightly.20260621.614-pr2673-sessionttl.0.tgz";
 	};
 
 	home = {

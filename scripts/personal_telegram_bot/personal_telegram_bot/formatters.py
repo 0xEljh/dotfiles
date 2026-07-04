@@ -96,6 +96,40 @@ def format_standdown(target_date: date, link_url: str | None = None) -> str:
     return f"{header}\n\n{link}"
 
 
+def format_papers(
+    titles: list[str],
+    week_label: str,
+    board_url: str | None = None,
+    log_url: str | None = None,
+) -> str:
+    """Weekly papers dispatch (Telegram HTML): unrefined Paper Inbox sightings
+    plus pointers to the inbox and the expedition log. Terse by design — the
+    nudge is the message. Sent with parse_mode=HTML, so dynamic text is escaped."""
+    if not titles:
+        return "Paper inbox clear. Go sight something new."
+
+    count = len(titles)
+    lines = [f"<b>Expedition dispatch — {week_label}</b>", ""]
+    lines.append(f"{count} sighting{'s' if count != 1 else ''} awaiting refinement:")
+    lines.extend(
+        f"• {html.escape(title, quote=False)}" for title in titles[:MAX_TASKS_PER_SECTION]
+    )
+    hidden = count - MAX_TASKS_PER_SECTION
+    if hidden > 0:
+        lines.append(f"…and {hidden} more")
+
+    footer: list[str] = []
+    if board_url:
+        footer.append(f'<a href="{html.escape(board_url, quote=True)}">Paper inbox</a>')
+    if log_url:
+        footer.append(f'<a href="{html.escape(log_url, quote=True)}">Expedition log</a>')
+    if footer:
+        lines.append("")
+        lines.append("— — —\n" + " · ".join(footer))
+
+    return "\n".join(lines)
+
+
 def format_health_alert(transitions: list[Transition]) -> str:
     lines = ["⚠️ sleeper-service health"]
     for t in transitions:

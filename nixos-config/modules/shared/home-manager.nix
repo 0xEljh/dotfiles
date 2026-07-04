@@ -50,6 +50,33 @@ let name = "elijah";
           nix-shell '<nixpkgs>' -A "$1"
       }
 
+      # open (or create) a digital-garden log entry by topic fragment.
+      # Spec: digital-garden docs/design/paper-log-pipeline.md §5.3.
+      log() {
+        local dir="$HOME/digital-garden/content/posts"
+        [ -d "$dir" ] || { echo "no garden checkout at $dir"; return 1; }
+        if [ -z "$1" ]; then
+          ''${EDITOR:-vim} "$dir"
+          return
+        fi
+        local matches=$(find "$dir" -name '*.mdx' | grep -i -- "$1")
+        local count=$(printf '%s' "$matches" | grep -c .)
+        if [ "$count" -eq 1 ]; then
+          ''${EDITOR:-vim} "$matches"
+        elif [ "$count" -gt 1 ]; then
+          local f
+          select f in ''${=matches}; do
+            [ -n "$f" ] && ''${EDITOR:-vim} "$f"
+            break
+          done
+        else
+          local slug=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+|-+$//g')
+          local file="$dir/$slug.mdx"
+          printf -- '---\ntitle: "%s"\ndate: "%s"\nstage: sighted\n---\n\n' "$1" "$(date +%F)" > "$file"
+          ''${EDITOR:-vim} "$file"
+        fi
+      }
+
       # Use difftastic, syntax-aware diffing
       alias diff=difft
 

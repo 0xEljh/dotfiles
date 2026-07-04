@@ -9,7 +9,7 @@ from datetime import date, datetime, time, timedelta
 
 from .config import Config
 from .db import StateDB
-from .formatters import format_morning_digest, format_standdown
+from .formatters import format_morning_digest, format_papers, format_standdown
 from .telegram_api import send_message
 
 # Serializes concurrent in-process triggers (e.g. two wake events arriving
@@ -193,4 +193,72 @@ def deliver_evening_standdown(
                 "deep_link": bool(link) and link != cfg.time_accounting_url,
             },
         )
+        return True
+
+
+# --- Weekly papers dispatch: nudge refinement of Paper Inbox sightings ------
+
+# Where refined sightings land; linked in the dispatch footer.
+EXPEDITION_LOG_URL = "https://0xeljh.com/posts"
+
+_papers_lock = threading.Lock()
+
+
+def deliver_papers_digest(
+    cfg: Config,
+    *,
+    trigger: str,
+    force: bool = False,
+    dry_run: bool = False,
+    now: datetime | None = None,
+) -> bool:
+    """Send the weekly papers dispatch — Paper Inbox rows whose Status select
+    isn't "landed" — deduped once per ISO week. Returns True if a message was
+    sent (or printed for dry_run), False if already sent this week. The Paper
+    Inbox integration is optional infrastructure: missing Notion config prints
+    a note and returns False instead of raising."""
+    from .providers.paper_inbox import fetch_pending
+
+    now = now or datetime.now(cfg.tz)
+    week_key = now.strftime("%G-W%V")
+
+    with _papers_lock:
+        db = StateDB(cfg.db_path)
+        if not force and not dry_run and db.was_sent("papers", week_key):
+            return False
+        if not cfg.notion_token or not cfg.paper_inbox_datasource_id:
+            print(
+                "Papers digest not configured "
+                "(NOTION_TOKEN / NOTION_PAPER_INBOX_DATASOURCE_ID unset); skipping."
+            )
+            return False
+
+        try:
+            titles = fetch_pending(cfg.notion_token, cfg.paper_inbox_datasource_id)
+            text = format_papers(
+                titles,
+                f"week {int(now.strftime('%V'))}",
+                board_url=cfg.paper_inbox_url,
+                log_url=EXPEDITION_LOG_URL,
+            )
+        except Exception as exc:
+            db.log_event("papers-error", {"trigger": trigger, "error": f"{type(exc).__name__}: {exc}"})
+            if not dry_run:
+                send_message(
+                    cfg.telegram_token,
+                    cfg.default_chat_id,
+                    f"⚠️ Papers digest failed ({type(exc).__name__}). "
+                    "Inspect with: journalctl -u personal-telegram-bot-papers",
+                )
+            raise
+
+        if dry_run:
+            print(text)
+            return True
+
+        message_id = send_message(
+            cfg.telegram_token, cfg.default_chat_id, text, parse_mode="HTML"
+        )
+        db.record_sent("papers", week_key, message_id)
+        db.log_event("papers-sent", {"trigger": trigger, "pending": len(titles)})
         return True

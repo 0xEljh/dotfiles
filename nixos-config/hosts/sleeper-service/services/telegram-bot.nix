@@ -43,6 +43,10 @@ let
         # NOTION_TIME_ACCOUNTING_DATASOURCE_ID), else this database view. Not a
         # secret; access is gated by the integration token, not the id/URL.
         "NOTION_TIME_ACCOUNTING_URL=https://app.notion.com/p/2ba300d83b7f8068befee670fc059a37?v=2ba300d83b7f806cb5ea000c128857fe"
+        # Paper Inbox database URL for the weekly papers digest footer. The
+        # datasource id (NOTION_PAPER_INBOX_DATASOURCE_ID) rides in via the
+        # awEnvFile passthrough — same value paper_inbox_sync.py uses.
+        "NOTION_PAPER_INBOX_URL=https://app.notion.com/p/e6a5c9db9c4641199604cbcc28467b37"
       ];
       EnvironmentFile = [ "-${awEnvFile}" envFile ];
       ExecStart = "${pkgs.uv}/bin/uv run --frozen botctl ${command}";
@@ -109,6 +113,9 @@ in
     personal-telegram-bot-hour =
       mkOneshot "ActivityWatch classification of the previous hour" "send hour";
 
+    personal-telegram-bot-papers =
+      mkOneshot "Weekly paper-log dispatch (unrefined sightings nudge)" "send papers";
+
     "personal-telegram-bot-notify-failure@" =
       mkOneshot "Telegram alert for failed unit %i" "send failure --unit %i";
 
@@ -119,6 +126,8 @@ in
     vamp-tutor-backend = notifyOnFailure;
     vamp-tutor-website = notifyOnFailure;
     digital-garden = notifyOnFailure;
+    digital-garden-deploy = notifyOnFailure;
+    paper-inbox-sync = notifyOnFailure;
     tea-the-gathering = notifyOnFailure;
     dotfiles-sync = notifyOnFailure;
   };
@@ -171,6 +180,20 @@ in
         Unit = "personal-telegram-bot-health.service";
         OnCalendar = "*:0/5";
         RandomizedDelaySec = "30s";
+      };
+    };
+
+    personal-telegram-bot-papers = {
+      # Nudges refinement (the delightful part), not blank-page writing —
+      # lists sightings still awaiting refinement. Sunday evening, when the
+      # weekly paper session tends to happen.
+      description = "Weekly paper-log dispatch, Sunday evening";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        Unit = "personal-telegram-bot-papers.service";
+        OnCalendar = "Sun *-*-* 17:00:00";
+        # Catch up after downtime; SQLite ISO-week dedupe prevents doubles.
+        Persistent = true;
       };
     };
   };
