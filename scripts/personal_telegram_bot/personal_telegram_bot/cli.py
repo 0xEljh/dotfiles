@@ -326,6 +326,22 @@ def send_failure(cfg: Config, args) -> int:
     return 0
 
 
+def run_tpot_seed(cfg: Config, args) -> int:
+    from datetime import date
+
+    from .tpot.job import run_tpot_seed as run_job
+
+    target = date.fromisoformat(args.date) if args.date else None
+    result = run_job(cfg, target_date=target)
+    if result.requested_topics:
+        print(f"Requested TPOT seeds for {len(result.requested_topics)} topic(s); stored {result.stored}.")
+    else:
+        print("No TPOT seed topics needed generation.")
+    for error in result.errors:
+        print(f"TPOT seed: {error}")
+    return result.exit_code
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="botctl", description="sleeper-service personal Telegram bot")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -350,6 +366,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     location_summary.add_argument("--date", help="YYYY-MM-DD (default: today in TARGET_TZ)")
     location_summary.add_argument("--json", action="store_true", help="emit JSON")
+
+    tpot_seed = sub.add_parser("tpot-seed", help="generate scored TPOT post seeds for today's work")
+    tpot_seed.add_argument("--date", help="YYYY-MM-DD journal date (default: today in TARGET_TZ)")
+    tpot_seed.set_defaults(func=run_tpot_seed)
 
     send = sub.add_parser("send", help="send a one-off message")
     send_sub = send.add_subparsers(dest="kind", required=True)

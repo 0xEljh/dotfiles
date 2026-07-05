@@ -7,6 +7,7 @@ from typing import Iterable
 from .providers.health import CheckResult, Transition
 from .providers.notion_todos import Task
 from .providers.sleep import SleepSummary, duration_hm
+from .tpot.seeds import SeedRow
 
 MAX_TASKS_PER_SECTION = 15
 MAX_JOURNAL_CHARS = 900
@@ -56,6 +57,7 @@ def format_morning_digest(
     today: date,
     sleep: SleepSummary | None = None,
     board_url: str | None = None,
+    post_seeds: list[SeedRow] | None = None,
 ) -> str:
     """Triage-style morning digest (Telegram HTML): today's tasks lead, overdue is
     demoted, and sleep + meta form a footer strip. Task titles link to their
@@ -71,6 +73,9 @@ def format_morning_digest(
             header = "🔴 Also overdue" if due_today else "🔴 Overdue"
             blocks.append(_task_block(header, overdue, lambda t: _overdue_line(t, today)))
 
+    if post_seeds:
+        blocks.append(_seed_block("🌱 Still on the table", post_seeds))
+
     footer: list[str] = []
     if sleep:
         footer.append(f"😴 {duration_hm(sleep.duration_seconds)}")
@@ -85,15 +90,35 @@ def format_morning_digest(
     return "\n\n".join(blocks)
 
 
-def format_standdown(target_date: date, link_url: str | None = None) -> str:
+def format_standdown(
+    target_date: date,
+    link_url: str | None = None,
+    post_seeds: list[SeedRow] | None = None,
+) -> str:
     """Minimal evening standdown (Telegram HTML): a dated header plus an optional
     deep link to that day's time-accounting page. Depth lives in Notion, not in
     the message — this is a nudge + pointer, sent with parse_mode=HTML."""
-    header = f"🌙 <b>Standdown · {target_date:%a %d %b}</b>"
-    if not link_url:
-        return header
-    link = f'<a href="{html.escape(link_url, quote=True)}">📊 Time accounting →</a>'
-    return f"{header}\n\n{link}"
+    blocks = [f"🌙 <b>Standdown · {target_date:%a %d %b}</b>"]
+    if link_url:
+        blocks.append(f'<a href="{html.escape(link_url, quote=True)}">📊 Time accounting →</a>')
+    if post_seeds:
+        blocks.append(_seed_block("🌱 Post seeds", post_seeds))
+    return "\n\n".join(blocks)
+
+
+def _seed_block(header: str, seeds: list[SeedRow]) -> str:
+    lines = [f"<b>{header}</b>"]
+    for seed in seeds:
+        suffix = []
+        if seed.provenance:
+            suffix.append(seed.provenance)
+        if seed.score is not None:
+            suffix.append(f"score {seed.score:.2f}")
+        line = f"• {html.escape(seed.text, quote=False)}"
+        if suffix:
+            line += "\n  <i>" + html.escape(" · ".join(suffix), quote=False) + "</i>"
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def format_papers(

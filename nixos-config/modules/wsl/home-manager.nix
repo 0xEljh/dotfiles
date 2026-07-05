@@ -29,6 +29,7 @@ in
   imports = [
     ../shared/ai-tools.nix
     ../shared/t3-serve.nix
+    ../shared/tpot-inference.nix
   ];
 
   services.t3Serve = {

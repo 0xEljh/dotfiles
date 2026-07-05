@@ -26,6 +26,28 @@ CREATE TABLE IF NOT EXISTS events (
     kind TEXT NOT NULL,
     payload TEXT
 );
+CREATE TABLE IF NOT EXISTS tpot_seeds (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    seed_date TEXT NOT NULL,
+    topic TEXT NOT NULL,
+    source TEXT NOT NULL,
+    provenance TEXT NOT NULL DEFAULT '',
+    text TEXT NOT NULL,
+    score REAL,
+    model_versions TEXT,
+    status TEXT NOT NULL DEFAULT 'proposed',
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_tpot_seeds_date_topic ON tpot_seeds(seed_date, topic);
+CREATE INDEX IF NOT EXISTS idx_tpot_seeds_status_date ON tpot_seeds(status, seed_date);
+CREATE TABLE IF NOT EXISTS tpot_seed_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    seed_id INTEGER NOT NULL REFERENCES tpot_seeds(id),
+    event TEXT NOT NULL,
+    detail TEXT,
+    at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_tpot_seed_events_seed ON tpot_seed_events(seed_id, id);
 """
 
 
@@ -39,6 +61,7 @@ class StateDB:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(path)
         self.conn.row_factory = sqlite3.Row
+        self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.executescript(SCHEMA)
 

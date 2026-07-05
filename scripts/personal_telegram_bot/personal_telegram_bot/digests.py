@@ -30,6 +30,7 @@ def deliver_morning_digest(
     from .life_events import LifeEventsDB
     from .providers.notion_todos import fetch_due_tasks
     from .providers.sleep import last_night_sleep
+    from .tpot.seeds import SeedStore
 
     now = now or datetime.now(cfg.tz)
     today = now.date()
@@ -52,10 +53,22 @@ def deliver_morning_digest(
         except Exception:
             pass  # sleep is best-effort context; never block the digest
 
+        post_seeds = []
+        seed_store = SeedStore(db)
+        try:
+            post_seeds = seed_store.select_morning_carryover(today - timedelta(days=1))
+        except Exception as exc:
+            db.log_event("tpot-seeds-error", {"digest": "morning", "error": f"{type(exc).__name__}: {exc}"})
+
         try:
             overdue, due_today = fetch_due_tasks(cfg.notion_token, cfg.bread_datasource_id, today)
             text = format_morning_digest(
-                overdue, due_today, today, sleep=sleep, board_url=cfg.bread_url
+                overdue,
+                due_today,
+                today,
+                sleep=sleep,
+                board_url=cfg.bread_url,
+                post_seeds=post_seeds,
             )
         except Exception as exc:
             db.log_event("morning-error", {"trigger": trigger, "error": f"{type(exc).__name__}: {exc}"})
@@ -75,6 +88,8 @@ def deliver_morning_digest(
         message_id = send_message(
             cfg.telegram_token, cfg.default_chat_id, text, parse_mode="HTML"
         )
+        if post_seeds:
+            seed_store.mark_surfaced(post_seeds, message_id=message_id, digest="morning")
         db.record_sent("morning", date_key, message_id)
         db.log_event(
             "morning-sent",
@@ -148,6 +163,7 @@ def deliver_evening_standdown(
     from .life_events import LifeEventsDB
     from .providers.location import current_place
     from .providers.time_accounting import day_page_url
+    from .tpot.seeds import SeedStore, build_reaction_keyboard
 
     now = now or datetime.now(cfg.tz)
     target = standdown_target_date(now)
@@ -175,15 +191,34 @@ def deliver_evening_standdown(
             day_page_url(cfg.time_accountant_secret, cfg.time_accounting_datasource_id, target)
             or cfg.time_accounting_url
         )
-        text = format_standdown(target, link)
+        post_seeds = []
+        seed_store = SeedStore(db)
+        try:
+            post_seeds = seed_store.select_standdown_seeds(target)
+        except Exception as exc:
+            db.log_event("tpot-seeds-error", {"digest": "standdown", "error": f"{type(exc).__name__}: {exc}"})
+
+        text = format_standdown(target, link, post_seeds=post_seeds)
 
         if dry_run:
             print(text)
             return True
 
-        message_id = send_message(
-            cfg.telegram_token, cfg.default_chat_id, text, parse_mode="HTML"
-        )
+        reply_markup = build_reaction_keyboard(post_seeds)
+        if reply_markup:
+            message_id = send_message(
+                cfg.telegram_token,
+                cfg.default_chat_id,
+                text,
+                parse_mode="HTML",
+                reply_markup=reply_markup,
+            )
+        else:
+            message_id = send_message(
+                cfg.telegram_token, cfg.default_chat_id, text, parse_mode="HTML"
+            )
+        if post_seeds:
+            seed_store.mark_surfaced(post_seeds, message_id=message_id, digest="standdown")
         db.record_sent("standdown", date_key, message_id)
         db.log_event(
             "standdown-sent",

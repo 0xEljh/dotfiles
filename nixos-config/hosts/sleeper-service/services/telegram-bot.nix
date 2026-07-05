@@ -47,6 +47,9 @@ let
         # datasource id (NOTION_PAPER_INBOX_DATASOURCE_ID) rides in via the
         # awEnvFile passthrough — same value paper_inbox_sync.py uses.
         "NOTION_PAPER_INBOX_URL=https://app.notion.com/p/e6a5c9db9c4641199604cbcc28467b37"
+        # Non-secret tailnet endpoint for the TPOT social assistant consumer.
+        # TPOT_INFERENCE_TOKEN is loaded from the sops dotenv EnvironmentFile.
+        "TPOT_INFERENCE_URL=http://contents-may-differ:18180"
       ];
       EnvironmentFile = [ "-${awEnvFile}" envFile ];
       ExecStart = "${pkgs.uv}/bin/uv run --frozen botctl ${command}";
@@ -115,6 +118,14 @@ in
 
     personal-telegram-bot-papers =
       mkOneshot "Weekly paper-log dispatch (unrefined sightings nudge)" "send papers";
+
+    personal-telegram-bot-tpot-seed =
+      let base = mkOneshot "TPOT post-seed generation" "tpot-seed";
+      in base // notifyOnFailure // {
+        serviceConfig = base.serviceConfig // {
+          TimeoutStartSec = "10min";
+        };
+      };
 
     "personal-telegram-bot-notify-failure@" =
       mkOneshot "Telegram alert for failed unit %i" "send failure --unit %i";
@@ -194,6 +205,23 @@ in
         OnCalendar = "Sun *-*-* 17:00:00";
         # Catch up after downtime; SQLite ISO-week dedupe prevents doubles.
         Persistent = true;
+      };
+    };
+
+    personal-telegram-bot-tpot-seed = {
+      # Pre-standdown seed generation. Multiple firings are the bounded retry
+      # policy; no Persistent catch-up because morning generation for yesterday
+      # would be stale/noisy.
+      description = "Generate TPOT post seeds before standdown";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        Unit = "personal-telegram-bot-tpot-seed.service";
+        OnCalendar = [
+          "*-*-* 21:00:00"
+          "*-*-* 21:30:00"
+          "*-*-* 22:15:00"
+        ];
+        Persistent = false;
       };
     };
   };

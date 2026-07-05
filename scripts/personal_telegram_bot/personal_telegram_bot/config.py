@@ -82,6 +82,12 @@ class Config:
     # Auth reuses NOTION_TOKEN; unset means the dispatch is a no-op.
     paper_inbox_datasource_id: str | None = None
     paper_inbox_url: str | None = None
+    # TPOT social assistant: inference endpoint from docs/design/06 and the
+    # WakaTime key needed for per-project topic construction.
+    tpot_inference_url: str | None = None
+    tpot_inference_token: str | None = None
+    wakatime_api_key: str | None = None
+    tpot_waka_min_minutes: int = 45
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -131,4 +137,8 @@ class Config:
             time_accounting_datasource_id=env.get("NOTION_TIME_ACCOUNTING_DATASOURCE_ID") or None,
             paper_inbox_datasource_id=env.get("NOTION_PAPER_INBOX_DATASOURCE_ID") or None,
             paper_inbox_url=env.get("NOTION_PAPER_INBOX_URL") or None,
+            tpot_inference_url=env.get("TPOT_INFERENCE_URL") or None,
+            tpot_inference_token=env.get("TPOT_INFERENCE_TOKEN") or None,
+            wakatime_api_key=env.get("WAKATIME_API_KEY") or None,
+            tpot_waka_min_minutes=int(env.get("TPOT_WAKA_MIN_MINUTES", "45")),
         )
