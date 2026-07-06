@@ -47,10 +47,12 @@ with pkgs; [
 
   # C tools
   gcc
+  tree-sitter
 
   # Lua
   lua5_1
   luarocks
+  stylua
 
   # Image processing (for image.nvim)
   imagemagick

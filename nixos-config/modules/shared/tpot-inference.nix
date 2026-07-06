@@ -45,12 +45,16 @@ let
         echo "tpot-writer-llama: docker is not ready" >&2
         exit 1
       fi
+      # CDI device syntax: --gpus all fails under this docker's CDI-only setup.
+      # GGML_CUDA_ENABLE_UNIFIED_MEMORY must NOT be set at all — llama.cpp
+      # checks for the variable's presence, not its value, and unified memory
+      # on WSL2 pages through /dev/dxg at <1 tok/s.
       exec docker run --rm \
         --network host \
-        --gpus all \
-        -e GGML_CUDA_ENABLE_UNIFIED_MEMORY=0 \
+        --device nvidia.com/gpu=all \
+        --entrypoint ${lib.escapeShellArg cfg.llamaCommand} \
         -v ${lib.escapeShellArg "${cfg.repoPath}/models/serving:/models/serving:ro"} \
-        ${imageArg} ${cfg.llamaCommand} \
+        ${imageArg} \
         -m ${modelRoot}/Qwen3-4B-Instruct-2507-Q4_K_M.gguf \
         --lora ${modelRoot}/tpot-writer-qwen3-4b-sft-v3-lora.gguf \
         --host 127.0.0.1 \
@@ -97,8 +101,8 @@ in
 
     llamaCommand = lib.mkOption {
       type = lib.types.str;
-      default = "llama-server";
-      description = "Command to run inside the llama.cpp image before server flags.";
+      default = "/app/llama-server";
+      description = "Entrypoint binary inside the llama.cpp image (passed via --entrypoint).";
     };
 
     apiPort = lib.mkOption { type = lib.types.port; default = 18180; };
@@ -126,6 +130,10 @@ in
         EnvironmentFile = cfg.envFile;
         Environment = [
           "PYTHONUNBUFFERED=1"
+          # The API holds no CUDA state, but it does run the HF tokenizer for
+          # token-ID parity with the writer, and transformers imports numpy —
+          # whose wheel needs these shared libs on NixOS.
+          "LD_LIBRARY_PATH=/usr/lib/wsl/lib:${lib.makeLibraryPath [ pkgs.stdenv.cc.cc.lib pkgs.zlib ]}"
           "TPOT_REGISTRY_PATH=${cfg.registryPath}"
           "TPOT_WRITER_URL=http://127.0.0.1:${toString cfg.writerPort}"
           "TPOT_SCORER_URL=http://127.0.0.1:${toString cfg.scorerPort}"
@@ -149,7 +157,14 @@ in
           "PYTHONUNBUFFERED=1"
           "TPOT_SCORER_REQUIRE_CUDA=1"
           "TPOT_SCORER_ADAPTER=${cfg.repoPath}/outputs/scorer/qwen3b-bt-taste-LOCKED"
+          # Mirrors the repo devShell: WSL2 libcuda passthrough + shared libs
+          # binary wheels (numpy, torch) link against but can't find on NixOS.
+          "LD_LIBRARY_PATH=/usr/lib/wsl/lib:${lib.makeLibraryPath [ pkgs.stdenv.cc.cc.lib pkgs.zlib ]}"
+          "TRITON_LIBCUDA_PATH=/usr/lib/wsl/lib"
         ];
+        # uv run doesn't exec its child, so the API's `systemctl stop` lands
+        # as SIGTERM on uv (exit 143) while uvicorn shuts down cleanly.
+        SuccessExitStatus = "143";
         Restart = "no";
       };
     };

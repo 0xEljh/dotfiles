@@ -32,6 +32,13 @@ in
     ../shared/tpot-inference.nix
   ];
 
+  services.tpotInference = {
+    enable = true;
+    # Pinned 2026-07-05: build 2d973636e (9870). Verified by the --lora ship
+    # gate (base-vs-adapter output diff) before enabling.
+    llamaImage = "ghcr.io/ggml-org/llama.cpp@sha256:c52d27d6c81fa224711ab8fd9cf415fd824bd1eeefb380bf920abaa54bebb752";
+  };
+
   services.t3Serve = {
     enable = true;
     # Plain HTTP on the tailnet IP; same reasoning as sleeper-service.
