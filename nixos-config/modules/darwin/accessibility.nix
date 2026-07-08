@@ -86,10 +86,20 @@ let
       cp -f "$SRC" "$BIN_PATH"
       chmod 755 "$BIN_PATH"
 
-      # Sign with named certificate; fall back to ad-hoc if cert not found
-      if security find-identity -v -p codesigning 2>/dev/null | grep -q "${certName}"; then
-        codesign --force --sign "${certName}" --identifier "${identifier}" "$APP_PATH" 2>/dev/null
-        echo "Signed ${appName}.app with certificate '${certName}'" >&2
+      # Sign with the named certificate; fall back to ad-hoc only if it is
+      # genuinely absent. NOTE: we intentionally do NOT use `find-identity -v`
+      # here — `-v` filters to *trusted* identities, but a self-signed root is
+      # untrusted by default. Signing works regardless of trust, and the
+      # resulting designated requirement pins the (stable) leaf certificate
+      # hash rather than the per-rebuild cdhash, so TCC grants persist. Gating
+      # on `-v` silently degraded us to ad-hoc signing => permissions reset
+      # every rebuild.
+      if security find-identity -p codesigning 2>/dev/null | grep -q "${certName}"; then
+        if codesign --force --sign "${certName}" --identifier "${identifier}" "$APP_PATH" 2>/dev/null; then
+          echo "Signed ${appName}.app with certificate '${certName}'" >&2
+        else
+          echo "ERROR: signing ${appName}.app with '${certName}' failed; leaving unsigned" >&2
+        fi
       else
         codesign --force -s - --identifier "${identifier}" "$APP_PATH" 2>/dev/null || true
         echo "WARNING: Certificate '${certName}' not found — signed ad-hoc (permissions will not persist across rebuilds)" >&2
@@ -103,6 +113,37 @@ let
       echo "Installed ${appName}.app → /usr/local/bin/${name}" >&2
     fi
   '';
+
+  # Import the signing identity into the System keychain (idempotent).
+  # The activation runs as root (`sudo darwin-rebuild switch`), and root's
+  # keychain search list excludes the user login keychain — so the identity
+  # must live in the System keychain to be usable by the signing step below.
+  # We import it from the sops-decrypted .p12 only if it isn't already present;
+  # once imported it persists across rebuilds independent of sops. The secret is
+  # declared in hosts/darwin/secrets.nix (guarded by pathExists), so before it
+  # is bootstrapped this branch degrades to a one-line hint. See also
+  # scripts/bootstrap-codesign-secret.sh.
+  ensureSystemKeychainIdentity =
+    if config.sops.secrets ? "nix-codesign.p12" then ''
+      SECRET_P12="${config.sops.secrets."nix-codesign.p12".path}"
+      if ! security find-identity -p codesigning /Library/Keychains/System.keychain 2>/dev/null | grep -q "${certName}"; then
+        if [ -f "$SECRET_P12" ]; then
+          if security import "$SECRET_P12" -P x -k /Library/Keychains/System.keychain -T /usr/bin/codesign -A 2>/dev/null; then
+            echo "Imported '${certName}' into System keychain from sops secret" >&2
+          else
+            echo "WARNING: failed to import '${certName}' from $SECRET_P12" >&2
+          fi
+        else
+          # sops installs the secret in postActivation, which runs AFTER this
+          # extraActivation block; on a fresh machine the first switch won't see
+          # it yet, so a second build-switch picks it up. No-op once imported.
+          echo "NOTE: '${certName}' not in System keychain and $SECRET_P12 not present yet; re-run build-switch once." >&2
+        fi
+      fi
+    '' else ''
+      echo "NOTE: codesign identity secret not declared (secrets/darwin/nix-codesign.p12 missing)." >&2
+      echo "  Run scripts/bootstrap-codesign-secret.sh once for a reproducible signing identity." >&2
+    '';
 
   # Script to update yabai sudoers for scripting addition
   updateYabaiSudoers = ''
@@ -166,6 +207,9 @@ in
 
     # Ensure /usr/local/bin exists (for symlinks)
     mkdir -p /usr/local/bin
+
+    # Make the cert-based signing identity reachable by this root-run script.
+    ${ensureSystemKeychainIdentity}
 
     ${lib.concatMapStringsSep "\n" setupAccessibilityApp accessibilityApps}
 

@@ -8,6 +8,7 @@ in
     ../../modules/darwin/home-manager.nix
     ../../modules/darwin/apps.nix
     ../../modules/darwin/accessibility.nix
+    ./secrets.nix
     ../../modules/shared
   ];
 

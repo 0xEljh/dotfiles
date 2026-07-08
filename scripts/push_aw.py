@@ -22,6 +22,59 @@ WATCHER_BUCKET_PREFIXES = ("aw-watcher-window", "aw-watcher-web", "aw-watcher-af
 # ---------------------
 
 
+def count_events(data):
+    return sum(len(events) for events in data.values())
+
+
+def hostname_from_bucket_id(bucket_id):
+    for prefix in ("aw-watcher-window_", "aw-watcher-afk_"):
+        if bucket_id.startswith(prefix):
+            return bucket_id[len(prefix) :]
+    if bucket_id.startswith("aw-watcher-web"):
+        parts = bucket_id.split("_", 1)
+        if len(parts) == 2:
+            return parts[1]
+    return None
+
+
+def export_hostname(data):
+    hostnames = []
+    for bucket_id, events in data.items():
+        if not events:
+            continue
+        hostname = hostname_from_bucket_id(bucket_id)
+        if hostname:
+            hostnames.append(hostname)
+
+    if not hostnames:
+        for bucket_id in data.keys():
+            hostname = hostname_from_bucket_id(bucket_id)
+            if hostname:
+                hostnames.append(hostname)
+
+    if hostnames:
+        return Counter(hostnames).most_common(1)[0][0]
+    return None
+
+
+def hostname_matches_current_machine(bucket_hostname, current_hostname):
+    if not bucket_hostname or not current_hostname:
+        return False
+
+    def aliases(hostname):
+        hostname = hostname.lower().strip()
+        short_hostname = hostname.split(".", 1)[0]
+        values = {hostname, short_hostname}
+
+        stem, separator, suffix = short_hostname.rpartition("-")
+        if separator and suffix.isdigit() and stem:
+            values.add(stem)
+
+        return values
+
+    return bool(aliases(bucket_hostname) & aliases(current_hostname))
+
+
 def get_aw_data(target_date=None):
     base_url = "http://localhost:5600/api/0"
     hostname = socket.gethostname()
@@ -46,44 +99,10 @@ def get_aw_data(target_date=None):
 
     target_data = {}
 
-    # Get the short hostname (before first dot) for matching
-    # This handles cases where bucket uses "Elijahs-MacBook-Air.local"
-    # but socket.gethostname() returns "elijahs-macbook-air-2.tail82ff8b.ts.net"
-    short_hostname = hostname.split(".")[0].lower()
-    # Also extract the base name without trailing numbers (e.g., "elijahs-macbook-air" from "elijahs-macbook-air-2")
-    base_hostname = short_hostname.rstrip("0123456789-")
-
-    watcher_bucket_hostnames = []
     watcher_bucket_ids = []
     for bucket_id, bucket in buckets.items():
-        if any(x in bucket_id for x in WATCHER_BUCKET_PREFIXES):
+        if bucket_id.startswith(WATCHER_BUCKET_PREFIXES):
             watcher_bucket_ids.append(bucket_id)
-            if isinstance(bucket, dict):
-                bucket_hostname = bucket.get("hostname")
-                if bucket_hostname:
-                    watcher_bucket_hostnames.append(bucket_hostname)
-
-    aw_hostname = None
-    if watcher_bucket_hostnames:
-        # Prefer exact match (case-insensitive) against full hostname
-        for bucket_hostname in watcher_bucket_hostnames:
-            if short_hostname == bucket_hostname.lower():
-                aw_hostname = bucket_hostname
-                break
-        # Then try exact match against the bucket's short hostname (before first dot)
-        if aw_hostname is None:
-            for bucket_hostname in watcher_bucket_hostnames:
-                if short_hostname == bucket_hostname.split(".")[0].lower():
-                    aw_hostname = bucket_hostname
-                    break
-        # Fall back to substring match only if no exact match found
-        if aw_hostname is None:
-            for bucket_hostname in watcher_bucket_hostnames:
-                if base_hostname and base_hostname in bucket_hostname.lower():
-                    aw_hostname = bucket_hostname
-                    break
-        if aw_hostname is None:
-            aw_hostname = Counter(watcher_bucket_hostnames).most_common(1)[0][0]
 
     def fetch_events(bucket_id):
         print(f"Fetching events for: {bucket_id}")
@@ -93,19 +112,19 @@ def get_aw_data(target_date=None):
 
     selected_bucket_ids = []
     for bucket_id in watcher_bucket_ids:
-        bucket_id_lower = bucket_id.lower()
         # Filter 1: Only buckets for THIS computer (hostname check, case-insensitive)
         # Filter 2: Only the watchers we care about (Window, Web, AFK)
         bucket = buckets.get(bucket_id)
-        bucket_hostname = None
+        metadata_hostname = None
         if isinstance(bucket, dict):
-            bucket_hostname = bucket.get("hostname")
+            metadata_hostname = bucket.get("hostname")
+        bucket_id_hostname = hostname_from_bucket_id(bucket_id)
 
-        is_this_host = False
-        if aw_hostname and bucket_hostname:
-            is_this_host = bucket_hostname == aw_hostname
-        else:
-            is_this_host = base_hostname in bucket_id_lower
+        candidate_hostnames = [metadata_hostname, bucket_id_hostname]
+        is_this_host = any(
+            hostname_matches_current_machine(candidate, hostname)
+            for candidate in candidate_hostnames
+        )
         if is_this_host:
             selected_bucket_ids.append(bucket_id)
 
@@ -137,7 +156,15 @@ def get_aw_data(target_date=None):
 
 
 def sync_to_sleeper_service(data, target_date=None):
-    hostname = socket.gethostname()
+    event_count = count_events(data)
+    if event_count == 0:
+        print(
+            f"No ActivityWatch events found for {target_date or 'today'}; "
+            "skipping sync."
+        )
+        return False
+
+    hostname = export_hostname(data) or socket.gethostname()
     if target_date is None:
         date_str = datetime.now(TARGET_TZ).strftime("%Y-%m-%d")
     else:
@@ -164,8 +191,10 @@ def sync_to_sleeper_service(data, target_date=None):
         subprocess.run(cmd, check=True)
         print("Sync success.")
         subprocess.run(["rm", local_path])  # Cleanup
+        return True
     except subprocess.CalledProcessError as e:
         print(f"Sync failed. Check SSH connection to '{SLEEPER_SERVICE_ALIAS}'.")
+        return False
 
 
 if __name__ == "__main__":
@@ -190,7 +219,7 @@ if __name__ == "__main__":
         target_date = datetime.strptime(args.date, "%Y-%m-%d").date()
 
     data = get_aw_data(target_date)
-    if data:
+    if count_events(data) > 0:
         sync_to_sleeper_service(data, target_date)
     else:
-        print(f"No data found for {target_date or 'today'}.")
+        print(f"No ActivityWatch events found for {target_date or 'today'}.")

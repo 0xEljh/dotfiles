@@ -16,6 +16,10 @@ keys:
   # WSL inside central-node (hostname/tailnet `contents-may-differ`),
   # registered 2026-06-12.
   - &host_wsl age12t298h9gsmu3j8lpw0ywpzggzl7sfcsv0ts7kz9yqfdp72e03auq0hjnl2
+  # MacBook host key, derived from /etc/ssh/ssh_host_ed25519_key via ssh-to-age.
+  # Registered 2026-06-16 so the Mac can self-decrypt secrets at activation.
+  # (sshd need not be reachable — the key is read locally on the Mac.)
+  - &host_darwin_macbook age16avslew3l70z6zarh2cclldxglql45hxfux0mutwkjxplu4g4f5q5m38c4
 
 creation_rules:
   - path_regex: secrets/sleeper-service/[^/]+$
@@ -28,12 +32,11 @@ creation_rules:
       - age:
           - *user_elijah
           - *host_wsl
-  # The MacBook exposes no sshd to scan; register a key from it before
-  # giving it secrets.
   - path_regex: secrets/darwin/[^/]+$
     key_groups:
       - age:
           - *user_elijah
+          - *host_darwin_macbook
   # Shared secrets readable by every registered machine.
   - path_regex: secrets/[^/]+$
     key_groups:

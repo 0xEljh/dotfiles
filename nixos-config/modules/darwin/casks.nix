@@ -2,9 +2,9 @@ _:
 
 [
   # Development Tools
-  "homebrew/cask/docker"
+  "docker-desktop" # was "docker" (cask renamed by Homebrew)
   "visual-studio-code"
-  "windsurf"
+  "devin-desktop" # was "windsurf" (Windsurf rebranded to Devin)
   # T3 Code: GUI front-end for Codex / Claude Code / OpenCode. See docs/design/t3-code-multi-host.md.
   "t3-code"
 
