@@ -54,9 +54,9 @@
       "prompt": "Review the design document for design issues, overlooked considerations, blindspots. Flag alternatives that may not have been considered. Highlight logic errors too."
     },
     "reviewer-scoped": {
-      "description": "Reviews proposals, plans, and designs. This gemini-based review agent is intended for well-scoped design reviews: it is good at finding blind spots and tradeoffs not considered. Do not make it do research -> hand all necessary information and context to it during reviews",
+      "description": "Reviews proposals, plans, and designs. This gemini-based review agent is intended for well-scoped design reviews: it is good at finding blind spots and tradeoffs not considered. Don't make it do research: scope the context for the review appropriately",
       "mode": "subagent",
-      "model": "google/gemini-3.5-flash",
+      "model": "google/gemini-3.1-pro-preview",
       "agent": {
         "build": {
           "variant": "high"

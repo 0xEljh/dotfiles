@@ -11,6 +11,7 @@
 ai-tools/shared/skills/.system/
 
 !ai-tools/claude-code/mcp.json
+!ai-tools/claude-code/settings.json
 !ai-tools/opencode/opencode.json
 
 # python files

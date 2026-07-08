@@ -21,7 +21,7 @@ Use this skill when the user asks for planning, architecture decisions, or techn
    - Include a creative/lateral approach when useful.
 4. Recommend decisions with explicit trade-offs.
 5. Write the design document to disk.
-6. Push the document to Notion for review via `ncat path/to/doc 2> /dev/null`
+6. Push the document to Notion for review via `notion-cat path/to/doc 2> /dev/null`
 7. Return a concise summary with the file path and unresolved questions.
 
 At each step, especially steps 1 and 4, ask clarifying questions where needed.
