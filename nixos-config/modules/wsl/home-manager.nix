@@ -29,8 +29,18 @@ in
   imports = [
     ../shared/ai-tools.nix
     ../shared/t3-serve.nix
+    ../shared/opencode-serve.nix
     ../shared/tpot-inference.nix
   ];
+
+  # Supervise `opencode serve` so a fully-dead daemon auto-restarts and the
+  # process gets a clean environment each boot (replaces the ad-hoc,
+  # 2-day-uptime daemon that hit a stale-worker race). Localhost-only.
+  services.opencodeServe = {
+    enable = true;
+    host = "127.0.0.1";
+    port = 8779;
+  };
 
   services.tpotInference = {
     enable = true;

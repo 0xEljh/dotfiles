@@ -12,4 +12,4 @@ Requirements:
 
 - Follow the full workflow from the `design` skill.
 - Return a concise summary, including the file path, the main design decisions, and any remaining design decisions.
-- After creating the design document, run `notion-cat <doc-file-path> > /dev/null` to push the document to Notion for further actions.
+- After creating the design document, run `notion-cat --suppress-output <doc-file-path>` to push the document to Notion for further actions.

@@ -53,15 +53,10 @@
       },
       "prompt": "Review the design document for design issues, overlooked considerations, blindspots. Flag alternatives that may not have been considered. Highlight logic errors too."
     },
-    "reviewer-scoped": {
-      "description": "Reviews proposals, plans, and designs. This gemini-based review agent is intended for well-scoped design reviews: it is good at finding blind spots and tradeoffs not considered. Don't make it do research: scope the context for the review appropriately",
+    "reviewer-alt": {
+      "description": "Reviews proposals, plans, and designs. This deepseek agent is intended for independent, small, scoped reviews. It might make errors.",
       "mode": "subagent",
-      "model": "google/gemini-3.1-pro-preview",
-      "agent": {
-        "build": {
-          "variant": "high"
-        }
-      },
+      "model": "opencode/deepseek-v4-flash-free",
       "permission": {
         "read": "allow",
         "glob": "allow",
@@ -81,30 +76,59 @@
         }
       },
       "prompt": "Review the design document for design issues, overlooked considerations, blindspots. Flag alternatives that may not have been considered. Highlight logic errors too."
-    }
-  },
-  "mcp": {
-    "arxiv": {
-      "type": "local",
-      "command": [
-        "uvx",
-        "--from",
-        "arxiv-mcp-server[pdf]",
-        "arxiv-mcp-server"
-      ],
-      "enabled": true,
-      "timeout": 60000
     },
-    "playwright": {
-      "type": "local",
-      "command": [
-        "npx",
-        "-y",
-        "@playwright/mcp@latest",
-        "--headless"
-      ],
-      "enabled": true,
-      "timeout": 60000
+    //   "reviewer-scoped": {
+    //     "description": "Reviews proposals, plans, and designs. This gemini-based review agent is intended for well-scoped design reviews: it is good at finding blind spots and tradeoffs not considered. Don't make it do research: scope the context for the review appropriately",
+    //     "mode": "subagent",
+    //     "model": "google/gemini-3.1-pro-preview",
+    //     "agent": {
+    //       "build": {
+    //         "variant": "medium"
+    //       }
+    //     },
+    //     "permission": {
+    //       "read": "allow",
+    //       "glob": "allow",
+    //       "grep": "allow",
+    //       "list": "allow",
+    //       "bash": "allow",
+    //       "webfetch": "allow",
+    //       "websearch": "allow",
+    //       "lsp": "allow",
+    //       "skill": "allow",
+    //       "question": "allow",
+    //       "edit": "deny",
+    //       "task": {
+    //         "*": "allow",
+    //         "general": "deny",
+    //         "reviewer*": "deny"
+    //       }
+    //     },
+    //     "prompt": "Review the design document for design issues, overlooked considerations, blindspots. Flag alternatives that may not have been considered. Highlight logic errors too."
+    //   }
+    // },
+    "mcp": {
+      "arxiv": {
+        "type": "local",
+        "command": [
+          "uvx",
+          "--from",
+          "arxiv-mcp-server[pdf]",
+          "arxiv-mcp-server"
+        ],
+        "enabled": true,
+        "timeout": 60000
+      },
+      "playwright": {
+        "type": "local",
+        "command": [
+          "npx",
+          "-y",
+          "@playwright/mcp@latest",
+          "--headless"
+        ],
+        "enabled": true,
+        "timeout": 60000
+      }
     }
   }
-}

@@ -736,6 +736,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--env-file", help="Path to .env file")
     parser.add_argument("--no-stdout", action="store_true", help="Do not echo input")
     parser.add_argument(
+        "--suppress-output",
+        action="store_true",
+        help="Suppress successful output, including the input echo and page URL",
+    )
+    parser.add_argument(
         "--raw", action="store_true", help="Force code-block mode for .md/.mdx"
     )
     parser.add_argument("--dry-run", action="store_true", help="Do not call Notion")
@@ -773,7 +778,7 @@ def main() -> int:
         eprint(str(exc))
         return 2
 
-    if not args.no_stdout:
+    if not (args.no_stdout or args.suppress_output):
         sys.stdout.buffer.write(data)
         sys.stdout.buffer.flush()
 
@@ -799,16 +804,17 @@ def main() -> int:
     mode = "markdown" if use_markdown else "code"
 
     if args.dry_run:
-        eprint("dry-run: not creating Notion page")
-        eprint(f"data_source_id={data_source_id}")
-        eprint(f"title={title}")
-        eprint(f"type={type_value}")
-        eprint(f"source={source}")
-        eprint(f"notes={notes}")
-        eprint(f"lang={language}")
-        eprint(f"mode={mode}")
-        if env_loaded:
-            eprint(f"env={env_loaded}")
+        if not args.suppress_output:
+            eprint("dry-run: not creating Notion page")
+            eprint(f"data_source_id={data_source_id}")
+            eprint(f"title={title}")
+            eprint(f"type={type_value}")
+            eprint(f"source={source}")
+            eprint(f"notes={notes}")
+            eprint(f"lang={language}")
+            eprint(f"mode={mode}")
+            if env_loaded:
+                eprint(f"env={env_loaded}")
         return 0
 
     notion = Client(auth=token)
@@ -833,12 +839,13 @@ def main() -> int:
         blocks = build_code_blocks(text, language)
     if blocks:
         append_blocks(notion, page_id, blocks)
-    else:
+    elif not args.suppress_output:
         eprint("note: empty input, no blocks appended")
 
     short_id = page_id.replace("-", "")
     page_url = f"https://www.notion.so/{short_id}"
-    eprint(f"created: {page_url}")
+    if not args.suppress_output:
+        eprint(f"created: {page_url}")
     return 0
 
 
