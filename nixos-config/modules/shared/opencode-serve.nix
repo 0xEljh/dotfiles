@@ -88,6 +88,8 @@ in
           "XDG_CACHE_HOME=%h/.cache"
           "XDG_DATA_HOME=%h/.local/share"
           "XDG_STATE_HOME=%h/.local/state"
+          "OPENCODE_ENABLE_EXA=1"
+          "CTX7_TELEMETRY_DISABLED=1"
           # WSL runtime libs — mirror the interactive shell (see
           # modules/wsl/home-manager.nix zsh initContent) so bun and any
           # spawned native tools link correctly.
@@ -96,6 +98,7 @@ in
           "LD_LIBRARY_PATH=/run/current-system/sw/share/nix-ld/lib:/usr/lib/wsl/lib"
           "TRITON_LIBCUDA_PATH=/usr/lib/wsl/lib"
         ];
+        EnvironmentFile = [ "-%h/.config/ai-tools/secrets.env" ];
       };
 
       Install.WantedBy = [ "default.target" ];

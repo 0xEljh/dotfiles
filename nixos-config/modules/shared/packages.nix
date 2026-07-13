@@ -1,7 +1,9 @@
 { pkgs, fff, lib ? pkgs.lib }:
 
 let
+  context7Cli = pkgs.callPackage ../../packages/context7-cli { };
   fffPackages = fff.packages.${pkgs.stdenv.hostPlatform.system};
+  playwrightCli = pkgs.callPackage ../../packages/playwright-cli { };
 in
 with pkgs; [
   # General packages for development and system management
@@ -44,6 +46,9 @@ with pkgs; [
   nodejs_24
   bun
   llm-agents.claude-code
+  llm-agents.codex
+  context7Cli
+  playwrightCli
 
   # C tools
   gcc
@@ -84,12 +89,9 @@ with pkgs; [
   uv
   ruff
   pyright
+  python3Packages.huggingface-hub
 
   # Secret management
   sops
-]
-++ lib.optionals stdenv.hostPlatform.isLinux [
-  # Browser automation for Playwright MCP on Linux hosts.
-  chromium
 ]
 ++ lib.optionals (pkgs ? llm-agents && pkgs.llm-agents ? opencode) [ llm-agents.opencode ]

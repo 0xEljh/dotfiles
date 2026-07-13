@@ -1,5 +1,6 @@
 # environment files
 .env
+secrets.env
 
 # log files
 *.log
@@ -13,6 +14,10 @@ ai-tools/shared/skills/.system/
 !ai-tools/claude-code/mcp.json
 !ai-tools/claude-code/settings.json
 !ai-tools/opencode/opencode.json
+!nixos-config/packages/context7-cli/package.json
+!nixos-config/packages/context7-cli/package-lock.json
+!nixos-config/packages/playwright-cli/package.json
+!nixos-config/packages/playwright-cli/package-lock.json
 
 # python files
 __pycache__

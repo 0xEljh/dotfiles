@@ -1,10 +1,3 @@
 {
-  "mcpServers": {
-    "playwright": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["-y", "@playwright/mcp@latest", "--headless"],
-      "timeout": 60000
-    }
-  }
+  "mcpServers": {}
 }

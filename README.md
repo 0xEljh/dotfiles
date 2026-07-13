@@ -56,15 +56,19 @@ Wiring:
 
 What activation does:
 
-- Symlinks shared skills into each tool's global config dir.
+- Links shared skills into each harness and adds pinned CLI-provided skills.
 - -> Only need to maintain the global configs in this folder.
 - Generates combined instruction files by concatenating `shared/AI.md` + tool layer, separated by `---`:
   - `~/.config/opencode/AGENTS.md`
   - `~/.claude/CLAUDE.md`
   - `~/.codex/AGENTS.md`
-- Merges `ai-tools/claude-code/mcp.json` into `~/.claude.json` so Claude Code MCP servers are declarative without replacing Claude's auth/state file.
+- Replaces only `~/.claude.json.mcpServers` from `ai-tools/claude-code/mcp.json`, preserving Claude's unrelated auth/state while reconciling removed servers.
+- Installs the browser revision pinned by Playwright CLI and generates the skill matching the installed Hugging Face CLI.
 
-Note: `ai-tools/claude-code/settings.json` is currently uninitialised; if missing, activation warns and proceeds on best-effort.
+Managed-search credentials stay in the untracked
+`~/.config/ai-tools/secrets.env`; start from `ai-tools/secrets.env.example` and
+set mode `0600`. Never set `EXA_API_KEY` globally because OpenCode's native Exa
+path places it in the URL; the scoped MCP uses `EXA_MCP_API_KEY` in a header.
 
 ### 2a) T3 Code remote agents (mobile + cross-device)
 
@@ -98,6 +102,7 @@ Examples:
 - echo "hello" | notion-cat
 - notion-cat README.md
 - rg "TODO" -n . | notion-cat --title "TODO scan"
+- notion-cat --suppress-output README.md  # omit document echo and success messages
 
 May add other versions and integrate with ai-tools in the future.
 

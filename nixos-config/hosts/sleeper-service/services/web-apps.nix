@@ -123,7 +123,7 @@ in
           "MAX_RESULTS=50"
           "REQUEST_TIMEOUT=60"
         ];
-        ExecStart = "${pkgs.uv}/bin/uvx --from arxiv-mcp-server[pdf] arxiv-mcp-server --storage-path ${arxivMcpStorageDir}";
+        ExecStart = "${pkgs.uv}/bin/uvx --from 'arxiv-mcp-server[pdf]==0.5.0' arxiv-mcp-server --storage-path ${arxivMcpStorageDir}";
         Restart = "always";
         RestartSec = "5s";
         KillSignal = "SIGINT";
