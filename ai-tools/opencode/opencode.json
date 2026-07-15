@@ -10,7 +10,9 @@
       }
     },
     "plan": {
-      "permission": "allow"
+      "permission": {
+        "*": "allow"
+      }
     }
   },
   "small_model": "opencode-go/kimi-k2.7-code",

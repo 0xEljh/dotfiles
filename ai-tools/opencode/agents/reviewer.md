@@ -1,7 +1,7 @@
 ---
 description: Reviews proposals, plans, and designs. This GLM-5.2 driven agent is intended for independent, deep reviews.
 mode: subagent
-model: zai/glm-5.2
+model: zai-coding-plan/glm-5.2
 permission:
   read: allow
   glob: allow
