@@ -69,6 +69,8 @@ Managed-search credentials stay in the untracked
 `~/.config/ai-tools/secrets.env`; start from `ai-tools/secrets.env.example` and
 set mode `0600`. Never set `EXA_API_KEY` globally because OpenCode's native Exa
 path places it in the URL; the scoped MCP uses `EXA_MCP_API_KEY` in a header.
+Parallel remains usable anonymously when `PARALLEL_MCP_API_KEY` is empty and
+uses that key as a Bearer token when supplied.
 
 ### 2a) T3 Code remote agents (mobile + cross-device)
 

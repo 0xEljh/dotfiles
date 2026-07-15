@@ -48,16 +48,20 @@ Only as a final step do we wrangle tests and code. This reduces "empty tests" an
 During planning, the tests to be implemented should already be defined based on the plan's specs.
 At the point of implementation, the tests should fail. Tests that don't initially fail are not useful and should be removed.
 
+This can be ignored for one-off scripts.
+
 ### Type Checking
 
 Slightly related to TDD is the issue of type checking.
 Writing overly defensive type checks (especially in python) is an anti-pattern.
 Instead, the best place to be doing extensive type checks is for tests.
 
+This applies to many other overly defensive patterns.
+
 ## Maximise exploration/search during planning
 
 MAXIMISE SEARCH EFFORTS. Launch multiple background agents in parallel.
-Look up codebase patterns, file structures, ripgrep (rg)
+Look up codebase patterns, file structures, ripgrep (rg), fff
 Check remote repos, official docs, GitHub examples.
 Search up best practices, design considerations, and reference implementations.
 NEVER stop at the first result - be exhaustive.
@@ -81,6 +85,9 @@ When completing a workflow/task, report status using one of:
 - **DONE_WITH_CONCERNS** — Completed, but with issues the user should know about. List each concern.
 - **BLOCKED** — Cannot proceed. State what is blocking and what was tried.
 - **NEEDS_CONTEXT** — Missing information required to continue. State exactly what you need.
+
+If anything was written/implemented, point the user towards the core substance of it.
+Then give a short breakdown of what changes should be read vs skimmed.
 
 ### Escalation
 
