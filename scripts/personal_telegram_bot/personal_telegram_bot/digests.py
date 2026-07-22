@@ -104,7 +104,7 @@ def deliver_morning_digest(
 # window. Unlike the morning wake gate (a local-hour gate), the gate here is
 # *place*; the window only bounds when we bother checking.
 ALLOWED_STANDDOWN_PLACES = frozenset({"Home", "Cheryl"})
-STANDDOWN_EVENING_START = time(21, 45)
+STANDDOWN_EVENING_START = time(22, 30)
 STANDDOWN_MORNING_END = time(3, 0)
 
 

@@ -335,7 +335,9 @@ in
   };
 
   systemd.timers.digital-garden-deploy = {
-    description = "Poll for digital-garden pushes every 10 minutes";
+    # Temporarily disabled while garden-foundations is developed in the serving checkout.
+    enable = false;
+    description = "Poll for digital-garden pushes every 10 minutes (disabled)";
     wantedBy = [ "timers.target" ];
 
     timerConfig = {

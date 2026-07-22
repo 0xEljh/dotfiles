@@ -23,15 +23,15 @@ def _at(hour: int, minute: int = 0, day: int = 28) -> datetime:
     return datetime(2026, 6, day, hour, minute, tzinfo=TZ)
 
 
-# --- in_standdown_window: [21:45, 03:00) spanning midnight ---
+# --- in_standdown_window: [22:30, 03:00) spanning midnight ---
 
 
-def test_window_opens_at_2145():
-    assert in_standdown_window(_at(21, 45))
+def test_window_opens_at_2230():
+    assert in_standdown_window(_at(22, 30))
 
 
 def test_window_closed_just_before_open():
-    assert not in_standdown_window(_at(21, 44))
+    assert not in_standdown_window(_at(22, 29))
 
 
 def test_window_spans_midnight():
@@ -62,7 +62,7 @@ def test_target_is_yesterday_after_midnight():
 
 
 def test_fires_at_home_in_window():
-    assert standdown_should_fire(_at(22, 0), "Home")
+    assert standdown_should_fire(_at(22, 30), "Home")
 
 
 def test_fires_at_cheryl_in_window():
@@ -74,11 +74,11 @@ def test_fires_post_midnight_at_home():
 
 
 def test_blocked_when_away_none_place():
-    assert not standdown_should_fire(_at(22, 0), None)
+    assert not standdown_should_fire(_at(22, 30), None)
 
 
 def test_blocked_at_unlisted_place():
-    assert not standdown_should_fire(_at(22, 0), "Office")
+    assert not standdown_should_fire(_at(22, 30), "Office")
 
 
 def test_blocked_outside_window_even_at_home():

@@ -34,6 +34,11 @@ class SeedRow:
     score: float | None
     model_versions: dict
     status: str
+    generation_key: str | None
+    evidence_keys: tuple[str, ...]
+    evidence_summary: str | None
+    generator: str
+    candidate_order: int | None
     created_at: str
 
 
@@ -57,6 +62,11 @@ def _row_to_seed(row) -> SeedRow:
         score=row["score"],
         model_versions=json.loads(row["model_versions"] or "{}"),
         status=row["status"],
+        generation_key=row["generation_key"],
+        evidence_keys=tuple(json.loads(row["evidence_keys"] or "[]")),
+        evidence_summary=row["evidence_summary"],
+        generator=row["generator"],
+        candidate_order=row["candidate_order"],
         created_at=row["created_at"],
     )
 
@@ -128,6 +138,88 @@ class SeedStore:
             )
         return ids
 
+    def add_grounded_batch(
+        self,
+        *,
+        seed_date: date | str,
+        generation_key: str,
+        ideas: list[tuple[str, str, list[str], str]],
+        scores: list[float] | None,
+        model_versions: dict,
+        created_at: str | None = None,
+    ) -> list[int]:
+        if self.conn.execute(
+            "SELECT 1 FROM tpot_seeds WHERE generation_key = ? LIMIT 1", (generation_key,)
+        ).fetchone():
+            return []
+        if scores is not None and len(scores) != len(ideas):
+            raise ValueError("score count does not match grounded ideas")
+        ids = []
+        with self.conn:
+            for order, (angle, text, evidence_keys, summary) in enumerate(ideas):
+                cursor = self.conn.execute(
+                    """
+                    INSERT INTO tpot_seeds
+                        (seed_date, topic, source, provenance, text, score, model_versions,
+                         status, generation_key, evidence_keys, evidence_summary, generator,
+                         candidate_order, created_at)
+                    VALUES (?, ?, 'evidence', ?, ?, ?, ?, 'proposed', ?, ?, ?, 'opencode', ?, ?)
+                    """,
+                    (
+                        _date_key(seed_date), f"synthesis:{angle}", summary, text,
+                        scores[order] if scores is not None else None,
+                        json.dumps(model_versions, sort_keys=True), generation_key,
+                        json.dumps(evidence_keys), summary, order, created_at or _now(),
+                    ),
+                )
+                ids.append(int(cursor.lastrowid))
+        return ids
+
+    def unscored_for_generation(self, generation_key: str) -> list[SeedRow]:
+        rows = self.conn.execute(
+            "SELECT * FROM tpot_seeds WHERE generation_key = ? AND score IS NULL ORDER BY candidate_order",
+            (generation_key,),
+        ).fetchall()
+        return [_row_to_seed(row) for row in rows]
+
+    def seeds_for_generation(self, generation_key: str) -> list[SeedRow]:
+        rows = self.conn.execute(
+            "SELECT * FROM tpot_seeds WHERE generation_key = ? ORDER BY candidate_order",
+            (generation_key,),
+        ).fetchall()
+        return [_row_to_seed(row) for row in rows]
+
+    def update_generation_scores(
+        self, generation_key: str, scores: list[float], model_versions: dict
+    ) -> None:
+        rows = self.unscored_for_generation(generation_key)
+        if len(rows) != len(scores):
+            raise ValueError("score count does not match unscored seeds")
+        with self.conn:
+            for seed, score in zip(rows, scores, strict=True):
+                versions = seed.model_versions | model_versions
+                self.conn.execute(
+                    "UPDATE tpot_seeds SET score = ?, model_versions = ? WHERE id = ?",
+                    (score, json.dumps(versions, sort_keys=True), seed.id),
+                )
+
+    def supersede_other_proposed(
+        self, seed_date: date | str, generation_key: str, *, at: str | None = None
+    ) -> list[int]:
+        rows = self.conn.execute(
+            """
+            SELECT id FROM tpot_seeds
+            WHERE seed_date = ? AND status = 'proposed'
+              AND generation_key IS NOT NULL AND generation_key != ?
+            ORDER BY id
+            """,
+            (_date_key(seed_date), generation_key),
+        ).fetchall()
+        ids = [row["id"] for row in rows]
+        for seed_id in ids:
+            self.record_event(seed_id, "superseded", {"generation_key": generation_key}, at=at)
+        return ids
+
     def get_seed(self, seed_id: int) -> SeedRow | None:
         row = self.conn.execute("SELECT * FROM tpot_seeds WHERE id = ?", (seed_id,)).fetchone()
         return _row_to_seed(row) if row else None
@@ -162,7 +254,9 @@ class SeedStore:
             "surfaced": "surfaced",
             "used": "used",
             "discarded": "discarded",
+            "remixed": "remixed",
             "expired": "expired",
+            "superseded": "superseded",
         }.get(event)
         at = at or _now()
         with self.conn:
@@ -182,7 +276,9 @@ class SeedStore:
         at: str | None = None,
     ) -> None:
         for seed in seeds:
-            self.record_event(seed.id, "surfaced", {"message_id": message_id}, at=at)
+            self.record_event(
+                seed.id, "surfaced", {"message_id": message_id, "digest": digest}, at=at
+            )
 
     def events_for_seed(self, seed_id: int) -> list[SeedEvent]:
         rows = self.conn.execute(

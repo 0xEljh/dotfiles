@@ -88,6 +88,11 @@ class Config:
     tpot_inference_token: str | None = None
     wakatime_api_key: str | None = None
     tpot_waka_min_minutes: int = 45
+    github_activity_token: str | None = None
+    github_username: str = "0xEljh"
+    tpot_synth_enable: bool = False
+    tpot_synth_model: str = "opencode/deepseek-v4-flash-free"
+    tpot_synth_timeout_seconds: int = 90
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -141,4 +146,9 @@ class Config:
             tpot_inference_token=env.get("TPOT_INFERENCE_TOKEN") or None,
             wakatime_api_key=env.get("WAKATIME_API_KEY") or None,
             tpot_waka_min_minutes=int(env.get("TPOT_WAKA_MIN_MINUTES", "45")),
+            github_activity_token=env.get("GITHUB_ACTIVITY_TOKEN") or None,
+            github_username=env.get("GITHUB_ACTIVITY_USERNAME", "0xEljh"),
+            tpot_synth_enable=env.get("TPOT_SYNTH_ENABLE", "0").lower() in {"1", "true", "yes"},
+            tpot_synth_model=env.get("TPOT_SYNTH_MODEL") or "opencode/deepseek-v4-flash-free",
+            tpot_synth_timeout_seconds=int(env.get("TPOT_SYNTH_TIMEOUT_SECONDS", "90")),
         )

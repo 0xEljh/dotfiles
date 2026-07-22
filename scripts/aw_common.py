@@ -12,6 +12,7 @@ import os
 import json
 import re
 import subprocess
+from collections import defaultdict
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
@@ -215,7 +216,7 @@ AI_CHAT_SITES = {
     "you.com",
     "phind.com",
     "chat.mistral.ai",
-    "huggingface.co/chat",
+    "chat.z.ai",
     "pi.ai",
     "character.ai",
     "copilot.microsoft.com",
@@ -249,20 +250,44 @@ PLANNING_APPS = {
     "figjam",
 }
 
-# Browser-based dev tools with display names for breakdown tracking.
+# Browser-based dev tools observed in ActivityWatch data. Host-wide rules are
+# reserved for sites whose primary observed use is development; mixed-purpose
+# sites use path rules in get_browser_dev_tool_name instead.
 DEV_TOOL_SITES = {
+    "github.com": "GitHub",
     "colab.research.google.com": "Google Colab",
     "devin.ai": "Devin",
+    "opencode.ai": "OpenCode",
+    "huggingface.co": "Hugging Face",
+    "docs.z.ai": "Z.ai Docs",
+    "wandb.ai": "Weights & Biases",
+    "lore.kernel.org": "Linux Kernel Mailing List",
 }
 
-# Browser-based planning/research sites with display names for breakdown tracking.
+# Browser-based planning/research sites observed in ActivityWatch data.
 PLANNING_SITES = {
+    "notion.so": "Notion",
+    "docs.google.com": "Google Docs",
     "drive.google.com": "Google Drive",
     "drive.usercontent.google.com": "Google Drive",
     "mail.google.com": "Gmail",
     "meet.google.com": "Google Meet",
+    "teams.microsoft.com": "Microsoft Teams",
+    "artificialanalysis.ai": "AI Model Research",
+    "arxiv.org": "arXiv",
+    "macroscope.com": "Macroscope Planning",
+    "0xeljh.com": "Expedition Log",
+    "ma.to": "Event Planning",
+    "thinkingmachines.ai": "Technical Reading",
+    "gwern.net": "Technical Reading",
     "distill.pub": "Technical Reading",
     "readthedocs.io": "Documentation",
+}
+
+# ActivityWatch has used both names for the same MacBook. Keep this explicit:
+# generic DNS-suffix or trailing-number stripping can merge distinct devices.
+AW_HOST_ALIASES = {
+    "elijahs-macbook-air-2.tail82ff8b.ts.net": "elijahs-macbook-air.local",
 }
 
 T3_CODE_HOST = "sleeper-service.tail82ff8b.ts.net"
@@ -347,6 +372,7 @@ CODING_APP_DISPLAY_NAMES: dict[str, str] = {
 # AI-chat display rules: ordered list of (substring, display_name) tuples.
 # Order matters - first match wins. More specific entries should come first.
 AI_CHAT_DISPLAY_RULES: list[tuple[str, str]] = [
+    ("chat.z.ai", "Z.ai Chat"),
     ("chatgpt", "ChatGPT"),
     ("openai", "ChatGPT"),
     ("claude", "Claude"),
@@ -392,7 +418,7 @@ def match_ai_chat_site(domain: str) -> str | None:
     """Return the display name if `domain` matches a known AI chat site, else None."""
     d = domain.lower()
     for ai_site in AI_CHAT_SITES:
-        if ai_site in d or d.endswith(ai_site):
+        if is_domain_or_subdomain(d, ai_site):
             return ai_chat_display_name_from_site(ai_site)
     return None
 
@@ -419,15 +445,20 @@ def get_event_time_range(event: dict) -> tuple[datetime, datetime] | tuple[None,
     return start, end
 
 
+def canonical_aw_host(hostname: str) -> str:
+    hostname = hostname.lower()
+    return AW_HOST_ALIASES.get(hostname, hostname)
+
+
 def extract_host_from_bucket(bucket_name: str) -> str | None:
     if not bucket_name:
         return None
     match = re.match(r"^aw-watcher-(?:window|afk)_(.+)$", bucket_name)
     if match:
-        return match.group(1)
+        return canonical_aw_host(match.group(1))
     match = re.match(r"^aw-watcher-web(?:-[^_]+)?_(.+)$", bucket_name)
     if match:
-        return match.group(1)
+        return canonical_aw_host(match.group(1))
     return None
 
 
@@ -448,7 +479,7 @@ def merge_intervals(
 
 
 def build_not_afk_periods_by_host(afk_events_by_host: dict) -> dict:
-    periods_by_host = {}
+    periods_by_host = defaultdict(list)
     for host, events in afk_events_by_host.items():
         intervals = []
         for event in events:
@@ -459,8 +490,10 @@ def build_not_afk_periods_by_host(afk_events_by_host: dict) -> dict:
             if not start or not end or end <= start:
                 continue
             intervals.append((start, end))
-        periods_by_host[host] = merge_intervals(intervals)
-    return periods_by_host
+        periods_by_host[canonical_aw_host(host)].extend(intervals)
+    return {
+        host: merge_intervals(intervals) for host, intervals in periods_by_host.items()
+    }
 
 
 def filter_events_by_afk(events: list, not_afk_periods_by_host: dict) -> list:
@@ -553,20 +586,30 @@ def is_docs_subdomain(hostname: str) -> bool:
 
 
 def get_planning_site_name(url: str) -> str | None:
-    hostname = (urlparse(url).hostname or "").lower()
+    parsed_url = urlparse(url)
+    hostname = (parsed_url.hostname or "").lower()
+    path = (parsed_url.path or "").lower()
     if not hostname:
         return None
+
+    # Keep categories exclusive. In particular, docs.python.org and
+    # docs.github.com should not also hit the generic docs-subdomain rule.
+    if any(is_domain_or_subdomain(hostname, site) for site in DEV_TOOL_SITES):
+        return None
+
+    if hostname == "z.ai" and path.startswith(("/manage-apikey", "/subscribe")):
+        return "Z.ai API Platform"
 
     for site, display_name in PLANNING_SITES.items():
         if is_domain_or_subdomain(hostname, site):
             return display_name
 
-    if is_domain_or_subdomain(hostname, "github.com") or is_domain_or_subdomain(
-        hostname, "github.io"
+    if is_domain_or_subdomain(hostname, "github.io"):
+        return "Documentation"
+    if is_domain_or_subdomain(hostname, "goodfire.ai") and path.startswith(
+        "/research"
     ):
-        return "GitHub"
-    if is_domain_or_subdomain(hostname, "arxiv.org"):
-        return "arXiv"
+        return "AI Research"
     if is_docs_subdomain(hostname):
         return "Documentation"
     return None
@@ -580,6 +623,9 @@ def get_browser_dev_tool_name(url: str, title: str = "") -> str | None:
 
     if hostname == T3_CODE_HOST and parsed_url.port == T3_CODE_PORT:
         return "T3 Code"
+
+    if is_domain_or_subdomain(hostname, "kimi.com") and path.startswith("/code"):
+        return "Kimi Code"
 
     for site, display_name in DEV_TOOL_SITES.items():
         if is_domain_or_subdomain(hostname, site):

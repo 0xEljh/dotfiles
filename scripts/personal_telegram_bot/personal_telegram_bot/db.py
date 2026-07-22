@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+
+SCHEMA_VERSION = 1
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sent_digests (
@@ -36,6 +39,11 @@ CREATE TABLE IF NOT EXISTS tpot_seeds (
     score REAL,
     model_versions TEXT,
     status TEXT NOT NULL DEFAULT 'proposed',
+    generation_key TEXT,
+    evidence_keys TEXT,
+    evidence_summary TEXT,
+    generator TEXT NOT NULL DEFAULT 'tpot-ideate',
+    candidate_order INTEGER,
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_tpot_seeds_date_topic ON tpot_seeds(seed_date, topic);
@@ -64,6 +72,32 @@ class StateDB:
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.executescript(SCHEMA)
+        self._migrate()
+        self.conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tpot_seeds_generation_order "
+            "ON tpot_seeds(generation_key, candidate_order) WHERE generation_key IS NOT NULL"
+        )
+        self.conn.commit()
+        for candidate in (path, Path(f"{path}-wal"), Path(f"{path}-shm")):
+            if candidate.exists():
+                os.chmod(candidate, 0o600)
+
+    def _migrate(self) -> None:
+        columns = {
+            row["name"] for row in self.conn.execute("PRAGMA table_info(tpot_seeds)").fetchall()
+        }
+        additions = {
+            "generation_key": "TEXT",
+            "evidence_keys": "TEXT",
+            "evidence_summary": "TEXT",
+            "generator": "TEXT NOT NULL DEFAULT 'tpot-ideate'",
+            "candidate_order": "INTEGER",
+        }
+        with self.conn:
+            for name, declaration in additions.items():
+                if name not in columns:
+                    self.conn.execute(f"ALTER TABLE tpot_seeds ADD COLUMN {name} {declaration}")
+            self.conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
     def was_sent(self, kind: str, date_key: str) -> bool:
         row = self.conn.execute(

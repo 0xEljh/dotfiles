@@ -1,4 +1,6 @@
-from personal_telegram_bot.db import StateDB
+import sqlite3
+
+from personal_telegram_bot.db import SCHEMA_VERSION, StateDB
 
 
 def make_db(tmp_path):
@@ -57,3 +59,24 @@ def test_last_sent(tmp_path):
     db.record_sent("morning", "2026-06-10", message_id=7)
     db.record_sent("morning", "2026-06-11", message_id=8)
     assert db.last_sent("morning")["date_key"] == "2026-06-11"
+
+
+def test_existing_seed_schema_is_migrated_idempotently(tmp_path):
+    path = tmp_path / "state.sqlite3"
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "CREATE TABLE tpot_seeds (id INTEGER PRIMARY KEY, seed_date TEXT NOT NULL, topic TEXT NOT NULL, source TEXT NOT NULL, provenance TEXT NOT NULL DEFAULT '', text TEXT NOT NULL, score REAL, model_versions TEXT, status TEXT NOT NULL DEFAULT 'proposed', created_at TEXT NOT NULL)"
+    )
+    conn.execute(
+        "INSERT INTO tpot_seeds (seed_date, topic, source, text, created_at) VALUES ('2026-07-20', 'topic', 'source', 'text', 'now')"
+    )
+    conn.commit()
+    conn.close()
+
+    db = StateDB(path)
+    db = StateDB(path)
+    row = db.conn.execute("SELECT * FROM tpot_seeds").fetchone()
+
+    assert db.conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+    assert row["generator"] == "tpot-ideate"
+    assert row["generation_key"] is None

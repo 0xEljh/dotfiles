@@ -69,7 +69,7 @@ def test_standdown_includes_post_seeds_and_marks_surfaced_after_send(tmp_path, m
     monkeypatch.setattr(digests, "send_message", fake_send)
 
     assert digests.deliver_evening_standdown(
-        cfg, trigger="timer", now=datetime(2026, 6, 28, 22, 0, tzinfo=TZ)
+        cfg, trigger="timer", now=datetime(2026, 6, 28, 22, 30, tzinfo=TZ)
     )
 
     assert "Post seeds" in sent[0]["text"]
@@ -77,7 +77,10 @@ def test_standdown_includes_post_seeds_and_marks_surfaced_after_send(tmp_path, m
     assert sent[0]["reply_markup"]["inline_keyboard"][0][0]["callback_data"] == f"tpot:used:{seed_id}"
     row = SeedStore(StateDB(cfg.db_path)).get_seed(seed_id)
     assert row.status == "surfaced"
-    assert SeedStore(StateDB(cfg.db_path)).events_for_seed(seed_id)[0].detail == {"message_id": 77}
+    assert SeedStore(StateDB(cfg.db_path)).events_for_seed(seed_id)[0].detail == {
+        "digest": "standdown",
+        "message_id": 77,
+    }
 
 
 def test_standdown_dry_run_does_not_mark_seeds_surfaced(tmp_path, capsys):
@@ -98,7 +101,7 @@ def test_standdown_dry_run_does_not_mark_seeds_surfaced(tmp_path, capsys):
         trigger="manual",
         force=True,
         dry_run=True,
-        now=datetime(2026, 6, 28, 22, 0, tzinfo=TZ),
+        now=datetime(2026, 6, 28, 22, 30, tzinfo=TZ),
     )
 
     assert "Post seeds" in capsys.readouterr().out

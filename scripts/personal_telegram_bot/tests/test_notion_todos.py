@@ -1,5 +1,7 @@
 from datetime import date
+from zoneinfo import ZoneInfo
 
+from personal_telegram_bot.providers.notion_evidence import build_notion_evidence_filters
 from personal_telegram_bot.providers.notion_todos import (
     TERMINAL_STATUSES,
     Task,
@@ -69,3 +71,11 @@ def test_split_by_due():
     overdue, due_today = split_by_due([overdue_task, today_task, spanning_task], TODAY)
     assert [t.title for t in overdue] == ["old"]
     assert {t.title for t in due_today} == {"now", "span"}
+
+
+def test_evidence_filters_cover_done_due_and_edited_cohorts():
+    filters = build_notion_evidence_filters(TODAY, ZoneInfo("Asia/Singapore"))
+
+    assert [kind for kind, _ in filters] == ["task_done_on_date", "task_due", "task_edited"]
+    assert "last_edited_time" in str(filters[2][1])
+    assert all(status in str(filters[1][1]) for status in TERMINAL_STATUSES)

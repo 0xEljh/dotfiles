@@ -5,8 +5,11 @@ from zoneinfo import ZoneInfo
 from personal_telegram_bot.config import Config
 from personal_telegram_bot.db import StateDB
 from personal_telegram_bot.tpot.client import BatchResponse, BatchResult, Candidate, OperatorActionTpotError, RetryableTpotError
+from personal_telegram_bot.tpot.collection import EvidenceCollection
+from personal_telegram_bot.tpot.evidence import EvidenceItem
 from personal_telegram_bot.tpot.job import run_tpot_seed
 from personal_telegram_bot.tpot.seeds import SeedStore
+from personal_telegram_bot.tpot.synthesizer import SynthesizedIdea, SynthesisError
 from personal_telegram_bot.tpot.topics import Topic
 
 TZ = ZoneInfo("Asia/Singapore")
@@ -161,3 +164,129 @@ def test_seed_job_missing_inference_config_is_operator_failure(tmp_path):
     )
 
     assert result.exit_code == 1
+
+
+def _evidence() -> EvidenceItem:
+    return EvidenceItem(
+        key="github:event:1",
+        source="github",
+        kind="commit",
+        occurred_at=datetime(2026, 6, 28, 18, 0, tzinfo=TZ),
+        title="Committed evidence pipeline",
+        detail="Ship grounded synthesis",
+        url=None,
+        private=True,
+    )
+
+
+def test_grounded_job_scores_unchanged_synthesis_and_persists_provenance(tmp_path):
+    cfg = replace(_cfg(tmp_path), tpot_synth_enable=True)
+    ideas = [
+        SynthesizedIdea(
+            "The best writing prompts preserve the evidence behind the work.",
+            ("github:event:1",),
+            "lesson",
+            "high",
+        )
+    ]
+    requests = []
+
+    class Synth:
+        def synthesize(self, evidence):
+            return ideas
+
+    class FakeClient:
+        def batch(self, incoming, **kwargs):
+            requests.extend(incoming)
+            return BatchResponse(
+                model_versions={"scorer": "v1"},
+                results=[BatchResult(id="grounded-ideas", status="ok", scores=[0.8])],
+            )
+
+    result = run_tpot_seed(
+        cfg,
+        target_date=date(2026, 6, 28),
+        now=datetime(2026, 6, 28, 21, 0, tzinfo=TZ),
+        evidence_fetcher=lambda *_: EvidenceCollection([_evidence()], {"github": "ok_nonempty"}),
+        synthesizer_factory=lambda: Synth(),
+        client_factory=FakeClient,
+    )
+
+    assert result.exit_code == 0 and result.stored == 1
+    assert requests == [{"id": "grounded-ideas", "op": "score", "texts": [ideas[0].text]}]
+    row = SeedStore(StateDB(cfg.db_path)).seeds_for_date(date(2026, 6, 28))[0]
+    assert row.text == ideas[0].text
+    assert row.generator == "opencode"
+    assert row.evidence_keys == ("github:event:1",)
+    assert row.score == 0.8
+
+
+def test_grounded_job_retries_only_missing_scores_without_resynthesis(tmp_path):
+    cfg = replace(_cfg(tmp_path), tpot_synth_enable=True)
+    synth_calls = 0
+    client_calls = 0
+
+    class Synth:
+        def synthesize(self, evidence):
+            nonlocal synth_calls
+            synth_calls += 1
+            return [
+                SynthesizedIdea(
+                    "A grounded idea with enough detail to stand alone.",
+                    ("github:event:1",),
+                    "observation",
+                    "high",
+                )
+            ]
+
+    class FakeClient:
+        def batch(self, incoming, **kwargs):
+            nonlocal client_calls
+            client_calls += 1
+            scores = [] if client_calls == 1 else [0.7]
+            return BatchResponse(
+                model_versions={"scorer": "v1"},
+                results=[BatchResult(id="grounded-ideas", status="ok", scores=scores)],
+            )
+
+    kwargs = dict(
+        target_date=date(2026, 6, 28),
+        evidence_fetcher=lambda *_: EvidenceCollection([_evidence()], {"github": "ok_nonempty"}),
+        synthesizer_factory=lambda: Synth(),
+        client_factory=FakeClient,
+    )
+    first = run_tpot_seed(cfg, now=datetime(2026, 6, 28, 21, 0, tzinfo=TZ), **kwargs)
+    second = run_tpot_seed(cfg, now=datetime(2026, 6, 28, 21, 30, tzinfo=TZ), **kwargs)
+
+    assert first.stored == 1 and second.stored == 0
+    assert synth_calls == 1 and client_calls == 2
+    assert SeedStore(StateDB(cfg.db_path)).seeds_for_date(date(2026, 6, 28))[0].score == 0.7
+
+
+def test_synthesis_failure_falls_back_to_existing_ideate_contract(tmp_path):
+    cfg = replace(_cfg(tmp_path), tpot_synth_enable=True)
+    requests = []
+
+    class Synth:
+        def synthesize(self, evidence):
+            raise SynthesisError("invalid output")
+
+    class FakeClient:
+        def batch(self, incoming, **kwargs):
+            requests.extend(incoming)
+            return BatchResponse(
+                model_versions={"writer": "v1"},
+                results=[BatchResult(id="topic-0", status="ok", candidates=[Candidate("fallback idea", 0.2)])],
+            )
+
+    result = run_tpot_seed(
+        cfg,
+        target_date=date(2026, 6, 28),
+        evidence_fetcher=lambda *_: EvidenceCollection([_evidence()], {"github": "ok_nonempty"}),
+        synthesizer_factory=lambda: Synth(),
+        client_factory=FakeClient,
+    )
+
+    assert result.stored == 1
+    assert requests[0]["op"] == "ideate"
+    assert requests[0]["topic"] == "Committed evidence pipeline"

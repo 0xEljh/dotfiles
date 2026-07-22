@@ -101,7 +101,11 @@ def stale_aw_reminder_transition(
 def build_hour_report(stats: dict, classification: str | None, hour: int) -> HourReport | None:
     if classification is None:
         return None
-    tools = stats.get("coding_tools") or stats.get("planning_tools") or {}
+    tool_key = {
+        "Deep Work": "coding_tools",
+        "Shallow Work": "planning_tools",
+    }.get(classification)
+    tools = stats.get(tool_key, {}) if tool_key else {}
     top_tools = sorted(tools.items(), key=lambda x: -x[1])[:TOP_TOOLS_SHOWN]
     return HourReport(
         hour=hour,

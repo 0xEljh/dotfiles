@@ -99,7 +99,7 @@ def test_dry_run_does_not_record_or_send(tmp_path, monkeypatch):
 
 # --- evening standdown delivery ---
 
-EVENING = datetime(2026, 6, 28, 22, 0, tzinfo=TZ)
+EVENING = datetime(2026, 6, 28, 22, 30, tzinfo=TZ)
 
 
 def _home_event(when: datetime) -> LifeEvent:

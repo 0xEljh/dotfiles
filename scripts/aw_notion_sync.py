@@ -72,38 +72,6 @@ FREEZE_HOURS = int(os.getenv("FREEZE_HOURS", "2"))
 SLEEP_HOURS_PROPERTY = "Sleep Hours"  # number property — add it to the database once
 BIO_HOUR_VALUE = "bio"  # hourly select option for sleep (Notion auto-creates it)
 
-# Websites considered as "coding activity"
-CODING_SITES = {
-    "github.com",
-    "gitlab.com",
-    "bitbucket.org",
-    "stackoverflow.com",
-    "stackexchange.com",
-    "docs.python.org",
-    "developer.mozilla.org",
-    "devdocs.io",
-    "npmjs.com",
-    "pypi.org",
-    "crates.io",
-    "rubygems.org",
-    "replit.com",
-    "codepen.io",
-    "codesandbox.io",
-    "jsfiddle.net",
-    "figma.com",
-    "aws.amazon.com",
-    "dash.cloudflare.com",
-    "cronitor.io",
-    "localhost:3000",
-    "vercel.com",
-    "netlify.com",
-    "railway.app",
-    "render.com",
-    "huggingface.co",
-    "colab.research.google.com",
-    "sleeper-service.tail82ff8b.ts.net",
-}
-
 # Table header used to identify our stats table
 AW_TABLE_HEADER = "Hour"
 
@@ -517,11 +485,15 @@ def compute_hourly_stats(all_data: dict, phone_hours: dict | None = None) -> dic
         coding_time = sum(
             time for app, time in app_time.items() if app in CODING_APPS
         )
-        # Add time on coding-related websites
+        # Add browser development activity using the same shared taxonomy as
+        # the granular breakdown and analytics exporter.
         coding_time += sum(
-            time
-            for site, time in site_time.items()
-            if any(coding_site in site.lower() for coding_site in CODING_SITES)
+            event.get("duration", 0) or 0
+            for event in hour_web
+            if get_browser_dev_tool_name(
+                event.get("data", {}).get("url", ""),
+                event.get("data", {}).get("title", ""),
+            )
         )
 
         # AI Chat time - aggregate by site (includes desktop AI chat apps)

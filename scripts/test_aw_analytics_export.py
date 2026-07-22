@@ -197,6 +197,135 @@ class ActivityTaxonomyTests(unittest.TestCase):
         self.assertEqual(600.0, aggregate["planning_apps"]["Documentation"])
         self.assertNotIn("ForzaHorizon6", aggregate["top_apps"])
 
+    def test_recent_development_and_planning_patterns_are_classified(self) -> None:
+        def web_event(url: str, title: str, duration: float = 300.0) -> dict:
+            return {
+                "timestamp": "2026-07-02T10:00:00+08:00",
+                "duration": duration,
+                "data": {"url": url, "title": title},
+            }
+
+        aggregate = aw_analytics_export.aggregate_day_data(
+            {
+                "aw-watcher-web_test": [
+                    web_event("https://github.com/org/repo/pull/1", "Pull request"),
+                    web_event("https://huggingface.co/models", "Models"),
+                    web_event("https://opencode.ai/docs", "OpenCode docs"),
+                    web_event("https://z.ai/manage-apikey/apikey-list", "Z.ai API Platform"),
+                    web_event("https://docs.z.ai/scenario-example/develop-tools/opencode", "OpenCode docs"),
+                    web_event("https://wandb.ai/workspace/experiment/runs/run-id", "Experiment run"),
+                    web_event("https://www.notion.so/workspace/page", "Notion"),
+                    web_event("https://docs.google.com/document/d/1/edit", "Design doc"),
+                    web_event("https://arxiv.org/abs/2607.12345", "Research paper"),
+                    web_event("https://artificialanalysis.ai/models/model-name", "Model comparison"),
+                    web_event("https://teams.microsoft.com/light-meetings/launch", "Call"),
+                    web_event("https://app.macroscope.com/overview", "Overview"),
+                ]
+            }
+        )
+
+        self.assertEqual(1500.0, aggregate["totals"]["dev_time"])
+        self.assertEqual(2100.0, aggregate["totals"]["planning_time"])
+        self.assertEqual(300.0, aggregate["dev_tools"]["GitHub"])
+        self.assertEqual(300.0, aggregate["dev_tools"]["Hugging Face"])
+        self.assertEqual(300.0, aggregate["dev_tools"]["OpenCode"])
+        self.assertEqual(300.0, aggregate["planning_apps"]["Z.ai API Platform"])
+        self.assertNotIn("Z.ai API Platform", aggregate["dev_tools"])
+        self.assertEqual(300.0, aggregate["dev_tools"]["Z.ai Docs"])
+        self.assertEqual(300.0, aggregate["dev_tools"]["Weights & Biases"])
+        self.assertEqual(300.0, aggregate["planning_apps"]["Notion"])
+        self.assertEqual(300.0, aggregate["planning_apps"]["Google Docs"])
+        self.assertEqual(300.0, aggregate["planning_apps"]["arXiv"])
+        self.assertEqual(300.0, aggregate["planning_apps"]["AI Model Research"])
+        self.assertEqual(300.0, aggregate["planning_apps"]["Microsoft Teams"])
+        self.assertEqual(300.0, aggregate["planning_apps"]["Macroscope Planning"])
+        self.assertNotIn("GitHub", aggregate["planning_apps"])
+
+    def test_single_purpose_planning_sites_are_classified_by_domain(self) -> None:
+        from aw_common import get_planning_site_name
+
+        sites = {
+            "https://app.macroscope.com/": "Macroscope Planning",
+            "https://0xeljh.com/": "Expedition Log",
+            "https://ma.to/": "Event Planning",
+            "https://thinkingmachines.ai/": "Technical Reading",
+        }
+
+        for url, label in sites.items():
+            with self.subTest(url=url):
+                self.assertEqual(label, get_planning_site_name(url))
+
+    def test_ambiguous_recent_sites_remain_unclassified(self) -> None:
+        aggregate = aw_analytics_export.aggregate_day_data(
+            {
+                "aw-watcher-web_test": [
+                    {
+                        "timestamp": "2026-07-17T10:00:00+08:00",
+                        "duration": 600.0,
+                        "data": {
+                            "url": "https://www.goodfire.ai/",
+                            "title": "Goodfire",
+                        },
+                    },
+                    {
+                        "timestamp": "2026-07-17T10:10:00+08:00",
+                        "duration": 600.0,
+                        "data": {"url": "https://x.com/home", "title": "Home"},
+                    },
+                ]
+            }
+        )
+
+        self.assertEqual(0, aggregate["totals"]["dev_time"])
+        self.assertEqual(0, aggregate["totals"]["planning_time"])
+
+
+class HostAliasTests(unittest.TestCase):
+    def test_host_alias_is_explicit_not_a_generic_numeric_suffix_rule(self) -> None:
+        from aw_common import extract_host_from_bucket
+
+        self.assertEqual(
+            "elijahs-macbook-air.local",
+            extract_host_from_bucket(
+                "aw-watcher-web-firefox_elijahs-macbook-air-2.tail82ff8b.ts.net"
+            ),
+        )
+        self.assertEqual(
+            "workstation-2.example.ts.net",
+            extract_host_from_bucket(
+                "aw-watcher-web-firefox_workstation-2.example.ts.net"
+            ),
+        )
+
+    def test_macbook_browser_alias_uses_local_afk_periods(self) -> None:
+        from aw_common import build_not_afk_periods_by_host, filter_events_by_afk
+
+        periods = build_not_afk_periods_by_host(
+            {
+                "Elijahs-MacBook-Air.local": [
+                    {
+                        "timestamp": "2026-07-17T10:00:00+08:00",
+                        "duration": 300.0,
+                        "data": {"status": "not-afk"},
+                    }
+                ]
+            }
+        )
+        filtered = filter_events_by_afk(
+            [
+                {
+                    "_bucket": "aw-watcher-web-firefox_elijahs-macbook-air-2.tail82ff8b.ts.net",
+                    "timestamp": "2026-07-17T10:04:00+08:00",
+                    "duration": 300.0,
+                    "data": {"url": "https://arxiv.org/abs/2607.12345"},
+                }
+            ],
+            periods,
+        )
+
+        self.assertEqual(1, len(filtered))
+        self.assertEqual(60.0, filtered[0]["duration"])
+
 
 if __name__ == "__main__":
     unittest.main()

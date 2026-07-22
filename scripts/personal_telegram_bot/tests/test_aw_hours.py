@@ -56,6 +56,16 @@ def test_build_hour_report_shallow_uses_planning_tools():
     assert report.top_tools == [("Notion", 2100)]
 
 
+def test_build_hour_report_shallow_ignores_incidental_coding_tools():
+    s = stats(coding=800, planning=2520)
+    s["coding_tools"] = {"Claude Code": 780, "Terminal/Shell": 20}
+    s["planning_tools"] = {"Notion": 2520}
+
+    report = build_hour_report(s, "Shallow Work", hour=13)
+
+    assert report.top_tools == [("Notion", 2520)]
+
+
 def test_format_hour_report():
     report = HourReport(
         hour=14,

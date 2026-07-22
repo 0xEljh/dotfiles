@@ -120,3 +120,65 @@ def test_missing_topics_are_based_on_existing_seed_rows(tmp_path):
     )
 
     assert store.missing_topics(date(2026, 6, 28), topics) == [topics[1]]
+
+
+def test_grounded_batch_is_idempotent_and_missing_scores_can_be_updated(tmp_path):
+    store = _store(tmp_path)
+    ids = store.add_grounded_batch(
+        seed_date=date(2026, 7, 20),
+        generation_key="fingerprint",
+        ideas=[
+            ("lesson", "First grounded idea for the evening.", ["github:event:1"], "github: committed change"),
+            ("question", "Second grounded idea for the evening.", ["notion:page:1"], "notion: shipped task"),
+        ],
+        scores=None,
+        model_versions={"synthesizer": "deepseek"},
+    )
+
+    assert len(ids) == 2
+    assert store.add_grounded_batch(
+        seed_date=date(2026, 7, 20),
+        generation_key="fingerprint",
+        ideas=[],
+        scores=None,
+        model_versions={},
+    ) == []
+    assert [seed.id for seed in store.unscored_for_generation("fingerprint")] == ids
+
+    store.update_generation_scores("fingerprint", [0.4, 0.8], {"scorer": "v1"})
+
+    assert [seed.score for seed in store.seeds_for_date(date(2026, 7, 20))] == [0.4, 0.8]
+
+
+def test_mark_surfaced_records_digest(tmp_path):
+    store = _store(tmp_path)
+    seed_id = store.add_seed(
+        seed_date=date(2026, 7, 20), topic="topic", source="source", provenance="p",
+        text="idea", score=None, model_versions={},
+    )
+    seed = store.get_seed(seed_id)
+
+    store.mark_surfaced([seed], message_id=12, digest="standdown")
+
+    assert store.events_for_seed(seed_id)[0].detail == {"digest": "standdown", "message_id": 12}
+
+
+def test_new_grounded_generation_supersedes_only_older_proposed_rows(tmp_path):
+    store = _store(tmp_path)
+    old_ids = store.add_grounded_batch(
+        seed_date=date(2026, 7, 20), generation_key="old",
+        ideas=[("lesson", "An older grounded idea for tonight.", ["github:1"], "github: old")],
+        scores=None, model_versions={},
+    )
+    protected_ids = store.add_grounded_batch(
+        seed_date=date(2026, 7, 20), generation_key="protected",
+        ideas=[("question", "A surfaced grounded idea for tonight.", ["github:2"], "github: protected")],
+        scores=None, model_versions={},
+    )
+    store.record_event(protected_ids[0], "surfaced", {})
+
+    superseded = store.supersede_other_proposed(date(2026, 7, 20), "new")
+
+    assert superseded == old_ids
+    assert store.get_seed(old_ids[0]).status == "superseded"
+    assert store.get_seed(protected_ids[0]).status == "surfaced"

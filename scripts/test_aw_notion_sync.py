@@ -288,6 +288,77 @@ class PhoneClassificationTests(unittest.TestCase):
         self.assertIsNone(aw_common.phone_app_category("WhatsApp"))
 
 
+class WebsiteClassificationTests(unittest.TestCase):
+    def _classify(self, url: str, title: str = "") -> tuple[str | None, dict]:
+        stats = aw_notion_sync.compute_hourly_stats(
+            {
+                "aw-watcher-web_host": [
+                    {
+                        "timestamp": "2026-07-02T10:00:00+08:00",
+                        "duration": 3600.0,
+                        "data": {"url": url, "title": title},
+                    }
+                ]
+            }
+        )[10]
+        return aw_notion_sync.determine_hourly_select_value(stats), stats
+
+    def test_github_web_activity_is_deep_work(self) -> None:
+        classification, stats = self._classify(
+            "https://github.com/org/repo/pull/1", "Pull request"
+        )
+
+        self.assertEqual("Deep Work", classification)
+        self.assertEqual(3600.0, stats["coding_tools"]["GitHub"])
+        self.assertNotIn("GitHub", stats["planning_tools"])
+
+    def test_notion_web_activity_is_shallow_work(self) -> None:
+        classification, stats = self._classify(
+            "https://www.notion.so/workspace/page", "Project plan"
+        )
+
+        self.assertEqual("Shallow Work", classification)
+        self.assertEqual(3600.0, stats["planning_tools"]["Notion"])
+
+    def test_recent_observed_patterns_drive_hourly_classification(self) -> None:
+        development = {
+            "https://docs.z.ai/scenario-example/develop-tools/opencode": "Z.ai Docs",
+            "https://wandb.ai/workspace/experiment/runs/run-id": "Weights & Biases",
+        }
+        planning = {
+            "https://z.ai/manage-apikey/apikey-list": "Z.ai API Platform",
+            "https://z.ai/subscribe": "Z.ai API Platform",
+            "https://arxiv.org/abs/2607.12345": "arXiv",
+            "https://artificialanalysis.ai/models/model-name": "AI Model Research",
+            "https://teams.microsoft.com/light-meetings/launch": "Microsoft Teams",
+            "https://app.macroscope.com/overview": "Macroscope Planning",
+            "https://0xeljh.com/": "Expedition Log",
+            "https://ma.to/": "Event Planning",
+            "https://thinkingmachines.ai/": "Technical Reading",
+        }
+
+        for url, label in development.items():
+            with self.subTest(url=url):
+                classification, stats = self._classify(url)
+                self.assertEqual("Deep Work", classification)
+                self.assertEqual(3600.0, stats["coding_tools"][label])
+                self.assertNotIn(label, stats["planning_tools"])
+
+        for url, label in planning.items():
+            with self.subTest(url=url):
+                classification, stats = self._classify(url)
+                self.assertEqual("Shallow Work", classification)
+                self.assertEqual(3600.0, stats["planning_tools"][label])
+
+    def test_path_specific_rules_do_not_classify_ambiguous_homepages(self) -> None:
+        for url in ("https://www.goodfire.ai/", "https://x.com/home"):
+            with self.subTest(url=url):
+                classification, stats = self._classify(url)
+                self.assertIsNone(classification)
+                self.assertEqual({}, stats["coding_tools"])
+                self.assertEqual({}, stats["planning_tools"])
+
+
 class _DictNotion:
     """Minimal Notion fake for notion_day.write_day_page: records pages.update
     property dicts and exposes a fixed set of existing page properties."""
