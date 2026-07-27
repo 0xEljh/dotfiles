@@ -11,10 +11,6 @@ let
   # into sops. Loaded BEFORE the sops env so sops still wins for the keys they
   # share (TARGET_TZ, NOTION_BREAD_DATASOURCE_ID); the bot ignores the rest.
   awEnvFile = "${homeDir}/dotfiles/scripts/.env";
-  opencodePkg =
-    if pkgs ? llm-agents && pkgs.llm-agents ? opencode
-    then pkgs.llm-agents.opencode
-    else pkgs.opencode;
 
   botService = command: {
     after = [ "network-online.target" ];
@@ -29,7 +25,6 @@ let
     path = [ pkgs.openssh pkgs.systemd ];
     serviceConfig = {
       User = user;
-      UMask = "0077";
       WorkingDirectory = botDir;
       Environment = [
         "HOME=${homeDir}"
@@ -138,14 +133,8 @@ in
     personal-telegram-bot-tpot-seed =
       let base = mkOneshot "TPOT post-seed generation" "tpot-seed";
       in base // notifyOnFailure // {
-        path = base.path ++ [ opencodePkg ];
         serviceConfig = base.serviceConfig // {
           TimeoutStartSec = "10min";
-          Environment = base.serviceConfig.Environment ++ [
-            "TPOT_SYNTH_ENABLE=1"
-            "TPOT_SYNTH_MODEL=opencode/deepseek-v4-flash-free"
-            "TPOT_SYNTH_TIMEOUT_SECONDS=90"
-          ];
         };
       };
 
@@ -184,18 +173,15 @@ in
     personal-telegram-bot-standdown = {
       # Location-gated evening digest: polls every 15 min across the late-evening
       # / small-hours window; botctl sends only when you're at Home/Cheryl AND
-      # inside [22:30, 03:00), deduped once per day. The timer just wakes the
-      # poll; the gate lives in the bot. No
+      # inside [21:45, 03:00), deduped once per day. The timer just wakes the
+      # poll — the gate lives in the bot, so the pre-21:45 ticks no-op. No
       # Persistent: a missed standdown is stale by morning, and a catch-up fire
       # would evaluate the location gate at the wrong time.
-      description = "Evening standdown poll (home-gated, 22:30-03:00)";
+      description = "Evening standdown poll (home-gated, 21:45–03:00)";
       wantedBy = [ "timers.target" ];
       timerConfig = {
         Unit = "personal-telegram-bot-standdown.service";
-        OnCalendar = [
-          "*-*-* 22:30/15:00"
-          "*-*-* 23,00,01,02:00/15:00"
-        ];
+        OnCalendar = "*-*-* 21,22,23,00,01,02:00/15";
       };
     };
 

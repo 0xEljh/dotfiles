@@ -21,8 +21,9 @@ HELP_TEXT = """Commands:
 /score <text> — score whether text is worth posting
 /help — this message
 
-Scheduled: morning Bread digest at 09:30, health checks every 5 minutes,
-hourly activity classification at :10 past the hour."""
+Scheduled: wake-triggered morning Bread digest (noon fallback), health checks
+every 5 minutes, Tailscale key-expiry check daily at 09:00, and hourly activity
+classification at :10 past the hour."""
 
 
 def is_authorized(user_id: int | None, allowed: frozenset[int]) -> bool:

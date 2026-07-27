@@ -5,10 +5,13 @@ Telegram bot (`@nervous_energy_bot`) for sleeper-service. Design:
 
 What it does:
 
-- **09:30 daily** — morning digest of open Bread tasks (due today + overdue).
+- **On waking** — morning digest of open Bread tasks (due today + overdue),
+  with a noon fallback if no wake event arrives.
 - **Every 5 min** — health checks over hosted systemd units, public HTTPS
   endpoints, and ActivityWatch data freshness (newest `aw-data` push < 26h);
   alerts on state transitions only (failure and recovery).
+- **09:00 daily** — checks the local Tailscale network map and reminds you when
+  a visible device key has expired or will expire within 14 days.
 - **:10 past each hour** — reports what the previous hour was classified as
   (Deep Work / Shallow Work, per `aw_notion_sync.py` thresholds) with a tool
   breakdown. Silent when unclassified.
@@ -25,6 +28,7 @@ uv run botctl send test
 uv run botctl send morning --dry-run     # print, don't send
 uv run botctl send morning --force       # bypass once-per-day dedupe
 uv run botctl send health --force        # full summary, not just transitions
+uv run botctl send tailscale-keys --dry-run
 
 # tests
 uv run pytest
@@ -40,6 +44,9 @@ git): `TELEGRAM_BOT_TOKEN`, `TELEGRAM_DEFAULT_CHAT_ID`,
 `TELEGRAM_ALLOWED_USER_IDS`, `NOTION_TOKEN`, `NOTION_BREAD_DATASOURCE_ID`,
 `TARGET_TZ`. Optional overrides: `HEALTH_SYSTEMD_UNITS`, `HEALTH_HTTP_URLS`
 (comma-separated), `BOT_STATE_DB`, `AW_DATA_DIR`, `AW_DATA_MAX_AGE_HOURS`.
+The Tailscale warning window is configurable with
+`TAILSCALE_KEY_EXPIRY_WARNING_DAYS` (default: 14). The local status view covers
+devices visible to sleeper-service; it is not an authoritative tailnet inventory.
 
 State (digest dedupe, health transitions, audit log) is SQLite at
 `~/.local/state/personal-telegram-bot/state.sqlite3`.
