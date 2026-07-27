@@ -29,7 +29,6 @@
     };
     llm-agents = {
       url = "github:numtide/llm-agents.nix";
-      inputs.nixpkgs.follows = "nixpkgs";
     };
     sops-nix = {
       url = "github:Mic92/sops-nix";
@@ -44,8 +43,11 @@
   outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, home-manager, nixpkgs, nixos-wsl, llm-agents, sops-nix, fff } @inputs:
     let
       user = "elijah";
-      darwinSystems = [ "aarch64-darwin" "x86_64-darwin" ];
+      darwinSystems = [ "aarch64-darwin" ];
       devShellSystems = darwinSystems ++ [ "x86_64-linux" ];
+      llmAgentsOverlay = _final: prev: {
+        llm-agents = llm-agents.packages.${prev.stdenv.hostPlatform.system};
+      };
       forDevShellSystems = f: nixpkgs.lib.genAttrs devShellSystems f;
       devShell = system: let pkgs = nixpkgs.legacyPackages.${system}; in {
         default = with pkgs; mkShell {
@@ -104,12 +106,13 @@
           overlays = [
             (import ./overlays/10-yabai-fix.nix)
             (import ./overlays/20-notion-cat.nix)
-          ] ++ (if llm-agents != null then [ llm-agents.overlays.default ] else []);
+            llmAgentsOverlay
+          ];
         };
       in
         darwin.lib.darwinSystem {
           inherit system pkgs;
-          specialArgs = inputs;
+          specialArgs = inputs // { inherit llmAgentsOverlay; };
           modules = [
             home-manager.darwinModules.home-manager
             sops-nix.darwinModules.sops
@@ -136,7 +139,7 @@
         # sleeper-service configuration
         sleeper-service = nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
-          specialArgs = inputs;
+          specialArgs = inputs // { inherit llmAgentsOverlay; };
           modules = [
 	    sops-nix.nixosModules.sops
 	    home-manager.nixosModules.home-manager {
@@ -156,7 +159,7 @@
         # NixOS on WSL inside central-node
         contents-may-differ = nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
-          specialArgs = inputs // { inherit nixos-wsl; };
+          specialArgs = inputs // { inherit nixos-wsl llmAgentsOverlay; };
           modules = [
             sops-nix.nixosModules.sops
             home-manager.nixosModules.home-manager {

@@ -30,9 +30,10 @@ At each step, especially steps 1 and 4, ask clarifying questions where needed.
 
 - Write to `docs/design/` in the project root.
 - Create the directory if it does not exist.
-- Filename format: `<slug>-<optional-identifiers>.md`.
+- Filename format: `<slug>-<optional-identifiers>.md`. Dates are not necessary.
 - Use a short kebab-case slug based on the topic.
 - Design doc versioning is not necessary. This is already handled by having them pushed to Notion.
+- The design doc ought to include enough context (including motivations/intent) to be a standalone document.
 
 ## Required Document Structure
 
@@ -111,6 +112,7 @@ Pros:
 - Observability of the proposed architecture/features should be considered from the onset.
 - Keep unknowns explicit in Open Questions; do not invent certainty.
 - Keep the document reviewable by someone who did not join the live planning session.
+- Avoid references to parties such as the user or agents. No authorship either.
 
 ## Asking Questions + Making recommendations
 

@@ -15,7 +15,7 @@
       }
     }
   },
-  "small_model": "opencode-go/kimi-k2.7-code",
+  "small_model": "opencode/deepseek-v4-flash-free",
   "permission": {
     "*": "allow",
     "arxiv_*": "deny",

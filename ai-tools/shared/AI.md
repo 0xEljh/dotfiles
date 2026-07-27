@@ -38,6 +38,7 @@ Rules:
 
 - Cross reference online documentation and codebases while planning or writing design documents.
 - Include links to the relevant documentation and code snippets in these plans/docs. Plans may sometimes be handed off to an engineering team for review and implementation.
+- Design documents ought to contain enough context to be read and reviewed as a standalone file.
 - When a plan should be persisted, write it as a `.md` file in `docs/design/` so it is easy to review, edit, and reuse across sessions.
 
 ## Test Driven Development (TDD)
@@ -48,13 +49,20 @@ Only as a final step do we wrangle tests and code. This reduces "empty tests" an
 During planning, the tests to be implemented should already be defined based on the plan's specs.
 At the point of implementation, the tests should fail. Tests that don't initially fail are not useful and should be removed.
 
-This can be ignored for one-off scripts.
+"Code coverage" is not a metric we are shooting for. Tests should be meaningful and concise.
+
+This can be ignored for one-off scripts, demonstrations, evaluations.
+
+### Helpful tests
+
+- Jitter tests should be done for parallelism
+- Setting up scaffolding for perf measurements and benchmarks for optimization changes
 
 ### Type Checking
 
 Slightly related to TDD is the issue of type checking.
 Writing overly defensive type checks (especially in python) is an anti-pattern.
-Instead, the best place to be doing extensive type checks is for tests.
+Instead, the best place to be doing extensive type checks is in tests.
 
 This applies to many other overly defensive patterns.
 
@@ -85,6 +93,9 @@ When completing a workflow/task, report status using one of:
 - **DONE_WITH_CONCERNS** — Completed, but with issues the user should know about. List each concern.
 - **BLOCKED** — Cannot proceed. State what is blocking and what was tried.
 - **NEEDS_CONTEXT** — Missing information required to continue. State exactly what you need.
+
+When providing a summary, don't just wave around concepts.
+Provide snippets of evidence/quotes. This can be verbatim lines of code, docs, equations etc.
 
 If anything was written/implemented, point the user towards the core substance of it.
 Then give a short breakdown of what changes should be read vs skimmed.

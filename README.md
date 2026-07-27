@@ -74,21 +74,36 @@ uses that key as a Bearer token when supplied.
 
 ### 2a) T3 Code remote agents (mobile + cross-device)
 
-[T3 Code](https://github.com/pingdotgg/t3code) is a GUI front-end for Claude Code / OpenCode / Codex. This repo wires it up across all three hosts. Design: [`docs/design/t3-code-multi-host.md`](docs/design/t3-code-multi-host.md).
+[T3 Code](https://github.com/pingdotgg/t3code) is a GUI front-end for Claude Code / OpenCode / Codex. This repo wires it up across all three hosts. Design: [`docs/design/ai-agent-mobile-refresh.md`](docs/design/ai-agent-mobile-refresh.md).
 
-- **sleeper-service + WSL** run `npx t3 serve` as a user systemd service bound to the host's Tailnet IPv4 on port `3773`. Module: `nixos-config/modules/shared/t3-serve.nix`.
-- **macOS** installs the T3 Code desktop app + Tailscale via Homebrew casks (`t3-code`, `tailscale-app`).
-- **Mobile / any device** can pair to a Tailnet-reachable endpoint. The hosted app at [https://app.t3.codes](https://app.t3.codes) requires an HTTPS/WSS backend, so enable `services.t3Serve.useTailscaleServe` for that flow.
-- T3 is pinned by default in `services.t3Serve.t3Version`; use `services.t3Serve.t3Package` for a patched npm package when testing OpenCode fixes.
+- **sleeper-service + WSL** run the exact T3 nightly pinned by `services.t3Serve.t3Version`. T3's built-in Tailscale integration exposes Tailnet-only HTTPS on port `443`.
+- **OpenCode direct access** stays on `127.0.0.1:8779` and is proxied by Tailscale Serve at HTTPS port `8779`. `OPENCODE_SERVER_PASSWORD` is mandatory for this endpoint.
+- **macOS** installs the ChatGPT, OpenCode, and T3 Code nightly desktop apps plus Tailscale through Homebrew casks.
+- **Mobile / any device** can pair [https://app.t3.codes](https://app.t3.codes) with the HTTPS URL printed by T3. OpenCode's own interface is available at the same host's HTTPS port `8779`.
+- T3 and OpenCode remain private to the Tailnet. Do not replace Serve with Funnel or publish either backend through the public nginx proxy.
 
 One-time per host after first build:
 
 - sleeper-service: `sudo tailscale up --ssh`
 - macOS: launch Tailscale.app, sign in
 - WSL: `sudo tailscale up` (Tailscale was already enabled here)
+- Enable HTTPS certificates in the Tailscale admin console if the first `tailscale serve` invocation prints a consent URL.
+- Add `OPENCODE_SERVER_USERNAME=opencode` and a strong `OPENCODE_SERVER_PASSWORD` to `~/.config/ai-tools/secrets.env`, then set the file mode to `0600`.
 
 Then on the desktop client (Mac), pair via the QR / URL printed by the running `t3-serve` user service:
 `journalctl --user -u t3-serve -f` on the host.
+
+In each T3 environment's OpenCode provider settings, use
+`http://127.0.0.1:8779` and the same OpenCode password. T3 stores this setting
+in its own local state, so update it whenever the password is rotated.
+
+Useful checks:
+
+```bash
+systemctl --user status t3-serve opencode-serve
+tailscale serve status
+journalctl --user -u t3-serve -u opencode-serve -f
+```
 
 ### 3) `notion-cat`: `cat` to Notion
 

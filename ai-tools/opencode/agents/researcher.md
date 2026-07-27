@@ -10,6 +10,8 @@ permission:
   glob: allow
   grep: allow
   list: allow
+  external_directory:
+    "~/**": allow
   webfetch: allow
   websearch: allow
   question: allow

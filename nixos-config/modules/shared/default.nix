@@ -1,4 +1,4 @@
-{ config, pkgs, lib, llm-agents ? null, ... }:
+{ config, pkgs, lib, llmAgentsOverlay ? null, ... }:
 
 {
 
@@ -21,7 +21,8 @@
           (filter (n: match ".*\\.nix" n != null ||
                       pathExists (path + ("/" + n + "/default.nix")))
                   (attrNames (readDir path))))
-      # Add llm-agents overlay from flake input (provides claude-code, opencode, etc.)
-      ++ (if llm-agents != null then [ llm-agents.overlays.default ] else []);
+      # Namespace the flake's prebuilt package outputs without rebuilding them
+      # against this repository's nixpkgs.
+      ++ lib.optional (llmAgentsOverlay != null) llmAgentsOverlay;
   };
 }

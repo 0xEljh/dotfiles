@@ -30,10 +30,14 @@ class AgentHarnessPortfolioTests(unittest.TestCase):
         self.assertEqual(
             "https://search.parallel.ai/mcp", config["mcp"]["parallel"]["url"]
         )
+        self.assertEqual(
+            "Bearer {env:PARALLEL_MCP_API_KEY}",
+            config["mcp"]["parallel"]["headers"]["Authorization"],
+        )
 
     def test_research_agents_are_read_only_and_have_matching_mcps(self) -> None:
         opencode_agent = (
-            ROOT / "ai-tools/opencode/agents/research.md"
+            ROOT / "ai-tools/opencode/agents/researcher.md"
         ).read_text(encoding="utf-8")
         claude_agent = (
             ROOT / "ai-tools/claude-code/agents/research.md"
@@ -49,6 +53,9 @@ class AgentHarnessPortfolioTests(unittest.TestCase):
             self.assertIn(f"mcp__{server}__*", claude_agent)
         self.assertIn("tools: Read, Glob, Grep, WebSearch, WebFetch", claude_agent)
         self.assertIn('x-api-key: "${EXA_MCP_API_KEY:-}"', claude_agent)
+        self.assertIn(
+            'Authorization: "Bearer ${PARALLEL_MCP_API_KEY:-}"', claude_agent
+        )
         self.assertIn("arxiv-mcp-server[pdf]==0.5.0", claude_agent)
 
     def test_claude_has_no_global_mcp_servers(self) -> None:
@@ -113,12 +120,18 @@ class AgentHarnessPortfolioTests(unittest.TestCase):
         self.assertIn("secrets.env", gitignore)
         self.assertIn("EXA_MCP_API_KEY=", example)
         self.assertNotRegex(example, r"EXA_MCP_API_KEY=.+")
+        self.assertIn("PARALLEL_MCP_API_KEY=", example)
+        self.assertNotRegex(example, r"PARALLEL_MCP_API_KEY=.+")
         self.assertNotIn('EXA_API_KEY = "', ai_tools)
         self.assertEqual(
             "{env:EXA_MCP_API_KEY}",
             opencode["mcp"]["exa"]["headers"]["x-api-key"],
         )
         self.assertNotIn("?exaApiKey=", opencode["mcp"]["exa"]["url"])
+        self.assertEqual(
+            "Bearer {env:PARALLEL_MCP_API_KEY}",
+            opencode["mcp"]["parallel"]["headers"]["Authorization"],
+        )
 
     def test_nix_wiring_reconciles_removals_and_avoids_mcp_browser_env(self) -> None:
         ai_tools = (ROOT / "nixos-config/modules/shared/ai-tools.nix").read_text(
@@ -136,6 +149,8 @@ class AgentHarnessPortfolioTests(unittest.TestCase):
         self.assertIn('OPENCODE_ENABLE_EXA = "1";', ai_tools)
         self.assertNotIn("PLAYWRIGHT_MCP_EXECUTABLE_PATH", ai_tools)
         self.assertNotIn("PLAYWRIGHT_MCP_EXECUTABLE_PATH", t3_serve)
+        self.assertIn("unset OPENCODE_SERVER_USERNAME", t3_serve)
+        self.assertIn("unset OPENCODE_SERVER_PASSWORD", t3_serve)
 
         old = {
             "auth": {"token": "preserved"},
@@ -159,6 +174,74 @@ class AgentHarnessPortfolioTests(unittest.TestCase):
             ROOT / "nixos-config/hosts/sleeper-service/services/web-apps.nix"
         ).read_text(encoding="utf-8")
         self.assertIn("arxiv-mcp-server[pdf]==0.5.0", service)
+
+    def test_llm_agents_use_supported_platforms_and_current_cache(self) -> None:
+        flake = (ROOT / "nixos-config/flake.nix").read_text(encoding="utf-8")
+        hosts = [
+            ROOT / "nixos-config/hosts/wsl/default.nix",
+            ROOT / "nixos-config/hosts/sleeper-service/default.nix",
+            ROOT / "nixos-config/hosts/darwin/default.nix",
+        ]
+
+        self.assertIn('darwinSystems = [ "aarch64-darwin" ];', flake)
+        self.assertNotIn('llm-agents.inputs.nixpkgs.follows = "nixpkgs"', flake)
+        for host in hosts:
+            config = host.read_text(encoding="utf-8")
+            self.assertIn("https://cache.numtide.com", config)
+            self.assertIn(
+                "niks3.numtide.com-1:DTx8wZduET09hRmMtKdQDxNNthLQETkc/yaX7M4qK0g=",
+                config,
+            )
+            self.assertNotIn("numtide.cachix.org", config)
+
+    def test_t3_is_aligned_on_the_pinned_nightly(self) -> None:
+        module = (ROOT / "nixos-config/modules/shared/t3-serve.nix").read_text(
+            encoding="utf-8"
+        )
+        linux_hosts = [
+            ROOT / "nixos-config/modules/wsl/home-manager.nix",
+            ROOT / "nixos-config/modules/sleeper-service/home-manager.nix",
+        ]
+        casks = (ROOT / "nixos-config/modules/darwin/casks.nix").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('default = "0.0.29-nightly.20260725.899";', module)
+        for host in linux_hosts:
+            config = host.read_text(encoding="utf-8")
+            self.assertIn("useTailscaleServe = true;", config)
+            self.assertIn("tailscaleServePort = 443;", config)
+            self.assertNotIn("t3Package = \"file:", config)
+        self.assertIn('"t3-code@nightly"', casks)
+        self.assertNotIn('"t3-code"', casks)
+        self.assertIn('"chatgpt"', casks)
+        self.assertIn('"opencode-desktop"', casks)
+
+    def test_remote_opencode_is_loopback_only_and_fails_closed(self) -> None:
+        module = (
+            ROOT / "nixos-config/modules/shared/opencode-serve.nix"
+        ).read_text(encoding="utf-8")
+        wsl = (ROOT / "nixos-config/modules/wsl/home-manager.nix").read_text(
+            encoding="utf-8"
+        )
+        sleeper = (
+            ROOT / "nixos-config/modules/sleeper-service/home-manager.nix"
+        ).read_text(encoding="utf-8")
+        secrets = (ROOT / "ai-tools/secrets.env.example").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("useTailscaleServe", module)
+        self.assertIn("OPENCODE_SERVER_PASSWORD must be set", module)
+        self.assertIn("tailscale serve --bg --yes --https=", module)
+        self.assertIn("tailscale serve --https=", module)
+        for config in (wsl, sleeper):
+            self.assertIn('host = "127.0.0.1";', config)
+            self.assertIn("useTailscaleServe = true;", config)
+            self.assertIn("tailscaleServePort = 8779;", config)
+        self.assertIn("OPENCODE_SERVER_USERNAME=opencode", secrets)
+        self.assertIn("OPENCODE_SERVER_PASSWORD=", secrets)
+        self.assertNotRegex(secrets, r"OPENCODE_SERVER_PASSWORD=.+")
 
 
 if __name__ == "__main__":

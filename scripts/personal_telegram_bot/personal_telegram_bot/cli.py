@@ -4,6 +4,7 @@ import argparse
 import subprocess
 import sys
 from datetime import datetime
+from pathlib import Path
 
 from .config import Config
 from .db import StateDB
@@ -291,6 +292,42 @@ def send_health(cfg: Config, args) -> int:
     return 0
 
 
+def send_tailscale_keys(cfg: Config, args, *, now: datetime | None = None) -> int:
+    from .formatters import format_tailscale_key_expiry
+    from .providers.tailscale import actionable_key_expiries, load_status
+
+    now = now or datetime.now(cfg.tz)
+    date_key = now.date().isoformat()
+    db = StateDB(cfg.db_path)
+    if not args.force and not args.dry_run and db.was_sent("tailscale-key-expiry", date_key):
+        print(f"Tailscale key-expiry reminder already sent for {date_key}")
+        return 0
+
+    devices = actionable_key_expiries(
+        load_status(), now, cfg.tailscale_key_expiry_warning_days
+    )
+    if not devices:
+        print(
+            "No Tailscale keys expire within "
+            f"{cfg.tailscale_key_expiry_warning_days} days"
+        )
+        return 0
+
+    message_id = _deliver(
+        cfg, format_tailscale_key_expiry(devices, now), args.dry_run
+    )
+    if not args.dry_run:
+        db.record_sent("tailscale-key-expiry", date_key, message_id)
+        db.log_event(
+            "tailscale-key-expiry-sent",
+            {
+                "count": len(devices),
+                "warning_days": cfg.tailscale_key_expiry_warning_days,
+            },
+        )
+    return 0
+
+
 # A unit that fails repeatedly (e.g. a 20-minute timer) alerts at most once
 # per window; the 5-minute health poll still tracks ongoing state.
 FAILURE_ALERT_WINDOW_HOURS = 4
@@ -324,6 +361,61 @@ def send_failure(cfg: Config, args) -> int:
         db.record_sent("unit-failure", window_key, message_id)
         db.log_event("unit-failure", {"unit": args.unit})
     return 0
+
+
+def send_t3_pairings(cfg: Config, args) -> int:
+    from .t3_pairing import (
+        PAIRING_KIND,
+        format_pairing_message,
+        load_local_sessions,
+        load_remote_sessions,
+        select_new_pairings,
+    )
+
+    db = StateDB(cfg.db_path)
+    sources = [(args.local_host, lambda: load_local_sessions(args.local_db))]
+    if args.remote_host:
+        sources.append(
+            (
+                args.remote_label or args.remote_host,
+                lambda: load_remote_sessions(args.remote_host, args.remote_db),
+            )
+        )
+
+    failed = False
+    for host, load in sources:
+        try:
+            sessions = load()
+        except Exception as exc:
+            print(f"T3 pairing query failed for {host}: {type(exc).__name__}: {exc}", file=sys.stderr)
+            failed = True
+            continue
+
+        new_sessions = select_new_pairings(db, host, sessions)
+        for session in new_sessions:
+            message_id = _deliver(
+                cfg,
+                format_pairing_message(host, session),
+                args.dry_run,
+                parse_mode="HTML",
+            )
+            if not args.dry_run:
+                key = f"{host}/{session.session_id}"
+                db.record_sent(PAIRING_KIND, key, message_id)
+                db.log_event(
+                    "t3-client-paired",
+                    {
+                        "host": host,
+                        "device_type": session.device_type,
+                        "os": session.os,
+                        "browser": session.browser,
+                        "issued_at": session.issued_at,
+                    },
+                )
+
+        if not new_sessions:
+            print(f"No new T3 pairings for {host}")
+    return 1 if failed else 0
 
 
 def run_tpot_seed(cfg: Config, args) -> int:
@@ -380,13 +472,21 @@ def main(argv: list[str] | None = None) -> int:
         ("papers", send_papers),
         ("hour", send_hour),
         ("health", send_health),
+        ("tailscale-keys", send_tailscale_keys),
         ("failure", send_failure),
+        ("t3-pairings", send_t3_pairings),
     ):
         p = send_sub.add_parser(kind)
         p.add_argument("--dry-run", action="store_true", help="print instead of sending")
         p.add_argument("--force", action="store_true", help="bypass dedupe / send full summary")
         if kind == "failure":
             p.add_argument("--unit", required=True, help="systemd unit that failed")
+        if kind == "t3-pairings":
+            p.add_argument("--local-host", default="sleeper-service")
+            p.add_argument("--local-db", default=str(Path.home() / ".t3/userdata/state.sqlite"))
+            p.add_argument("--remote-host")
+            p.add_argument("--remote-label")
+            p.add_argument("--remote-db", default="/home/elijah/.t3/userdata/state.sqlite")
         p.set_defaults(func=func)
 
     args = parser.parse_args(argv)

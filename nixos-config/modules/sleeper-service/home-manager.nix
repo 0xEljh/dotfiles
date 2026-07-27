@@ -18,27 +18,27 @@ in
 	imports = [
 		../shared/ai-tools.nix
 		../shared/t3-serve.nix
+		../shared/opencode-serve.nix
 	];
+
+	services.opencodeServe = {
+		enable = true;
+		host = "127.0.0.1";
+		port = 8779;
+		useTailscaleServe = true;
+		tailscaleServePort = 8779;
+	};
 
 	services.t3Serve = {
 		enable = true;
-		# Plain HTTP on the tailnet IP. The tailnet itself is the auth boundary;
-		# we skip Tailscale HTTPS to avoid leaking device names into public CT logs.
-		bindToTailscaleIp = true;
-		# Upstream 0.0.28 nightly + PR #2673 (OpenCode event stream fix).
-		# The old 0.0.27 patched tarball remains on disk for rollback.
-		t3Package = "file:${config.home.homeDirectory}/.local/share/t3/t3-0.0.28-nightly.20260621.614-pr2673-sessionttl.0.tgz";
+		useTailscaleServe = true;
+		tailscaleServePort = 443;
 	};
 
 	home = {
 	    username = "${user}";
 	    homeDirectory = "/home/${user}";
-	    # codex is excluded on sleeper-service: building from source exhausts RAM and the
-	    # numtide cache miss path is impractical here. Bring it back when there's
-	    # a reliable prebuilt or more RAM.
-	    packages = lib.filter
-	      (p: !(lib.hasInfix "codex" (p.pname or p.name or "")))
-	      (import ../shared/packages.nix { inherit pkgs fff; });
+	    packages = import ../shared/packages.nix { inherit pkgs fff; };
 	    file = shared-files;
 	    stateVersion = "24.11";
 

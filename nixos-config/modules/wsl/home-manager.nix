@@ -40,6 +40,14 @@ in
     enable = true;
     host = "127.0.0.1";
     port = 8779;
+    useTailscaleServe = true;
+    tailscaleServePort = 8779;
+    extraEnvironment = [
+      "NIX_LD=/run/current-system/sw/share/nix-ld/lib/ld.so"
+      "NIX_LD_LIBRARY_PATH=/run/current-system/sw/share/nix-ld/lib"
+      "LD_LIBRARY_PATH=/run/current-system/sw/share/nix-ld/lib:/usr/lib/wsl/lib"
+      "TRITON_LIBCUDA_PATH=/usr/lib/wsl/lib"
+    ];
   };
 
   services.tpotInference = {
@@ -51,12 +59,8 @@ in
 
   services.t3Serve = {
     enable = true;
-    # Plain HTTP on the tailnet IP; same reasoning as sleeper-service.
-    bindToTailscaleIp = true;
-    # Same patched build as sleeper-service. Copy the tarball here BEFORE
-    # rebuilding, or t3-serve will crash-loop on a missing file:
-    #   scp sleeper-service:.local/share/t3/t3-0.0.28-nightly.20260621.614-pr2673-sessionttl.0.tgz ~/.local/share/t3/
-    t3Package = "file:${config.home.homeDirectory}/.local/share/t3/t3-0.0.28-nightly.20260621.614-pr2673-sessionttl.0.tgz";
+    useTailscaleServe = true;
+    tailscaleServePort = 443;
   };
 
   home = {

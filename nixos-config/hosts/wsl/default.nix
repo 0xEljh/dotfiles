@@ -48,8 +48,8 @@ in
     settings = {
       allowed-users = [ "${user}" ];
       trusted-users = [ "@wheel" "${user}" ];
-      substituters = [ "https://nix-community.cachix.org" "https://cache.nixos.org" "https://numtide.cachix.org" "https://cache.nixos-cuda.org" ];
-      trusted-public-keys = [ "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=" "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Yrg+bU/s5/f/y/K5PCI4oaLY=" "numtide.cachix.org-1:2ps1kLBUWjxIneOy1Ber+6dwNbSd05yOb6HnGfN1gvI=" "cache.nixos-cuda.org:74DUi4Ye579gUqzH4ziL9IyiJBlDpMRn9MBN8oNan9M=" ];
+      substituters = [ "https://nix-community.cachix.org" "https://cache.nixos.org" "https://cache.numtide.com" "https://cache.nixos-cuda.org" ];
+      trusted-public-keys = [ "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=" "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Yrg+bU/s5/f/y/K5PCI4oaLY=" "niks3.numtide.com-1:DTx8wZduET09hRmMtKdQDxNNthLQETkc/yaX7M4qK0g=" "cache.nixos-cuda.org:74DUi4Ye579gUqzH4ziL9IyiJBlDpMRn9MBN8oNan9M=" ];
     };
 
     package = pkgs.nix;
@@ -90,7 +90,10 @@ in
     };
 
     # Tailscale for secure networking and SSH access
-    tailscale.enable = true;
+    tailscale = {
+      enable = true;
+      extraSetFlags = [ "--operator=${user}" ];
+    };
 
     # TODO: Consider enabling these services later
     # syncthing = { ... };
@@ -132,6 +135,27 @@ in
           size = 24;
         }];
       };
+    };
+  };
+
+  systemd.services.docker-stale-prune = {
+    description = "Prune Docker containers and networks older than three days";
+    requires = [ "docker.service" ];
+    after = [ "docker.service" ];
+    serviceConfig.Type = "oneshot";
+    script = ''
+      ${pkgs.docker}/bin/docker container prune --force --filter "until=72h"
+      ${pkgs.docker}/bin/docker network prune --force --filter "until=72h"
+    '';
+  };
+
+  systemd.timers.docker-stale-prune = {
+    description = "Daily stale Docker resource cleanup";
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnCalendar = "daily";
+      Persistent = true;
+      RandomizedDelaySec = "30m";
     };
   };
 

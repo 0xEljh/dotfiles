@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import html
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Iterable
 
 from .providers.health import CheckResult, Transition
 from .providers.notion_todos import Task
+from .providers.tailscale import DeviceKeyExpiry
 from .providers.sleep import SleepSummary, duration_hm
 from .tpot.seeds import SeedRow
 
@@ -173,6 +174,28 @@ def format_health_summary(results: Iterable[CheckResult]) -> str:
     for r in results:
         mark = "✅" if r.ok else "❌"
         lines.append(f"{mark} {r.name}: {r.detail}")
+    return "\n".join(lines)
+
+
+def format_tailscale_key_expiry(devices: list[DeviceKeyExpiry], now: datetime) -> str:
+    if not devices:
+        raise ValueError("at least one Tailscale device is required")
+    lines = ["⚠️ Tailscale key expiry"]
+    now_utc = now.astimezone(timezone.utc)
+    for device in devices:
+        if device.expires_at is None:
+            detail = "expired"
+        else:
+            delta_days = (device.expires_at - now_utc).total_seconds() / 86400
+            if device.expired or delta_days <= 0:
+                days = max(0, int(-delta_days))
+                detail = "expired today" if days == 0 else f"expired {days} day{'s' if days != 1 else ''} ago"
+            else:
+                days = max(1, int(delta_days + 0.999999))
+                local_expiry = device.expires_at.astimezone(now.tzinfo)
+                detail = f"expires in {days} day{'s' if days != 1 else ''} ({local_expiry:%d %b})"
+        lines.append(f"• {device.name}: {detail}")
+    lines.extend(["", "Reauthenticate affected devices with sudo tailscale up."])
     return "\n".join(lines)
 
 

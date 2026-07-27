@@ -47,7 +47,10 @@ in
   time.timeZone = "Asia/Singapore";
 
   # Tailscale daemon. Run `sudo tailscale up --ssh` once after the first build.
-  services.tailscale.enable = true;
+  services.tailscale = {
+    enable = true;
+    extraSetFlags = [ "--operator=${user}" ];
+  };
 
   nix = {
     nixPath = [ "nixos-config=/home/${user}/.local/share/src/nixos-config:/etc/nixos" ];
@@ -58,11 +61,11 @@ in
         "https://cache.nixos.org"
         # numtide caches the llm-agents.nix builds (codex, opencode, claude-code).
         # Without this, codex builds from source and exhausts sleeper-service RAM.
-        "https://numtide.cachix.org"
+        "https://cache.numtide.com"
       ];
       trusted-public-keys = [
         "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
-        "numtide.cachix.org-1:2ps1kLBUWjxIneOy1Ber+6dwNbSd05yOb6HnGfN1gvI="
+        "niks3.numtide.com-1:DTx8wZduET09hRmMtKdQDxNNthLQETkc/yaX7M4qK0g="
       ];
     };
 

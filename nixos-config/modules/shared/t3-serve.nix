@@ -41,6 +41,11 @@ let
     text = ''
       export NPM_CONFIG_YES=true
       export NPM_CONFIG_LOGLEVEL=warn
+      # These credentials protect the separately managed remote OpenCode
+      # service. T3 starts its own loopback OpenCode servers and does not send
+      # Basic Auth credentials when connecting to them.
+      unset OPENCODE_SERVER_USERNAME
+      unset OPENCODE_SERVER_PASSWORD
       echo ${lib.escapeShellArg "t3-serve: using ${t3PackageSpec}"}
       # Pre-warm the npx cache so the first real run doesn't hang on download.
       npx -y ${t3PackageArg} --version >/dev/null 2>&1 || true
@@ -108,7 +113,7 @@ in
 
     t3Version = lib.mkOption {
       type = lib.types.str;
-      default = "0.0.27";
+      default = "0.0.29-nightly.20260725.899";
       description = ''
         npm tag or version of `t3` to run via `npx` when `t3Package` is unset.
         Keep this pinned to avoid alpha churn.

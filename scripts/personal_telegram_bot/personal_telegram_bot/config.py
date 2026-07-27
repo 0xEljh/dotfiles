@@ -93,6 +93,7 @@ class Config:
     tpot_synth_enable: bool = False
     tpot_synth_model: str = "opencode/deepseek-v4-flash-free"
     tpot_synth_timeout_seconds: int = 90
+    tailscale_key_expiry_warning_days: int = 14
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -151,4 +152,7 @@ class Config:
             tpot_synth_enable=env.get("TPOT_SYNTH_ENABLE", "0").lower() in {"1", "true", "yes"},
             tpot_synth_model=env.get("TPOT_SYNTH_MODEL") or "opencode/deepseek-v4-flash-free",
             tpot_synth_timeout_seconds=int(env.get("TPOT_SYNTH_TIMEOUT_SECONDS", "90")),
+            tailscale_key_expiry_warning_days=int(
+                env.get("TAILSCALE_KEY_EXPIRY_WARNING_DAYS", "14")
+            ),
         )

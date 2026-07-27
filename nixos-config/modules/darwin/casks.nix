@@ -5,8 +5,10 @@ _:
   "docker-desktop" # was "docker" (cask renamed by Homebrew)
   "visual-studio-code"
   "devin-desktop" # was "windsurf" (Windsurf rebranded to Devin)
-  # T3 Code: GUI front-end for Codex / Claude Code / OpenCode. See docs/design/t3-code-multi-host.md.
-  "t3-code"
+  # Agent desktops. See docs/design/ai-agent-mobile-refresh.md.
+  "chatgpt"
+  "opencode-desktop"
+  "t3-code@nightly"
 
   # Networking
   # Tailscale GUI + CLI (mesh VPN). Required for connecting to t3 serve --tailscale-serve on sleeper-service/WSL.

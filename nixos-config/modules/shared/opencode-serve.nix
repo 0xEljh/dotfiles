@@ -35,11 +35,20 @@ let
       pkgs.bun
       pkgs.gh
       pkgs.fzf
-    ];
+    ] ++ lib.optional cfg.useTailscaleServe pkgs.tailscale;
     text = ''
       # Append the user profile paths so opencode sees every tool the user
       # has installed (uv, cargo, docker, python, ...), not just the core set.
       export PATH="$PATH:${homeDir}/.nix-profile/bin:/etc/profiles/per-user/${user}/bin:/run/current-system/sw/bin:/run/wrappers/bin"
+    '' + lib.optionalString cfg.useTailscaleServe ''
+      if [ -z "''${OPENCODE_SERVER_PASSWORD:-}" ]; then
+        echo "opencode-serve: OPENCODE_SERVER_PASSWORD must be set for Tailscale Serve" >&2
+        exit 78
+      fi
+
+      tailscale serve --bg --yes --https=${toString cfg.tailscaleServePort} \
+        http://127.0.0.1:${toString cfg.port}
+    '' + ''
       exec opencode serve --hostname ${cfg.host} --port ${toString cfg.port}
     '';
   };
@@ -60,6 +69,28 @@ in
       description = "Port for `opencode serve` to listen on.";
     };
 
+    useTailscaleServe = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Expose the loopback server over Tailnet-only HTTPS with Tailscale
+        Serve. OPENCODE_SERVER_PASSWORD must be present in the service
+        environment or startup fails closed.
+      '';
+    };
+
+    tailscaleServePort = lib.mkOption {
+      type = lib.types.port;
+      default = 8779;
+      description = "Tailnet HTTPS port that proxies to the OpenCode server.";
+    };
+
+    extraEnvironment = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      description = "Additional systemd environment entries for host-specific runtimes.";
+    };
+
     package = lib.mkOption {
       type = lib.types.nullOr lib.types.package;
       default = null;
@@ -68,6 +99,13 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = !cfg.useTailscaleServe || cfg.host == "127.0.0.1";
+        message = "services.opencodeServe.useTailscaleServe requires a 127.0.0.1 backend";
+      }
+    ];
+
     systemd.user.services.opencode-serve = {
       Unit = {
         Description = "opencode headless agent server (opencode serve)";
@@ -80,6 +118,7 @@ in
         Type = "simple";
         ExecStart = "${opencodeWrapper}/bin/opencode-serve-wrapper";
         Restart = "on-failure";
+        RestartPreventExitStatus = [ 78 ];
         RestartSec = 5;
         WorkingDirectory = "%h";
         Environment = [
@@ -90,15 +129,10 @@ in
           "XDG_STATE_HOME=%h/.local/state"
           "OPENCODE_ENABLE_EXA=1"
           "CTX7_TELEMETRY_DISABLED=1"
-          # WSL runtime libs — mirror the interactive shell (see
-          # modules/wsl/home-manager.nix zsh initContent) so bun and any
-          # spawned native tools link correctly.
-          "NIX_LD=/run/current-system/sw/share/nix-ld/lib/ld.so"
-          "NIX_LD_LIBRARY_PATH=/run/current-system/sw/share/nix-ld/lib"
-          "LD_LIBRARY_PATH=/run/current-system/sw/share/nix-ld/lib:/usr/lib/wsl/lib"
-          "TRITON_LIBCUDA_PATH=/usr/lib/wsl/lib"
-        ];
+        ] ++ cfg.extraEnvironment;
         EnvironmentFile = [ "-%h/.config/ai-tools/secrets.env" ];
+      } // lib.optionalAttrs cfg.useTailscaleServe {
+        ExecStopPost = "-${pkgs.tailscale}/bin/tailscale serve --https=${toString cfg.tailscaleServePort} off";
       };
 
       Install.WantedBy = [ "default.target" ];

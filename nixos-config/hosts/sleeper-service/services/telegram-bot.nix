@@ -26,7 +26,7 @@ let
       ];
     };
     # systemctl/journalctl for health checks and failure context
-    path = [ pkgs.systemd ];
+    path = [ pkgs.openssh pkgs.systemd ];
     serviceConfig = {
       User = user;
       UMask = "0077";
@@ -124,6 +124,17 @@ in
     personal-telegram-bot-papers =
       mkOneshot "Weekly paper-log dispatch (unrefined sightings nudge)" "send papers";
 
+    personal-telegram-bot-t3-pairings =
+      mkOneshot "Notify on new T3 client pairings" "send t3-pairings --remote-host contents-may-differ --remote-label contents-may-differ";
+
+    personal-telegram-bot-tailscale-keys =
+      let base = mkOneshot "Daily Tailscale device key-expiry reminder" "send tailscale-keys";
+      in base // notifyOnFailure // {
+        after = base.after ++ [ "tailscaled.service" ];
+        wants = base.wants ++ [ "tailscaled.service" ];
+        path = base.path ++ [ pkgs.tailscale ];
+      };
+
     personal-telegram-bot-tpot-seed =
       let base = mkOneshot "TPOT post-seed generation" "tpot-seed";
       in base // notifyOnFailure // {
@@ -219,6 +230,28 @@ in
         OnCalendar = "Sun *-*-* 17:00:00";
         # Catch up after downtime; SQLite ISO-week dedupe prevents doubles.
         Persistent = true;
+      };
+    };
+
+    personal-telegram-bot-t3-pairings = {
+      description = "Check for newly authorized T3 clients";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        Unit = "personal-telegram-bot-t3-pairings.service";
+        OnBootSec = "2min";
+        OnUnitActiveSec = "1min";
+        RandomizedDelaySec = "10s";
+      };
+    };
+
+    personal-telegram-bot-tailscale-keys = {
+      description = "Daily Tailscale device key-expiry check";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        Unit = "personal-telegram-bot-tailscale-keys.service";
+        OnCalendar = "*-*-* 09:00:00";
+        Persistent = true;
+        RandomizedDelaySec = "5m";
       };
     };
 
