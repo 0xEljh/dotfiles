@@ -11,6 +11,8 @@ mcpServers:
       args:
         - --from
         - arxiv-mcp-server[pdf]==0.5.0
+        - --with
+        - mcp<2
         - arxiv-mcp-server
         - --storage-path
         - "${HOME}/.local/share/arxiv-mcp/papers"

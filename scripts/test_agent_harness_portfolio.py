@@ -175,6 +175,24 @@ class AgentHarnessPortfolioTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("arxiv-mcp-server[pdf]==0.5.0", service)
 
+    def test_arxiv_pins_the_mcp_sdk_below_2(self) -> None:
+        """arxiv-mcp-server 0.5.0 declares `mcp>=1.27.0` with no upper bound.
+
+        Resolving mcp 2.0.0 crashes it at import with
+        `AttributeError: 'Server' object has no attribute 'list_prompts'`,
+        so every call site must constrain the SDK itself.
+        """
+        opencode = self.load_json("ai-tools/opencode/opencode.json")
+        command = opencode["mcp"]["arxiv"]["command"]
+        self.assertEqual("mcp<2", command[command.index("--with") + 1])
+
+        for relative_path in (
+            "ai-tools/claude-code/agents/research.md",
+            "nixos-config/hosts/sleeper-service/services/web-apps.nix",
+        ):
+            text = (ROOT / relative_path).read_text(encoding="utf-8")
+            self.assertIn("mcp<2", text, relative_path)
+
     def test_llm_agents_use_supported_platforms_and_current_cache(self) -> None:
         flake = (ROOT / "nixos-config/flake.nix").read_text(encoding="utf-8")
         hosts = [
