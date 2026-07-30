@@ -123,7 +123,10 @@ in
           "MAX_RESULTS=50"
           "REQUEST_TIMEOUT=60"
         ];
-        ExecStart = "${pkgs.uv}/bin/uvx --from 'arxiv-mcp-server[pdf]==0.5.0' arxiv-mcp-server --storage-path ${arxivMcpStorageDir}";
+        # `--with 'mcp<2'`: arxiv-mcp-server 0.5.0 requires `mcp>=1.27.0` with no
+        # upper bound, but mcp 2.0.0 dropped Server.list_prompts() and the
+        # server dies at import.
+        ExecStart = "${pkgs.uv}/bin/uvx --from 'arxiv-mcp-server[pdf]==0.5.0' --with 'mcp<2' arxiv-mcp-server --storage-path ${arxivMcpStorageDir}";
         Restart = "always";
         RestartSec = "5s";
         KillSignal = "SIGINT";

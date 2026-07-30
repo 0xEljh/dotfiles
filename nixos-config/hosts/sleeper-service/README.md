@@ -67,6 +67,9 @@ Managed systemd services:
 Managed timer:
 
 - `dotfiles-sync.timer` runs `~/dotfiles/scripts/run-sync.sh` roughly every 20 minutes.
+- `nix-gc.timer` removes unreachable Nix paths and generations older than 30 days weekly.
+- `nix-optimise.timer` deduplicates the Nix store weekly after garbage collection.
+- `docker-prune.timer` prunes Docker resources unused for seven days weekly; volumes are excluded.
 
 Service guards:
 

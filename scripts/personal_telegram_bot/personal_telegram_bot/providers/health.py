@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import dataclass
 from typing import Iterable, Mapping
@@ -14,10 +15,11 @@ class CheckResult:
     name: str
     ok: bool
     detail: str
+    severity: str | None = None
 
     @property
     def status(self) -> str:
-        return "ok" if self.ok else "fail"
+        return self.severity or ("ok" if self.ok else "fail")
 
 
 @dataclass(frozen=True)
@@ -53,14 +55,50 @@ def check_http(url: str) -> CheckResult:
         return CheckResult(name=url, ok=False, detail=type(exc).__name__)
 
 
-def run_all(units: Iterable[str], urls: Iterable[str]) -> list[CheckResult]:
-    return [check_systemd_unit(u) for u in units] + [check_http(u) for u in urls]
+def check_disk(
+    path: str, warning_percent: int = 80, critical_percent: int = 90
+) -> CheckResult:
+    try:
+        stat = os.statvfs(path)
+    except OSError as exc:
+        return CheckResult(name=f"disk {path}", ok=False, detail=type(exc).__name__)
+
+    block_size = stat.f_frsize
+    used = (stat.f_blocks - stat.f_bfree) * block_size
+    available = stat.f_bavail * block_size
+    capacity = used + available
+    used_percent = 100 * used / capacity if capacity else 100.0
+    available_gib = available / (1024**3)
+    detail = f"{used_percent:.1f}% used, {available_gib:.1f} GiB available"
+
+    if used_percent > critical_percent:
+        return CheckResult(f"disk {path}", False, detail, severity="critical")
+    if used_percent > warning_percent:
+        return CheckResult(f"disk {path}", False, detail, severity="warning")
+    return CheckResult(f"disk {path}", True, detail)
+
+
+def run_all(
+    units: Iterable[str],
+    urls: Iterable[str],
+    disk_paths: Iterable[str] = (),
+    disk_warning_percent: int = 80,
+    disk_critical_percent: int = 90,
+) -> list[CheckResult]:
+    return (
+        [check_systemd_unit(unit) for unit in units]
+        + [check_http(url) for url in urls]
+        + [
+            check_disk(path, disk_warning_percent, disk_critical_percent)
+            for path in disk_paths
+        ]
+    )
 
 
 def diff_transitions(
     previous: Mapping[str, str], results: Iterable[CheckResult]
 ) -> list[Transition]:
-    """Notify on ok->fail, fail->ok, and unknown->fail. New healthy checks are silent."""
+    """Notify on state changes and new failures; new healthy checks are silent."""
     transitions = []
     for result in results:
         old = previous.get(result.name)

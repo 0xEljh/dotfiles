@@ -67,7 +67,14 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @_guard
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cfg: Config = context.bot_data["config"]
-    results = await asyncio.to_thread(run_all, cfg.health_units, cfg.health_urls)
+    results = await asyncio.to_thread(
+        run_all,
+        cfg.health_units,
+        cfg.health_urls,
+        cfg.health_disk_paths,
+        cfg.health_disk_warning_percent,
+        cfg.health_disk_critical_percent,
+    )
     results.append(check_aw_freshness(cfg.aw_data_dir, cfg.aw_max_age_hours))
     lines = [format_health_summary(results)]
 

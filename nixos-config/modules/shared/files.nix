@@ -3,7 +3,8 @@
 {
 
   ".config/kitty/ssh.conf" = {
-    source = ../../../kitty/ssh.conf;
+    source = config.lib.file.mkOutOfStoreSymlink
+      "${config.home.homeDirectory}/dotfiles/kitty/ssh.conf";
   };
 
   ".config/kitty/remote-shell.sh" = {

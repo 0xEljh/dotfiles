@@ -161,6 +161,10 @@ def format_health_alert(transitions: list[Transition]) -> str:
     for t in transitions:
         if t.new == "ok":
             lines.append(f"✅ {t.name}: recovered ({t.detail})")
+        elif t.new == "critical":
+            lines.append(f"🚨 {t.name}: critical ({t.detail})")
+        elif t.new == "warning":
+            lines.append(f"⚠️ {t.name}: warning ({t.detail})")
         elif t.old == t.new == "fail":
             lines.append(f"🚨 {t.name}: still failing ({t.detail})")
         else:

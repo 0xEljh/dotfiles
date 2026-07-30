@@ -152,6 +152,9 @@ in
     paper-inbox-sync = notifyOnFailure;
     tea-the-gathering = notifyOnFailure;
     dotfiles-sync = notifyOnFailure;
+    docker-prune = notifyOnFailure;
+    nix-gc = notifyOnFailure;
+    nix-optimise = notifyOnFailure;
   };
 
   systemd.timers = {

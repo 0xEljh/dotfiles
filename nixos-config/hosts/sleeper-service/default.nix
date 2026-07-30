@@ -69,6 +69,21 @@ in
       ];
     };
 
+    gc = {
+      automatic = true;
+      dates = "Sun *-*-* 03:00:00";
+      options = "--delete-older-than 30d";
+      persistent = true;
+      randomizedDelaySec = "15min";
+    };
+
+    optimise = {
+      automatic = true;
+      dates = "Mon *-*-* 03:00:00";
+      persistent = true;
+      randomizedDelaySec = "15min";
+    };
+
     package = pkgs.nix;
     extraOptions = ''
       experimental-features = nix-command flakes
@@ -137,6 +152,15 @@ in
   virtualisation.docker = {
     enable = true;
     logDriver = "json-file";
+    autoPrune = {
+      enable = true;
+      dates = "Wed *-*-* 03:00:00";
+      flags = [ "--filter=until=168h" ];
+      persistent = true;
+      randomizedDelaySec = "15min";
+      # PostgreSQL data lives in the named vamp-tutor-pgdata volume.
+      allVolumes.enable = false;
+    };
   };
 
   environment.systemPackages = with pkgs; [

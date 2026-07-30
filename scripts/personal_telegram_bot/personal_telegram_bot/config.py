@@ -94,6 +94,9 @@ class Config:
     tpot_synth_model: str = "opencode/deepseek-v4-flash-free"
     tpot_synth_timeout_seconds: int = 90
     tailscale_key_expiry_warning_days: int = 14
+    health_disk_paths: tuple[str, ...] = ("/",)
+    health_disk_warning_percent: int = 80
+    health_disk_critical_percent: int = 90
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -155,4 +158,7 @@ class Config:
             tailscale_key_expiry_warning_days=int(
                 env.get("TAILSCALE_KEY_EXPIRY_WARNING_DAYS", "14")
             ),
+            health_disk_paths=tuple(_parse_csv(env.get("HEALTH_DISK_PATHS", "/"))),
+            health_disk_warning_percent=int(env.get("HEALTH_DISK_WARNING_PERCENT", "80")),
+            health_disk_critical_percent=int(env.get("HEALTH_DISK_CRITICAL_PERCENT", "90")),
         )

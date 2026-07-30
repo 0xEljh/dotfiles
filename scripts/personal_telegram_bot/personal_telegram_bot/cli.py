@@ -243,7 +243,13 @@ def send_health(cfg: Config, args) -> int:
     from .providers.health import diff_transitions, run_all
 
     db = StateDB(cfg.db_path)
-    results = run_all(cfg.health_units, cfg.health_urls)
+    results = run_all(
+        cfg.health_units,
+        cfg.health_urls,
+        cfg.health_disk_paths,
+        cfg.health_disk_warning_percent,
+        cfg.health_disk_critical_percent,
+    )
     aw_result = check_aw_freshness(cfg.aw_data_dir, cfg.aw_max_age_hours)
     results.append(aw_result)
     transitions = diff_transitions(db.get_health_statuses(), results)
