@@ -29,6 +29,7 @@ uv run botctl send test
 uv run botctl send morning --dry-run     # print, don't send
 uv run botctl send morning --force       # bypass once-per-day dedupe
 uv run botctl send health --force        # full summary, not just transitions
+uv run botctl send disk-health --host contents-may-differ --dry-run
 uv run botctl send tailscale-keys --dry-run
 
 # tests
@@ -53,3 +54,8 @@ devices visible to sleeper-service; it is not an authoritative tailnet inventory
 
 State (digest dedupe, health transitions, audit log) is SQLite at
 `~/.local/state/personal-telegram-bot/state.sqlite3`.
+
+On `contents-may-differ`, `personal-telegram-bot-disk-health.service` reads its
+bot token and chat ID from the SOPS-managed
+`/run/secrets/telegram-disk-alert.env` and keeps independent transition state at
+`/var/lib/personal-telegram-bot-disk-health/state.sqlite3`.

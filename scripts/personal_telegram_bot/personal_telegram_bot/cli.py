@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import socket
 import subprocess
 import sys
 from datetime import datetime
@@ -298,6 +299,53 @@ def send_health(cfg: Config, args) -> int:
     return 0
 
 
+def send_disk_health(cfg: Config, args) -> int:
+    from .providers.health import check_disk, diff_transitions
+
+    db = StateDB(cfg.db_path)
+    results = [
+        check_disk(
+            path,
+            cfg.health_disk_warning_percent,
+            cfg.health_disk_critical_percent,
+        )
+        for path in cfg.health_disk_paths
+    ]
+    transitions = diff_transitions(db.get_health_statuses(), results)
+
+    sent_transition_alert = False
+    if args.force:
+        _deliver(
+            cfg,
+            format_health_summary(results, host=args.host),
+            args.dry_run,
+        )
+    elif transitions:
+        _deliver(
+            cfg,
+            format_health_alert(transitions, host=args.host),
+            args.dry_run,
+        )
+        sent_transition_alert = True
+    else:
+        print("No disk health transitions")
+
+    if not args.dry_run:
+        for result in results:
+            db.set_health_status(result.name, result.status, result.detail)
+        if sent_transition_alert:
+            db.record_sent(
+                "disk-health-alert",
+                datetime.now(cfg.tz).isoformat(timespec="seconds"),
+                None,
+            )
+            db.log_event(
+                "disk-health-transitions",
+                {transition.name: f"{transition.old}->{transition.new}" for transition in transitions},
+            )
+    return 0
+
+
 def send_tailscale_keys(cfg: Config, args, *, now: datetime | None = None) -> int:
     from .formatters import format_tailscale_key_expiry
     from .providers.tailscale import actionable_key_expiries, load_status
@@ -478,6 +526,7 @@ def main(argv: list[str] | None = None) -> int:
         ("papers", send_papers),
         ("hour", send_hour),
         ("health", send_health),
+        ("disk-health", send_disk_health),
         ("tailscale-keys", send_tailscale_keys),
         ("failure", send_failure),
         ("t3-pairings", send_t3_pairings),
@@ -487,6 +536,8 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--force", action="store_true", help="bypass dedupe / send full summary")
         if kind == "failure":
             p.add_argument("--unit", required=True, help="systemd unit that failed")
+        if kind == "disk-health":
+            p.add_argument("--host", default=socket.gethostname(), help="host label in alerts")
         if kind == "t3-pairings":
             p.add_argument("--local-host", default="sleeper-service")
             p.add_argument("--local-db", default=str(Path.home() / ".t3/userdata/state.sqlite"))

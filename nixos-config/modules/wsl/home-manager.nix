@@ -1,4 +1,4 @@
-{ config, pkgs, lib, fff, ... }:
+{ config, pkgs, lib, fff, nix-index-database, ... }:
 
 let
   user = "elijah";
@@ -27,6 +27,7 @@ let
 in
 {
   imports = [
+    nix-index-database.homeModules.default
     ../shared/ai-tools.nix
     ../shared/t3-serve.nix
     ../shared/opencode-serve.nix
@@ -117,6 +118,19 @@ in
   # Inherit shared programs - neovim config is managed separately via symlink
   programs = lib.recursiveUpdate shared-programs {
     git = git-wsl-config;
+
+    # `, jless data.json` runs anything in nixpkgs without installing it,
+    # against the prebuilt index (no local nix-index build). Do not also add
+    # the `nix-index` package: it conflicts with this module's wrapper.
+    nix-index-database.comma.enable = true;
+
+    # Periodic GC. WSL is the only host without nix.gc.automatic (darwin and
+    # sleeper-service set it in their host configs), so enabling nh clean here
+    # fills that gap without double-collecting elsewhere.
+    nh.clean = {
+      enable = true;
+      extraArgs = "--keep 5 --keep-since 30d";
+    };
     ssh = {
       includes = [
         "${windowsSshDir}/config"

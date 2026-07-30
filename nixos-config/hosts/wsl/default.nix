@@ -11,6 +11,8 @@ in
   imports = [
     nixos-wsl.nixosModules.default
     ../../modules/shared
+    ./secrets.nix
+    (import ./services/disk-alert.nix { inherit user; })
   ];
 
   # ============================================================================

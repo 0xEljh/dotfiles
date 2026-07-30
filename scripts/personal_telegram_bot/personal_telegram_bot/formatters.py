@@ -156,8 +156,10 @@ def format_papers(
     return "\n".join(lines)
 
 
-def format_health_alert(transitions: list[Transition]) -> str:
-    lines = ["⚠️ sleeper-service health"]
+def format_health_alert(
+    transitions: list[Transition], *, host: str = "sleeper-service"
+) -> str:
+    lines = [f"⚠️ {host} health"]
     for t in transitions:
         if t.new == "ok":
             lines.append(f"✅ {t.name}: recovered ({t.detail})")
@@ -173,8 +175,10 @@ def format_health_alert(transitions: list[Transition]) -> str:
     return "\n".join(lines)
 
 
-def format_health_summary(results: Iterable[CheckResult]) -> str:
-    lines = ["sleeper-service status"]
+def format_health_summary(
+    results: Iterable[CheckResult], *, host: str = "sleeper-service"
+) -> str:
+    lines = [f"{host} status"]
     for r in results:
         mark = "✅" if r.ok else "❌"
         lines.append(f"{mark} {r.name}: {r.detail}")

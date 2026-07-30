@@ -1,18 +1,27 @@
 { config, pkgs, lib, ... }:
 
-let name = "elijah";
-    user = "elijah";
-    email = "elijahng96@gmail.com"; in
 {
   direnv = {
     enable = true;
     nix-direnv.enable = true;
   };
 
+  # Wraps nixos-rebuild/darwin-rebuild with a readable build view and, more
+  # importantly, a generation diff after every switch — the fastest feedback
+  # loop for "what did this change actually do?".
+  nh = {
+    enable = true;
+    # Default flake for bare `nh os switch`. This is the working tree rather
+    # than a store copy, so uncommitted edits are picked up.
+    flake = "${config.home.homeDirectory}/dotfiles/nixos-config";
+  };
+
   # Shared shell configuration
   zsh = {
     enable = true;
     autocd = false;
+    autosuggestion.enable = true;
+    syntaxHighlighting.enable = true;
     plugins = [
       {
         name = "powerlevel10k";
@@ -89,15 +98,25 @@ let name = "elijah";
       alias ncat="notion-cat";
       alias tmux0="tmux a -t 0";
       alias tmux-reset="tmux kill-server 2>/dev/null; rm -rf ~/.cache/tmux/resurrect/*; tmux";
-
-      # zoxide
-      eval "$(zoxide init zsh)"
-
-      # atuin
-      if command -v atuin >/dev/null 2>&1; then
-        eval "$(atuin init zsh)"
-      fi
     '';
+  };
+
+  # zoxide and atuin were hand-rolled `eval "$(... init zsh)"` lines in
+  # zsh.initContent. The modules emit the same hooks, but home-manager controls
+  # the ordering — which is what resolves the Ctrl-R contest below.
+  zoxide.enable = true;
+
+  # atuin's hook is emitted at the default order, after fzf's (mkOrder 910),
+  # so atuin wins Ctrl-R. Flags stay empty to match the previous hand-rolled
+  # behaviour (atuin also owns Up-arrow).
+  atuin.enable = true;
+
+  fzf = {
+    enable = true;
+    # Ctrl-T (files) and Alt-C (cd) via fd rather than find: respects
+    # .gitignore and skips .git, matching the rest of the CLI stack.
+    defaultCommand = "fd --type f --hidden --exclude .git";
+    changeDirWidgetCommand = "fd --type d --hidden --exclude .git";
   };
 
   git = {
@@ -120,6 +139,21 @@ let name = "elijah";
       pager.diff = "";
       pager.show = "";
     };
+  };
+
+  # lazygit was installed but unconfigured. Route its diff panel through
+  # difftastic to match `git diff` (git's own diff.external is ignored by
+  # lazygit, which builds its diff commands itself).
+  lazygit = {
+    enable = true;
+    # lazygit 0.62 replaced the single `git.paging` object with a `git.pagers`
+    # array you can cycle through at runtime (default keybinding `cyclePagers`).
+    settings.git.pagers = [
+      {
+        colorArg = "always";
+        externalDiffCommand = "difft --color=always";
+      }
+    ];
   };
 
   vim = {
@@ -308,10 +342,10 @@ let name = "elijah";
       #   identitiesOnly = true;
       #   identityFile = [
       #     (lib.mkIf pkgs.stdenv.hostPlatform.isLinux
-      #       "/home/${user}/.ssh/id_github"
+      #       "/home/${config.home.username}/.ssh/id_github"
       #     )
       #     (lib.mkIf pkgs.stdenv.hostPlatform.isDarwin
-      #       "/Users/${user}/.ssh/id_github"
+      #       "/Users/${config.home.username}/.ssh/id_github"
       #     )
       #   ];
       # };

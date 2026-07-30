@@ -21,7 +21,14 @@ with pkgs; [
   wget
   zip
   gh
-  lazygit
+  # lazygit, fzf, zoxide and atuin are installed by their home-manager
+  # modules (see modules/shared/home-manager.nix) so their shell hooks and
+  # config files come with them.
+
+  # Nix ergonomics. nh itself arrives via programs.nh; nix-tree is here
+  # because it is useful against any closure, not just this repo. The linters
+  # (statix/deadnix/nixfmt) are repo-scoped in the flake devShell instead.
+  nix-tree
 
   # Encryption and security tools
   age
@@ -74,9 +81,6 @@ with pkgs; [
   unzip
   eza
   ouch
-  zoxide
-  atuin
-  fzf
   fffPackages.fff-mcp
   difftastic
   nushell

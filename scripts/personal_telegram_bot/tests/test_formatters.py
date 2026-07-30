@@ -116,6 +116,16 @@ def test_health_alert_failure_and_recovery():
     assert "recovered" in text.lower()
 
 
+def test_health_alert_uses_host_label():
+    transitions = [
+        Transition(name="disk /", old="ok", new="warning", detail="81.0% used")
+    ]
+
+    text = format_health_alert(transitions, host="contents-may-differ")
+
+    assert text.startswith("⚠️ contents-may-differ health")
+
+
 def test_health_alert_systematic_stale_aw_reminder():
     transitions = [
         Transition(

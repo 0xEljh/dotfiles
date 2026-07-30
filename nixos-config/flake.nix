@@ -38,17 +38,40 @@
       url = "github:dmtrKovalenko/fff";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # Prebuilt nix-index database, so `, <cmd>` (comma) works without the
+    # hours-long local index build.
+    nix-index-database = {
+      url = "github:nix-community/nix-index-database";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, home-manager, nixpkgs, nixos-wsl, llm-agents, sops-nix, fff } @inputs:
+  # Inputs consumed only via `@inputs` (specialArgs / extraSpecialArgs) look
+  # unused to deadnix, but the pattern has no `...`, so every input must stay
+  # listed here or evaluation fails.
+  # deadnix: skip
+  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, home-manager, nixpkgs, nixos-wsl, llm-agents, sops-nix, fff, nix-index-database } @inputs:
     let
       user = "elijah";
       darwinSystems = [ "aarch64-darwin" ];
-      devShellSystems = darwinSystems ++ [ "x86_64-linux" ];
+      linuxSystems = [ "x86_64-linux" ];
+      devShellSystems = darwinSystems ++ linuxSystems;
       llmAgentsOverlay = _final: prev: {
         llm-agents = llm-agents.packages.${prev.stdenv.hostPlatform.system};
       };
       forDevShellSystems = f: nixpkgs.lib.genAttrs devShellSystems f;
+
+      # Nix code-quality tools, defined once and reused by the devShell (so
+      # direnv puts them on PATH in this repo) and by the `lint` app (so
+      # `nix run .#lint` needs nothing installed). Deliberately repo-scoped
+      # rather than added to modules/shared/packages.nix: they are only useful
+      # where there is nix source to lint.
+      nixQualityTools = system: with nixpkgs.legacyPackages.${system}; [
+        deadnix
+        nixfmt
+        statix
+      ];
+
       devShell = system: let pkgs = nixpkgs.legacyPackages.${system}; in {
         default = with pkgs; mkShell {
           nativeBuildInputs = with pkgs; [
@@ -60,7 +83,7 @@
             nix-direnv
             sops
             ssh-to-age
-          ];
+          ] ++ nixQualityTools system;
           shellHook = with pkgs; ''
             export EDITOR=vim
           '';
@@ -84,10 +107,70 @@
         "check-keys" = mkApp "check-keys" system;
         "rollback" = mkApp "rollback" system;
       };
+
+      # Hermetic app wrapper. Unlike `mkApp`, which execs a checked-in script
+      # (and so needs `chmod +x` plus whatever the ambient PATH happens to
+      # provide), the tool closure is pinned here — these work on a host that
+      # has not rebuilt yet.
+      mkShellApp = system: name: runtimeInputs: text: {
+        type = "app";
+        program = nixpkgs.lib.getExe (
+          nixpkgs.legacyPackages.${system}.writeShellApplication {
+            inherit name runtimeInputs text;
+          }
+        );
+      };
+
+      # NixOS hosts get the same verbs darwin already has, so `nix run
+      # .#build-switch` means the same thing everywhere. nh supplies the build
+      # progress view and the post-switch generation diff.
+      #
+      # NH_FLAKE (set by programs.nh) points at the dotfiles working tree, so
+      # uncommitted edits are picked up; $PWD is the fallback when bootstrapping
+      # a host whose home-manager generation does not exist yet.
+      mkNixosApps = system: let pkgs = nixpkgs.legacyPackages.${system}; in {
+        # --out-link into a temp dir: `nh os build` otherwise drops a `result`
+        # symlink in $PWD, and `nixos-config/result` is a tracked file, so a
+        # plain build would dirty the working tree every run. No `exec` here —
+        # it would replace the shell and discard the cleanup trap.
+        "build" = mkShellApp system "build" [ pkgs.nh pkgs.coreutils ] ''
+          out="$(mktemp -d)"
+          trap 'rm -rf "$out"' EXIT
+          nh os build --out-link "$out/result" "''${NH_FLAKE:-$PWD}" "$@"
+        '';
+        "build-switch" = mkShellApp system "build-switch" [ pkgs.nh ] ''
+          exec nh os switch "''${NH_FLAKE:-$PWD}" "$@"
+        '';
+        "rollback" = mkShellApp system "rollback" [ pkgs.nh ] ''
+          exec nh os rollback "$@"
+        '';
+      };
+
+      # `nix run .#lint` — statix (anti-patterns) + deadnix (dead code).
+      # Formatting stays in `nix fmt` so a lint run never rewrites files.
+      mkQualityApps = system: {
+        "lint" = mkShellApp system "lint" (nixQualityTools system) ''
+          target="''${1:-.}"
+          status=0
+          echo "==> statix check $target"
+          statix check "$target" || status=1
+          echo "==> deadnix $target"
+          deadnix --fail "$target" || status=1
+          exit "$status"
+        '';
+      };
     in
     {
       devShells = forDevShellSystems devShell;
-      apps = nixpkgs.lib.genAttrs darwinSystems mkDarwinApps;
+
+      # `nix fmt`. nixfmt-tree (treefmt + nixfmt) rather than bare nixfmt:
+      # `nixfmt --check <dir>` exits 0 even when files are unformatted, and
+      # nixfmt 1.4 deprecates directory arguments outright.
+      formatter = forDevShellSystems (system: nixpkgs.legacyPackages.${system}.nixfmt-tree);
+
+      apps =
+        nixpkgs.lib.genAttrs darwinSystems (system: mkDarwinApps system // mkQualityApps system)
+        // nixpkgs.lib.genAttrs linuxSystems (system: mkNixosApps system // mkQualityApps system);
 
       darwinConfigurations = nixpkgs.lib.genAttrs darwinSystems (system: let
         user = "elijah";

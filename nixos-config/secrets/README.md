@@ -9,6 +9,8 @@ the SSH-host-derived age key of the host that consumes it.
 - `sleeper-service/telegram-bot.env` — personal Telegram bot (dotenv)
 - `sleeper-service/acme-namesilo.env` — NameSilo DNS-01 creds for ACME (dotenv)
 - `sleeper-service/kodo-api.env` — kodo Go API env (dotenv)
+- `wsl/telegram-disk-alert.env` — nervous energy token/chat ID for host-local
+  disk alerts on `contents-may-differ` (dotenv)
 - `darwin/nix-codesign.p12` — self-signed code-signing identity (binary), used
   to sign Yabai.app/Skhd.app with a stable, cert-pinned designated requirement
   so their Accessibility grant survives rebuilds. Consumed by
