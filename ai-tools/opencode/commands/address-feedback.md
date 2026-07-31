@@ -1,6 +1,6 @@
 ---
 description: Address reviewer feedback on a design document
-agent: plan
+agent: build
 ---
 
 Here is feedback from reviewers on $ARGUMENTS

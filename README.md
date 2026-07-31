@@ -157,15 +157,37 @@ nix run --extra-experimental-features 'nix-command flakes' .#build-switch
 
 ## NixOS on WSL
 
-For NixOS running in WSL, the target is `.#contents-may-differ` (on the box
-itself a bare `--flake .` also resolves, since the attr matches the hostname):
+Rebuilds go through [nh](https://github.com/nix-community/nh), which adds a
+readable build view and prints a generation diff after every switch. The flake
+apps are the same verbs darwin uses:
+
+```bash
+nix run .#build-switch   # build + activate + generation diff
+nix run .#build          # build only
+nix run .#rollback       # roll back to the previous generation
+```
+
+Or directly, from anywhere (`NH_FLAKE` points at this repo):
+
+```bash
+nh os switch
+nh os info               # list generations
+```
+
+The hostname (`contents-may-differ`) matches the flake attribute, so nh selects
+the right `nixosConfigurations` entry with no `-H` flag. The underlying raw form
+still works if needed:
 
 ```bash
 sudo nixos-rebuild switch --flake .#contents-may-differ
 ```
 
-To build without switching:
+## Linting and formatting nix
 
 ```bash
-nixos-rebuild build --flake .#contents-may-differ
+nix run .#lint           # statix + deadnix (optional path arg, default .)
+nix fmt                  # nixfmt via nixfmt-tree
 ```
+
+Both are also on `PATH` inside the repo via direnv (`use flake ./nixos-config`).
+Note the lint backlog is not yet clean — see `docs/design/dev-tooling-roadmap.md`.

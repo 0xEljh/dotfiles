@@ -41,6 +41,17 @@ Rules:
 - Design documents ought to contain enough context to be read and reviewed as a standalone file.
 - When a plan should be persisted, write it as a `.md` file in `docs/design/` so it is easy to review, edit, and reuse across sessions.
 
+## Documentation and comments
+
+Design documents are an internal function and hence intentionally not tracked on git (but rather, Notion).
+
+Unless stated otherwise, all surrounding documentation and comments should not make references to design documents.
+
+Additionally, all documentation and comments should strive to be self-contained:
+
+- Readers should not have to read external sources it points to to understand the contents. Sources are for reference and further context.
+- There should not be references to other local directories and repos. If it can't be found publicly, it probably shouldn't be a reference.
+
 ## Test Driven Development (TDD)
 
 If the codebase has tests, then TDD should be adopted. That is, tests should be written first, then code.
