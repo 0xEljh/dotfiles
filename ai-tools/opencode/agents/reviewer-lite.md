@@ -1,7 +1,11 @@
 ---
-description: Reviews proposals, plans, and designs. This kimi-k2.7 driven agent is intended for independent, lightweight reviews. Intended for go-wide consistency and correctness checks.
+description:
+  Reviews proposals, plans, and designs. This DeepSeek driven agent is intended
+  for independent, lightweight reviews. Intended for go-wide consistency and
+  correctness checks.
 mode: subagent
-model: opencode-go/kimi-k2.7-code
+model: opencode-go/deepseek-v4-flash
+variant: max
 permission:
   read: allow
   glob: allow
