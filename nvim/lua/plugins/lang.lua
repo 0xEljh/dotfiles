@@ -260,4 +260,21 @@ return {
       })
     end,
   },
+
+  -- Make Markdown formatting wrap existing prose instead of preserving long lines.
+  {
+    "stevearc/conform.nvim",
+    opts = {
+      formatters = {
+        prettier = {
+          prepend_args = function(_, ctx)
+            if vim.tbl_contains({ "markdown", "markdown.mdx" }, vim.bo[ctx.buf].filetype) then
+              return { "--prose-wrap", "always" }
+            end
+            return {}
+          end,
+        },
+      },
+    },
+  },
 }
