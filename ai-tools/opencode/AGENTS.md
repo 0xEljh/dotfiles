@@ -1,5 +1,17 @@
 ## Review Flow
 
-After you have drafted a design, run it by the reviewer agent to find gaps or even alternative approaches.
-Note: reviewers can be wrong. For each point surfaced by reviewers, you can accept or push back on them.
-Escalate any non-trivial decisions to me. You are encouraged to use the `question` tool for this.
+After drafting a non-trivial design, run the default `reviewer` for broad
+consistency and correctness. Use the other reviewers only when their trigger
+applies:
+
+- `reviewer-alt`: material architecture, API, or hard-to-reverse decisions
+- `reviewer-systems`: large, stateful, distributed, migration, or rollout work
+- `reviewer-redteam`: security, concurrency, destructive, or public boundaries
+- `reviewer-referee`: reconcile two or more reports or disputed findings
+
+Do not run the full portfolio by default. When multiple discovery reviewers are
+warranted, run them independently and preferably in parallel; do not share one
+reviewer's findings with another before `reviewer-referee` synthesis.
+
+Reviewers can be wrong. Accept or push back on each finding with justification.
+Escalate non-trivial decisions to me using the `question` tool.

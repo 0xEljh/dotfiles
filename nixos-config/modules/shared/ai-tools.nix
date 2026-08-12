@@ -130,6 +130,7 @@ in
 
     # OpenCode
     link_config "$AI_TOOLS/opencode/opencode.json" "$HOME/.config/opencode/opencode.json"
+    link_config "$AI_TOOLS/opencode/tui.jsonc"     "$HOME/.config/opencode/tui.jsonc"
     link_skills "$AI_TOOLS/shared/skills"          "$HOME/.config/opencode/skills"
     link_config "$AI_TOOLS/opencode/agents"        "$HOME/.config/opencode/agents"
     link_config "$AI_TOOLS/opencode/commands"      "$HOME/.config/opencode/commands"
