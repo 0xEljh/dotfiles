@@ -15,3 +15,31 @@ reviewer's findings with another before `reviewer-referee` synthesis.
 
 Reviewers can be wrong. Accept or push back on each finding with justification.
 Escalate non-trivial decisions to me using the `question` tool.
+
+## Implementation Review
+
+After implementation and verification, run `implementation-reviewer` for:
+
+- Non-trivial observable behavior changes.
+- Correctness-sensitive bug fixes.
+- Security, concurrency, persistence, destructive-operation, or public
+  interface changes.
+- Material changes whose tests are new or substantially rewritten.
+
+Skip implementation review by default for:
+
+- Documentation-only changes.
+- Renames, moves, formatting, and mechanical refactors.
+- Deletions with no replacement behavior.
+- Disposable scripts, demonstrations, or evaluations.
+
+When classification is ambiguous, run the review. Frontload a complete review
+packet containing the intended behavior, acceptance criteria and verification
+strategy, target kind and complete diff with explicit diff semantics, changed
+paths, verification evidence, known limitations, and requested focus. The
+reviewer performs static inspection and does not independently rerun commands.
+
+If review requests changes, accept or reject each finding with evidence. Make
+accepted corrections, rerun verification, and rerun review after material
+changes. Keep the reviewer decision, finding dispositions, and post-correction
+verification evidence in the conversation.

@@ -4,7 +4,7 @@ description:
   Use for evidence checking and decisions, not another discovery pass. Has no
   access to explore subagents; frontload relevant review context when possible.
 mode: subagent
-model: opencode-go/gpt-5.6-sol
+model: openai/gpt-5.6-luna
 variant: max
 permission:
   read: allow

@@ -85,15 +85,34 @@ regression.
 
 - If new or corrected behavior warrants a test, use Red-Green-Refactor: write
   the smallest meaningful test first; confirm it fails for the expected reason,
-  then passes after the change.
+  confirm it rejects at least one credible wrong behavior, then make it pass.
 - For changes with no behavior to specify, such as renames, moves, refactors,
   and deletions, add no test; run relevant existing tests or verify directly.
 - Do not test internal implementation shape or assert that an old name or
   deleted symbol remains absent.
+- When environmental effects make important behavior difficult to test, prefer
+  keeping that behavior in testable code and placing the effects behind a small
+  adapter. This is a boundary heuristic, not a mandate to add layers.
 - For disposable one-off scripts, demonstrations, and evaluations, direct
   execution and observed output are normally sufficient.
 - Back concurrency claims with jitter/stress tests and performance claims with
   benchmarks.
+
+## Verification Evidence
+
+Completion evidence must state the verification decision and its exact outcome.
+Keep it concise and quote decisive output instead of full logs. Omit fields that
+do not apply, but never omit the decision or the evidence supporting it.
+
+```text
+Verification:
+- Decision: new red-green test | existing tests | direct observation |
+  no test warranted
+- Red evidence: failing command and expected failure, when applicable
+- Green evidence: exact command and result
+- Additional checks: lint, type check, build, benchmark, or stress test
+- Limitations: relevant checks not run and why
+```
 
 ## Maximise exploration/search during planning
 

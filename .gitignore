@@ -26,3 +26,7 @@ __pycache__
 .DS_Store
 # direnv cache
 .direnv/
+
+# nix build outputs; these are GC roots and pin whole closures if committed
+result
+result-*

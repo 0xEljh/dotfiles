@@ -5,7 +5,7 @@ description:
   once per session. Has no access to explore subagents; frontload relevant
   review context when possible.
 mode: subagent
-model: opencode-go/kimi-k3
+model: kimi-for-coding/k3
 variant: max
 permission:
   read: allow

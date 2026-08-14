@@ -1,11 +1,11 @@
 ---
 description:
-  Adversarial Qwen3.8 Max pre-mortem reviewer for security, concurrency,
+  Adversarial DeepSeek V4 Flash pre-mortem reviewer for security, concurrency,
   destructive operations, and public interfaces. Use selectively for risk. Has
   no access to explore subagents; frontload relevant review context when
   possible.
 mode: subagent
-model: opencode-go/qwen3.8-max
+model: opencode-go/deepseek-v4-flash
 variant: max
 permission:
   read: allow

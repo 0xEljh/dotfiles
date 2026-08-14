@@ -738,7 +738,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--suppress-output",
         action="store_true",
-        help="Suppress successful output, including the input echo and page URL",
+        help="Suppress the input echo and success messages except the page URL",
     )
     parser.add_argument(
         "--raw", action="store_true", help="Force code-block mode for .md/.mdx"
@@ -844,8 +844,7 @@ def main() -> int:
 
     short_id = page_id.replace("-", "")
     page_url = f"https://www.notion.so/{short_id}"
-    if not args.suppress_output:
-        eprint(f"created: {page_url}")
+    eprint(f"created: {page_url}")
     return 0
 
 

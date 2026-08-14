@@ -119,7 +119,7 @@ Examples:
 - echo "hello" | notion-cat
 - notion-cat README.md
 - rg "TODO" -n . | notion-cat --title "TODO scan"
-- notion-cat --suppress-output README.md  # omit document echo and success messages
+- notion-cat --suppress-output README.md  # omit document echo, but print the page URL
 
 May add other versions and integrate with ai-tools in the future.
 
