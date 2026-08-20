@@ -2,12 +2,11 @@
 description:
   Static post-implementation reviewer for changed behavior, test adequacy, and
   supplied verification evidence. Use only with a complete parent-built review
-  packet; cannot execute commands or independently reproduce results. This agent
-  is a heavy-weight variant. Use sparingly to review deep changes.
+  packet; cannot execute commands or independently reproduce results.
 mode: subagent
 hidden: true
-model: zai-coding-plan/glm-5.3
-variant: high
+model: opencode-go/deepseek-v4-flash
+variant: max
 permission:
   "*": deny
   read: allow
