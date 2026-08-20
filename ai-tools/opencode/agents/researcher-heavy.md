@@ -1,11 +1,11 @@
 ---
-name: researcher
+name: researcher-heavy
 description:
-  Fast primary-source research for precise technical questions. Produces one
-  cited Markdown artifact under docs/research/.
+  Deep primary-source research for difficult or consequential technical
+  questions. Produces one cited Markdown artifact under docs/research/.
 mode: subagent
-model: opencode-go/deepseek-v4-flash
-variant: max
+model: openai/gpt-5.6-sol
+variant: medium
 permission:
   "*": deny
   read: allow

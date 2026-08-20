@@ -1,81 +1,43 @@
-## Design Decisions (IMPORTANT)
+## Making decisions
 
 - You may propose and endorse design decisions, solutions, and design patterns
   as you deem fit, with adequate justification
-- **MANDATORY**: When justifying a decision, state alternatives and their pros,
-  cons, and trade-offs so that a "real choice" was made.
-- Avoid over-engineering; keep solutions focused (which often to have a balanced
-  approach to managing coupling, abstractions and dependencies).
-- Avoid speculative runtime type checks, especially in Python, and other
-  defensive guards inside trusted code. Validate untrusted input at system
-  boundaries; otherwise rely on established contracts.
+- When justifying a decision, state alternatives that were considered, their
+  pros & cons & trade-offs so that a "real choice" was made.
+- Slant for decisions: avoid over-engineering; keep solutions focused (which
+  often means balanced approach to managing coupling, abstractions and
+  dependencies). (Long term) complexity is the enemy.
 - Unless stated otherwise, backwards compatibility is NEVER a consideration.
   Assume that we are not working with a production environment and can always
-  wipe all data and start afresh.
+  wipe all data and start afresh. No decision should be based on backwards
+  compatibility.
+- The majority of what's written here, spoken by the user, or written up in
+  skill files are guidelines, not rules. Depart from it when doing would improve
+  the outcome of what you're doing (but report on this both during and after).
 
-If this was asked during a planning phase or discussion with the user, you
-should provide at least 2-3 design/implementation approaches wherever
-applicable. This is NOT optional.
-
-For each approach:
-
-```
-
-APPROACH A: [Name]
-  Summary: [1-2 sentences]
-  Complexity: [Low/Med/High]
-  Risk:    [Low/Med/High]
-  Pros:    [2-3 bullets]
-  Cons:    [2-3 bullets]
-  Reuses:  [existing code/patterns leveraged]
-
-APPROACH B: [Name]
-  ...
-
-APPROACH C: [Name] (optional — include if a meaningfully different path exists)
-  ...
-```
-
-Rules:
-
-- At least 2 approaches required. 3+ preferred for non-trivial designs.
-- One must be the **"minimal viable"** (fewest files, smallest diff, ships
-  fastest).
-- One must be the **"ideal architecture"** (best long-term trajectory, most
-  elegant).
-- One can be **creative/lateral** (unexpected approach, different framing of the
-  problem).
-- Note that "implementation effort" is not at all a consideration. We are
-  instead concerned with complexity introduced into the system and how it would
-  affect extensibility/maintainability.
+Break any of these rules sooner than say anything outright barbarous. —George
+Orwell, "Politics and the English Language"
 
 ## Design Documents
 
-- Cross reference online documentation and codebases while planning or writing
-  design documents.
-- Include links to the relevant documentation and code snippets in these
-  plans/docs. Plans may sometimes be handed off to an engineering team for
-  review and implementation.
-- Design documents ought to contain enough context to be read and reviewed as a
-  standalone file.
-- When a plan should be persisted, write it as a `.md` file in `docs/design/` so
-  it is easy to review, edit, and reuse across sessions.
+- Design documents are an internal function that live in the docs/design/ folder
+  and are intentionally kept out of git (but not gitignored either). Instead, we
+  track and version via Notion with the custom cli command `notion-cat`.
+- Any feature that deserves review or that might need building in phases should
+  live in a design document.
+- Use the `design` skill when planning and writing up these documents.
+- As an internal only document, all other documentation and code comments should
+  not make references to design documents
 
 ## Documentation and comments
 
-Design documents are an internal function and hence intentionally not tracked on
-git (but rather, Notion).
+All documentation and comments should strive to be self-contained:
 
-Unless stated otherwise, all surrounding documentation and comments should not
-make references to design documents.
-
-Additionally, all documentation and comments should strive to be self-contained:
-
-- Readers should not have to read external sources it points to to understand
-  the contents. Sources are for reference and further context.
-- There should not be references to other local directories and repos. If it
-  can't be found publicly, it probably shouldn't be a reference. Strive instead
-  to be sufficiently descriptive.
+- Readers should not have to read external reference to to understand the
+  content of what is written. Sources are for reference and further context.
+- In most cases, there should not be references made to other local directories
+  and repos. If it can't be found publicly, it probably shouldn't be a
+  reference. Strive instead to be sufficiently descriptive.
 
 ## Testing Discretion
 
@@ -98,22 +60,6 @@ regression.
 - Back concurrency claims with jitter/stress tests and performance claims with
   benchmarks.
 
-## Verification Evidence
-
-Completion evidence must state the verification decision and its exact outcome.
-Keep it concise and quote decisive output instead of full logs. Omit fields that
-do not apply, but never omit the decision or the evidence supporting it.
-
-```text
-Verification:
-- Decision: new red-green test | existing tests | direct observation |
-  no test warranted
-- Red evidence: failing command and expected failure, when applicable
-- Green evidence: exact command and result
-- Additional checks: lint, type check, build, benchmark, or stress test
-- Limitations: relevant checks not run and why
-```
-
 ## Maximise exploration/search during planning
 
 MAXIMISE SEARCH EFFORTS. Launch multiple background agents in parallel. Look up
@@ -133,6 +79,17 @@ subagent so that they can respond concisely. For agents assigned search tasks,
 set an appropriate timeout for them (~10 minutes). Tasks should have been
 sufficiently well defined to avoid timeouts.
 
+### Escalation
+
+It is always okay to stop and say "this is too hard", "I don't have enough
+context"
+
+Bad work is worse than no work. You will not be penalized for escalating.
+
+- If you have attempted a task 3 times without success, STOP and escalate.
+- If you are uncertain about a security-sensitive change, STOP and escalate.
+- If the scope of work exceeds what you can verify, STOP and escalate.
+
 ## Completion Status Protocol
 
 When completing a workflow/task, report status using one of:
@@ -144,6 +101,8 @@ When completing a workflow/task, report status using one of:
 - **NEEDS_CONTEXT** — Missing information required to continue. State exactly
   what you need.
 
+### Concluding Summary
+
 When providing a summary, don't just wave around concepts. Provide snippets of
 evidence/quotes. This can be verbatim lines of code, docs, equations etc. Don't
 overuse jargon in the summary. The summary should be something that an undergrad
@@ -152,22 +111,18 @@ with little prior context can comprehend.
 If anything was written/implemented, point the user towards the core substance
 of it. Then give a short breakdown of what changes should be read vs skimmed.
 
-### Escalation
+### Verification Evidence
 
-It is always OK to stop and say "this is too hard for me" or "I'm not confident
-in this result."
-
-Bad work is worse than no work. You will not be penalized for escalating.
-
-- If you have attempted a task 3 times without success, STOP and escalate.
-- If you are uncertain about a security-sensitive change, STOP and escalate.
-- If the scope of work exceeds what you can verify, STOP and escalate.
-
-Escalation format:
+Completion evidence must state the verification decision and its exact outcome.
+Keep it concise and quote decisive output instead of full logs. Omit fields that
+do not apply, but never omit the decision or the evidence supporting it.
 
 ```
-STATUS: BLOCKED | NEEDS_CONTEXT
-REASON: [1-2 sentences]
-ATTEMPTED: [what you tried]
-RECOMMENDATION: [what the user should do next]
+Verification:
+- Decision: new red-green test | existing tests | direct observation |
+  no test warranted
+- Red evidence: failing command and expected failure, when applicable
+- Green evidence: exact command and result
+- Additional checks: lint, type check, build, benchmark, or stress test
+- Limitations: relevant checks not run and why
 ```
