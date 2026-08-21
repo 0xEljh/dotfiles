@@ -27,6 +27,15 @@
     # run on every secret edit risks LE rate limits for no benefit.
   };
 
+  sops.secrets."dev-3000.password" = {
+    sopsFile = ../../secrets/sleeper-service/dev-3000-auth.yaml;
+    key = "password";
+    restartUnits = [
+      "dev-3000-auth-init.service"
+      "nginx.service"
+    ];
+  };
+
   sops.secrets."kodo-api.env" = {
     format = "dotenv";
     sopsFile = ../../secrets/sleeper-service/kodo-api.env;

@@ -175,6 +175,47 @@ class AgentHarnessPortfolioTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("arxiv-mcp-server[pdf]==0.5.0", service)
 
+    def test_retired_kodo_services_are_disabled_and_private(self) -> None:
+        services = (
+            ROOT / "nixos-config/hosts/sleeper-service/services/web-apps.nix"
+        ).read_text(encoding="utf-8")
+        self.assertIn("kodo-api = {\n      enable = false;", services)
+        self.assertIn("kodo-ml = {\n      enable = false;", services)
+
+        for relative_path in (
+            "nixos-config/hosts/sleeper-service/services/nginx-acme.nix",
+            "nixos-config/hosts/sleeper-service/services/telegram-bot.nix",
+            "scripts/personal_telegram_bot/personal_telegram_bot/config.py",
+        ):
+            text = (ROOT / relative_path).read_text(encoding="utf-8")
+            self.assertNotIn("kodo-api", text, relative_path)
+            self.assertNotIn("kodo-ml", text, relative_path)
+
+        self.assertTrue(
+            (ROOT / "nixos-config/secrets/sleeper-service/kodo-api.env").exists()
+        )
+
+    def test_public_dev_3000_requires_sops_managed_basic_auth(self) -> None:
+        nginx = (
+            ROOT / "nixos-config/hosts/sleeper-service/services/nginx-acme.nix"
+        ).read_text(encoding="utf-8")
+        secrets = (
+            ROOT / "nixos-config/hosts/sleeper-service/secrets.nix"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            'basicAuthFile = "/run/dev-3000-auth/current/htpasswd";',
+            nginx,
+        )
+        self.assertIn('sops.secrets."dev-3000.password"', secrets)
+        self.assertNotIn('sops.secrets."dev-3000.htpasswd"', secrets)
+        self.assertTrue(
+            (
+                ROOT
+                / "nixos-config/secrets/sleeper-service/dev-3000-auth.yaml"
+            ).exists()
+        )
+
     def test_arxiv_pins_the_mcp_sdk_below_2(self) -> None:
         """arxiv-mcp-server 0.5.0 declares `mcp>=1.27.0` with no upper bound.
 

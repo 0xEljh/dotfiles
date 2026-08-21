@@ -1,5 +1,9 @@
 from personal_telegram_bot.config import parse_user_ids
-from personal_telegram_bot.bot import is_authorized, parse_tpot_callback_data
+from personal_telegram_bot.bot import (
+    is_authorized,
+    is_private_owner_chat,
+    parse_tpot_callback_data,
+)
 
 
 def test_parse_single_id():
@@ -24,6 +28,13 @@ def test_unknown_user_rejected():
 
 def test_empty_allowlist_rejects_everyone():
     assert not is_authorized(448383615, frozenset())
+
+
+def test_private_owner_chat_requires_matching_user_and_default_chat():
+    assert is_private_owner_chat(123, 123, "private", 123, frozenset({123}))
+    assert not is_private_owner_chat(123, -456, "group", -456, frozenset({123}))
+    assert not is_private_owner_chat(123, 456, "private", 456, frozenset({123}))
+    assert not is_private_owner_chat(999, 999, "private", 999, frozenset({123}))
 
 
 def test_tpot_callback_parser_accepts_known_actions():

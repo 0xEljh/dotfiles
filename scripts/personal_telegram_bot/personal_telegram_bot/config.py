@@ -22,8 +22,6 @@ DEFAULT_LIFE_DB_PATH = (
 # HEALTH_SYSTEMD_UNITS / HEALTH_HTTP_URLS (comma-separated).
 DEFAULT_HEALTH_UNITS = [
     "nginx.service",
-    "kodo-api.service",
-    "kodo-ml.service",
     "vamp-tutor-backend.service",
     "vamp-tutor-website.service",
     "digital-garden.service",
@@ -97,6 +95,10 @@ class Config:
     health_disk_paths: tuple[str, ...] = ("/",)
     health_disk_warning_percent: int = 80
     health_disk_critical_percent: int = 90
+    dev3000_url: str = "https://dev-3000.0xeljh.com"
+    dev3000_username: str = "dev"
+    dev3000_auth_dir: Path = Path("/run/dev-3000-auth")
+    dev3000_htpasswd_command: str = "htpasswd"
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -161,4 +163,8 @@ class Config:
             health_disk_paths=tuple(_parse_csv(env.get("HEALTH_DISK_PATHS", "/"))),
             health_disk_warning_percent=int(env.get("HEALTH_DISK_WARNING_PERCENT", "80")),
             health_disk_critical_percent=int(env.get("HEALTH_DISK_CRITICAL_PERCENT", "90")),
+            dev3000_url=env.get("DEV3000_URL", "https://dev-3000.0xeljh.com"),
+            dev3000_username=env.get("DEV3000_USERNAME", "dev"),
+            dev3000_auth_dir=Path(env.get("DEV3000_AUTH_DIR", "/run/dev-3000-auth")),
+            dev3000_htpasswd_command=env.get("DEV3000_HTPASSWD_COMMAND", "htpasswd"),
         )

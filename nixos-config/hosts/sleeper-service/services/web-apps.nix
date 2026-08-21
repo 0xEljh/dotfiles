@@ -68,6 +68,7 @@ in
 
   systemd.services = {
     kodo-api = {
+      enable = false;
       description = "Kodo Go API";
       after = [
         "network-online.target"
@@ -135,6 +136,7 @@ in
     };
 
     kodo-ml = {
+      enable = false;
       description = "Kodo ML API (FastAPI)";
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];

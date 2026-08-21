@@ -5,6 +5,8 @@ let
   homeDir = "/home/${user}";
   botDir = "${homeDir}/dotfiles/scripts/personal_telegram_bot";
   envFile = config.sops.secrets."telegram-bot.env".path;
+  dev3000AuthDir = "/run/dev-3000-auth";
+  dev3000PasswordFile = config.sops.secrets."dev-3000.password".path;
   # Plaintext dotenv the aw/dotfiles-sync pipeline already maintains. Reused
   # (optional — `-` prefix below) so the evening standdown's deep link can read
   # the Time-Accountant Notion secret + datasource id without duplicating them
@@ -72,13 +74,68 @@ let
 in
 {
   systemd.services = {
+    dev-3000-auth-init = {
+      description = "Initialize runtime credentials for dev-3000 sharing";
+      before = [
+        "nginx.service"
+        "personal-telegram-bot.service"
+      ];
+      wantedBy = [ "multi-user.target" ];
+      unitConfig.ConditionPathExists = [ dev3000PasswordFile ];
+      path = [
+        pkgs.apacheHttpd
+        pkgs.coreutils
+        pkgs.util-linux
+      ];
+      script = ''
+        install -d -o ${user} -g nginx -m 2750 ${dev3000AuthDir}
+        install -d -o ${user} -g nginx -m 2750 ${dev3000AuthDir}/generations
+        touch ${dev3000AuthDir}/lock
+        chown ${user}:nginx ${dev3000AuthDir}/lock
+        chmod 0600 ${dev3000AuthDir}/lock
+
+        exec 9>${dev3000AuthDir}/lock
+        flock 9
+
+        generation="$(mktemp -d ${dev3000AuthDir}/generations/baseline.XXXXXXXX)"
+        chown ${user}:nginx "$generation"
+        chmod 2750 "$generation"
+        install -o ${user} -g users -m 0600 ${dev3000PasswordFile} "$generation/password"
+        htpasswd -niB dev < ${dev3000PasswordFile} > "$generation/htpasswd"
+        chown ${user}:nginx "$generation/htpasswd"
+        chmod 0640 "$generation/htpasswd"
+
+        rm -f ${dev3000AuthDir}/current.next
+        ln -s "generations/$(basename "$generation")" ${dev3000AuthDir}/current.next
+        mv -Tf ${dev3000AuthDir}/current.next ${dev3000AuthDir}/current
+
+        for candidate in ${dev3000AuthDir}/generations/*; do
+          if [ "$candidate" != "$generation" ]; then
+            rm -rf -- "$candidate"
+          fi
+        done
+      '';
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        UMask = "0027";
+      };
+    };
+
     personal-telegram-bot =
       let base = botService "run";
       in base // {
         description = "Personal Telegram bot (long-polling daemon)";
+        after = base.after ++ [ "dev-3000-auth-init.service" ];
+        wants = base.wants ++ [ "dev-3000-auth-init.service" ];
         wantedBy = [ "multi-user.target" ];
         serviceConfig = base.serviceConfig // {
           Type = "simple";
+          Environment = base.serviceConfig.Environment ++ [
+            "DEV3000_AUTH_DIR=${dev3000AuthDir}"
+            "DEV3000_HTPASSWD_COMMAND=${pkgs.apacheHttpd}/bin/htpasswd"
+          ];
+          SupplementaryGroups = [ "nginx" ];
           Restart = "always";
           RestartSec = "5s";
           KillSignal = "SIGINT";
@@ -143,8 +200,6 @@ in
 
     nginx = notifyOnFailure;
     arxiv-mcp = notifyOnFailure;
-    kodo-api = notifyOnFailure;
-    kodo-ml = notifyOnFailure;
     vamp-tutor-backend = notifyOnFailure;
     vamp-tutor-website = notifyOnFailure;
     digital-garden = notifyOnFailure;

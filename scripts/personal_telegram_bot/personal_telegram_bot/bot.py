@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import subprocess
 
 from telegram import Update
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
 from .config import Config
 from .db import StateDB
+from .dev3000_auth import format_credentials, read_credentials, rotate_credentials
 from .formatters import format_health_summary
 from .providers.aw_hours import check_aw_freshness
 from .providers.health import run_all
@@ -16,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 HELP_TEXT = """Commands:
 /status — service health and last digests
+/dev3000 [rotate] — show or rotate dev-sharing credentials
 /ideate <topic> — draft post seeds from a topic
 /improve <draft> — punch up a rough draft (or reply to one)
 /score <text> — score whether text is worth posting
@@ -28,6 +31,21 @@ classification at :10 past the hour."""
 
 def is_authorized(user_id: int | None, allowed: frozenset[int]) -> bool:
     return user_id is not None and user_id in allowed
+
+
+def is_private_owner_chat(
+    user_id: int | None,
+    chat_id: int | None,
+    chat_type: str | None,
+    default_chat_id: int,
+    allowed: frozenset[int],
+) -> bool:
+    return (
+        is_authorized(user_id, allowed)
+        and chat_type == "private"
+        and chat_id == default_chat_id
+        and chat_id == user_id
+    )
 
 
 def _guard(handler):
@@ -84,6 +102,48 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if row:
             lines.append(f"Last {kind}: {row['date_key']} (sent {row['sent_at']})")
     await update.message.reply_text("\n\n".join(lines))
+
+
+@_guard
+async def cmd_dev3000(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    cfg: Config = context.bot_data["config"]
+    user = update.effective_user
+    chat = update.effective_chat
+    if not is_private_owner_chat(
+        user.id if user else None,
+        chat.id if chat else None,
+        chat.type if chat else None,
+        cfg.default_chat_id,
+        cfg.allowed_user_ids,
+    ):
+        logger.warning("Ignoring dev3000 credential request outside owner private chat")
+        return
+
+    args = [arg.lower() for arg in context.args]
+    if args not in ([], ["rotate"]):
+        await update.message.reply_text("Usage: /dev3000 [rotate]")
+        return
+
+    try:
+        if args == ["rotate"]:
+            credentials = await asyncio.to_thread(
+                rotate_credentials,
+                cfg.dev3000_auth_dir,
+                cfg.dev3000_username,
+                cfg.dev3000_htpasswd_command,
+            )
+        else:
+            credentials = await asyncio.to_thread(
+                read_credentials,
+                cfg.dev3000_auth_dir,
+                cfg.dev3000_username,
+            )
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        logger.error("dev3000 credential operation failed: %s", type(exc).__name__)
+        await update.message.reply_text("dev-3000 credentials are unavailable.")
+        return
+
+    await update.message.reply_text(format_credentials(cfg.dev3000_url, credentials))
 
 
 def _require_tpot_config(cfg: Config) -> tuple[str, str] | None:
@@ -248,6 +308,7 @@ def build_application(cfg: Config) -> Application:
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("status", cmd_status))
+    app.add_handler(CommandHandler("dev3000", cmd_dev3000))
     app.add_handler(CommandHandler("ideate", cmd_ideate))
     app.add_handler(CommandHandler("improve", cmd_improve))
     app.add_handler(CommandHandler("score", cmd_score))
@@ -257,6 +318,8 @@ def build_application(cfg: Config) -> Application:
 
 def run(cfg: Config) -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    # httpx logs Telegram Bot API URLs, which contain the bot token in the path.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     app = build_application(cfg)
     logger.info("Starting long-polling daemon")
     app.run_polling(allowed_updates=["message", "callback_query"])

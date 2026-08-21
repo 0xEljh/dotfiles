@@ -51,8 +51,11 @@ in
     '';
 
     virtualHosts = {
+      # Public sharing endpoint; credentials are stored in SOPS, not the Nix store.
+      "dev-3000.0xeljh.com" = (mkProxyHost 3000) // {
+        basicAuthFile = "/run/dev-3000-auth/current/htpasswd";
+      };
       # Ad hoc dev/staging entry points for common local app ports.
-      "dev-3000.0xeljh.com" = mkProxyHost 3000;
       "dev-3001.0xeljh.com" = mkProxyHost 3001;
       "dev-5173.0xeljh.com" = mkProxyHost 5173;
       "dev-8000.0xeljh.com" = mkProxyHost 8000;
@@ -62,27 +65,6 @@ in
       # ChatGPT developer-mode connectors should use:
       #   https://arxiv-mcp.0xeljh.com/mcp
       "arxiv-mcp.0xeljh.com" = mkMcpProxyHost 18003;
-
-      # Kodo Go API. SSE stream endpoint must not be buffered, so it gets a
-      # dedicated regex location that overrides proxy_buffering for that one route.
-      "kodo-api.0xeljh.com" = {
-        enableACME = true;
-        forceSSL = true;
-        locations = {
-          "~ ^/v1/messages/[^/]+/stream$" = {
-            proxyPass = "http://127.0.0.1:18002";
-            extraConfig = ''
-              proxy_buffering off;
-              proxy_cache off;
-              proxy_read_timeout 1h;
-              proxy_send_timeout 1h;
-            '';
-          };
-          "/" = {
-            proxyPass = "http://127.0.0.1:18002";
-          };
-        };
-      };
 
       # Phone life-event webhooks (Sleep as Android, later MacroDroid/OwnTracks).
       # The auth token rides in the URL path because Sleep as Android cannot set
@@ -109,6 +91,11 @@ in
       "www.vamptutor.com" = mkRedirectHost "vamptutor.com";
       "binderapi.vamptutor.com" = mkProxyHost 38127;
     };
+  };
+
+  systemd.services.nginx = {
+    after = [ "dev-3000-auth-init.service" ];
+    wants = [ "dev-3000-auth-init.service" ];
   };
 
   networking.firewall.allowedTCPPorts = [ 80 443 ];
