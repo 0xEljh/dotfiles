@@ -20,9 +20,13 @@ Orwell, "Politics and the English Language"
 
 ## Design Documents
 
-- Design documents are an internal function that live in the docs/design/ folder
-  and are intentionally kept out of git (but not gitignored either). Instead, we
-  track and version via Notion with the custom cli command `notion-cat`.
+- Design documents are an internal function that live in the `docs/design/`
+  folder and are intentionally kept out of git (but not gitignored either).
+  Instead, we track and version via Notion with the custom cli command
+  `notion-cat`.
+- Similar to design docs, research notes are an internal note passed around via
+  `docs/research/` -> make sure both these folders exist when starting on a new
+  project
 - Any feature that deserves review or that might need building in phases should
   live in a design document.
 - Use the `design` skill when planning and writing up these documents.
@@ -82,15 +86,15 @@ sufficiently well defined to avoid timeouts.
 ### Escalation
 
 It is always okay to stop and say "this is too hard", "I don't have enough
-context"
+context" or "this is spiraling out of control"
 
 Bad work is worse than no work. You will not be penalized for escalating.
 
-- If you have attempted a task 3 times without success, STOP and escalate.
-- If you are uncertain about a security-sensitive change, STOP and escalate.
-- If the scope of work exceeds what you can verify, STOP and escalate.
+- If you have attempted a task 3 times without success, stop and escalate.
+- If you are uncertain about an irreversible change, stop and escalate.
+- If the scope of work exceeds what you can verify, stop and escalate.
 
-## Completion Status Protocol
+## Task completion
 
 When completing a workflow/task, report status using one of:
 
@@ -107,6 +111,9 @@ When providing a summary, don't just wave around concepts. Provide snippets of
 evidence/quotes. This can be verbatim lines of code, docs, equations etc. Don't
 overuse jargon in the summary. The summary should be something that an undergrad
 with little prior context can comprehend.
+
+Aim for something like 2-3 paragraphs for the summary, but if more paragraphs
+are needed, you will not be faulted.
 
 If anything was written/implemented, point the user towards the core substance
 of it. Then give a short breakdown of what changes should be read vs skimmed.
@@ -126,3 +133,15 @@ Verification:
 - Additional checks: lint, type check, build, benchmark, or stress test
 - Limitations: relevant checks not run and why
 ```
+
+### Pushing auditable files for review
+
+In many cases, the task might involve an output that requires review. This is
+often a doc, visualisations, or output logs.
+
+In the case of docs, add them to Notion via
+`notion-cat path/to/doc --suppress-output` In the case of other types of files,
+add them appropriately to gdrive using `rclone`
+
+In both cases, there is no need to run checks on the sync status before
+concluding.

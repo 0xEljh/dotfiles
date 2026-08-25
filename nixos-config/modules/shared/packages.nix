@@ -92,7 +92,7 @@ with pkgs; [
   virtualenv
   uv
   ruff
-  pyright
+  ty
   python3Packages.huggingface-hub
 
   # Secret management

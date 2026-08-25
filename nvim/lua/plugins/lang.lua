@@ -5,7 +5,7 @@ local python_root_markers = {
   "setup.cfg",
   "requirements.txt",
   "Pipfile",
-  "pyrightconfig.json",
+  "ty.toml",
   ".git",
 }
 
@@ -57,49 +57,37 @@ local function local_python_for_buf(bufnr)
   return root_dir, local_python(root_dir)
 end
 
-local function apply_local_python_config(config, root_dir)
+local function apply_local_python_env(config, root_dir)
   local python = local_python(root_dir)
   if not python then
     return
   end
 
   local venv_root = vim.fs.dirname(vim.fs.dirname(python))
-  config.settings = vim.tbl_deep_extend("force", config.settings or {}, {
-    python = {
-      pythonPath = python,
-      venv = vim.fs.basename(venv_root),
-      venvPath = vim.fs.dirname(venv_root),
-    },
-  })
   config.cmd_env = vim.tbl_deep_extend("force", config.cmd_env or {}, {
     VIRTUAL_ENV = venv_root,
   })
 end
 
-local function python_lsp_server_config()
+local function ty_lsp_server_config()
   return {
-    root_dir = function(fname)
-      return python_root_dir(fname)
+    mason = false,
+    root_dir = function(bufnr, on_dir)
+      local root_dir = python_root_dir(bufnr)
+      if root_dir then
+        on_dir(root_dir)
+      end
     end,
     settings = {
-      python = {
-        analysis = {
-          autoImportCompletions = true,
-          autoSearchPaths = true,
-          diagnosticMode = "openFilesOnly",
-          useLibraryCodeForTypes = true,
-        },
+      ty = {
+        diagnosticMode = "openFilesOnly",
       },
     },
     before_init = function(_, config)
-      local root_dir = config.root_dir
-      if type(root_dir) == "function" then
-        root_dir = root_dir(vim.api.nvim_buf_get_name(0))
-      end
-      apply_local_python_config(config, root_dir)
+      apply_local_python_env(config, config.root_dir)
     end,
     on_new_config = function(config, root_dir)
-      apply_local_python_config(config, root_dir)
+      apply_local_python_env(config, root_dir)
     end,
   }
 end
@@ -179,16 +167,21 @@ return {
     opts = {
       servers = {
         -- Python
-        pyright = python_lsp_server_config(),
-        basedpyright = python_lsp_server_config(),
+        ty = ty_lsp_server_config(),
         ruff = {
-          root_dir = function(fname)
-            return python_root_dir(fname)
+          root_dir = function(bufnr, on_dir)
+            local root_dir = python_root_dir(bufnr)
+            if root_dir then
+              on_dir(root_dir)
+            end
           end,
         },
         ruff_lsp = {
-          root_dir = function(fname)
-            return python_root_dir(fname)
+          root_dir = function(bufnr, on_dir)
+            local root_dir = python_root_dir(bufnr)
+            if root_dir then
+              on_dir(root_dir)
+            end
           end,
         },
         -- TypeScript/JavaScript

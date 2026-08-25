@@ -189,6 +189,7 @@
           overlays = [
             (import ./overlays/10-yabai-fix.nix)
             (import ./overlays/20-notion-cat.nix)
+            (import ./overlays/30-ty.nix)
             llmAgentsOverlay
           ];
         };
