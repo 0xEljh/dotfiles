@@ -135,9 +135,9 @@ in
       includes = [
         "${windowsSshDir}/config"
       ];
-      matchBlocks = {
+      settings = {
         "*" = {
-          identityFile = [
+          IdentityFile = [
             "${windowsSshDir}/id_ed25519"
           ];
         };

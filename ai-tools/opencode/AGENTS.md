@@ -6,6 +6,8 @@ applies:
 
 - `reviewer-alt`: material architecture, API, or hard-to-reverse decisions
 - `reviewer-systems`: large, stateful, distributed, migration, or rollout work
+- `reviewer-systems-fable`: an additional/alternative independent systems
+  reviewer for critical design decisions
 - `reviewer-redteam`: security, concurrency, destructive, or public boundaries
 - `reviewer-referee`: reconcile two or more reports or disputed findings
 
@@ -22,8 +24,8 @@ After implementation and verification, run `implementation-reviewer` for:
 
 - Non-trivial observable behavior changes.
 - Correctness-sensitive bug fixes.
-- Security, concurrency, persistence, destructive-operation, or public
-  interface changes.
+- Security, concurrency, persistence, destructive-operation, or public interface
+  changes.
 - Material changes whose tests are new or substantially rewritten.
 
 Skip implementation review by default for:

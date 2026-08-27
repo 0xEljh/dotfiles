@@ -1,6 +1,8 @@
 ---
 name: implementation-review
-description: Use only when explicitly delegated a post-implementation code-change review with a complete diff, test-adequacy context, and verification evidence.
+description:
+  Use only when explicitly delegated a post-implementation code-change review
+  with a complete diff, test-adequacy context, and verification evidence.
 ---
 
 # Implementation Review
@@ -62,8 +64,8 @@ Do not:
   adequacy criterion.
 - Report pre-existing defects unless they make the changed behavior unsafe;
   label any such context explicitly.
-- Claim to have run tests, builds, or other commands. The evidence was inspected,
-  not independently reproduced.
+- Claim to have run tests, builds, or other commands. The evidence was
+  inspected, not independently reproduced.
 - Execute tools that run commands: the reviewer must not execute tests, builds,
   shell commands, or external research.
 - Modify state: the reviewer must not edit files, write artifacts, commit, or
@@ -79,8 +81,8 @@ Decision: accepted | changes-requested | needs-context
 ```
 
 Use `changes-requested` when at least one qualifying defect requires correction.
-Use `needs-context` only when packet defects prevent a reliable review. Otherwise
-use `accepted`.
+Use `needs-context` only when packet defects prevent a reliable review.
+Otherwise use `accepted`.
 
 Put findings first, ordered by severity. Every actionable finding must contain:
 
@@ -96,7 +98,7 @@ diff and Verification evidence inspected, and state residual limitations,
 including that commands were not independently run.
 
 The decision applies only to this review cycle. An accepted review supports the
-parent's eventual `DONE` or `DONE_WITH_CONCERNS` status. Requested changes return
-to the parent for disposition, correction, verification, and material re-review.
-Missing context returns to the parent for packet completion or an eventual
-`NEEDS_CONTEXT` status.
+parent's eventual `DONE` or `DONE_WITH_CONCERNS` status. Requested changes
+return to the parent for disposition, correction, verification, and material
+re-review. Missing context returns to the parent for packet completion or an
+eventual `NEEDS_CONTEXT` status.

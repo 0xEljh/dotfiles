@@ -183,6 +183,7 @@
             allowInsecure = false;
             allowUnsupportedSystem = false;
             allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) [
+              "opencode-claude-agent"
               "unrar"
             ];
           };

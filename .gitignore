@@ -18,6 +18,11 @@ ai-tools/shared/skills/.system/
 !nixos-config/packages/context7-cli/package-lock.json
 !nixos-config/packages/playwright-cli/package.json
 !nixos-config/packages/playwright-cli/package-lock.json
+!nixos-config/packages/opencode-claude-agent/package.json
+!nixos-config/packages/opencode-claude-agent/package-lock.json
+!nixos-config/packages/opencode-claude-agent/tsconfig.json
+
+node_modules/
 
 # python files
 __pycache__

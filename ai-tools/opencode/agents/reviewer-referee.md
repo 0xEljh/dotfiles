@@ -1,11 +1,11 @@
 ---
 description:
-  GPT-5.6 Luna referee that reconciles two or more independent review reports.
-  Use for evidence checking and decisions, not another discovery pass. Has no
-  access to explore subagents; frontload relevant review context when possible.
+  Referee that reconciles two or more independent review reports. Use for
+  evidence checking and decisions, not another discovery pass. Has no access to
+  explore subagents; frontload relevant review context when possible.
 mode: subagent
-model: openai/gpt-5.6-luna
-variant: max
+model: kimi-for-coding/k3
+variant: high
 permission:
   read: allow
   glob: allow

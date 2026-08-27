@@ -29,7 +29,9 @@
     "exa_*": "deny",
     "parallel_*": "deny"
   },
-  "plugin": [],
+  "plugin": [
+    "file://{env:HOME}/.local/lib/opencode-claude-agent/dist/plugin.js"
+  ],
   "mcp": {
     "arxiv": {
       "type": "local",

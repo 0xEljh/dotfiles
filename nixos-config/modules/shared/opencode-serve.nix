@@ -128,6 +128,7 @@ in
           "XDG_DATA_HOME=%h/.local/share"
           "XDG_STATE_HOME=%h/.local/state"
           "OPENCODE_ENABLE_EXA=1"
+          "OPENCODE_CLAUDE_CLI=${pkgs.llm-agents.claude-code}/bin/claude"
           "CTX7_TELEMETRY_DISABLED=1"
         ] ++ cfg.extraEnvironment;
         EnvironmentFile = [ "-%h/.config/ai-tools/secrets.env" ];

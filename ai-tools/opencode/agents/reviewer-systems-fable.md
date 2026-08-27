@@ -1,28 +1,14 @@
 ---
 description:
-  Kimi K3 systems reviewer for long-context lifecycle and cross-boundary
-  analysis. Use selectively for large, stateful, or distributed designs. Max
-  once per session. Has no access to explore subagents; frontload relevant
-  review context when possible.
+  Alternative systems reviewer for critical design decisions. Use for
+  consequential, stateful, or distributed designs. Cannot delegate and has only
+  simple read and search tools.
+
 mode: subagent
-model: kimi-for-coding/k3
-variant: max
+model: claude-agent/fable
+variant: high
 permission:
-  read: allow
-  glob: allow
-  grep: allow
-  list: allow
-  bash: deny
-  webfetch: allow
-  websearch: allow
-  lsp: allow
-  skill: allow
-  question: allow
-  edit: deny
-  task:
-    "*": allow
-    general: deny
-    "reviewer*": deny
+  "*": deny
 ---
 
 Conduct a design and systems review.

@@ -42,4 +42,10 @@
     key = "";
     restartUnits = [ "kodo-api.service" ];
   };
+
+  sops.secrets."vamp-tutor-postgres-password" = {
+    sopsFile = ../../secrets/sleeper-service/vamp-tutor-postgres.yaml;
+    key = "password";
+    restartUnits = [ "vamp-tutor-postgres-password-sync.service" ];
+  };
 }

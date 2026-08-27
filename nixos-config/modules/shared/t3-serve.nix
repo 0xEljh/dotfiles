@@ -151,6 +151,7 @@ in
           "XDG_CONFIG_HOME=%h/.config"
           "XDG_CACHE_HOME=%h/.cache"
           "OPENCODE_ENABLE_EXA=1"
+          "OPENCODE_CLAUDE_CLI=${pkgs.llm-agents.claude-code}/bin/claude"
           "CTX7_TELEMETRY_DISABLED=1"
         ];
         # T3 launches the configured harnesses as children; they inherit this

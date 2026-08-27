@@ -2,6 +2,7 @@
 
 let
   huggingFaceCli = pkgs.python3Packages.huggingface-hub;
+  opencodeClaudeAgent = pkgs.callPackage ../../packages/opencode-claude-agent { };
   playwrightCli = pkgs.callPackage ../../packages/playwright-cli { };
 in
 {
@@ -9,6 +10,7 @@ in
     # The built-in OpenCode search remains the zero-schema everyday path.
     # Do not set EXA_API_KEY: OpenCode sends that credential in the URL.
     OPENCODE_ENABLE_EXA = "1";
+    OPENCODE_CLAUDE_CLI = "${pkgs.llm-agents.claude-code}/bin/claude";
     CTX7_TELEMETRY_DISABLED = "1";
   };
 
@@ -38,6 +40,7 @@ in
     HF_CLI=${huggingFaceCli}/bin/hf
     PLAYWRIGHT_CLI=${playwrightCli}/bin/playwright-cli
     PLAYWRIGHT_SKILL=${playwrightCli}/share/playwright-cli/skills/playwright-cli
+    OPENCODE_CLAUDE_AGENT=${opencodeClaudeAgent}/lib/opencode-claude-agent
 
     link_config() {
       local src="$1" dest="$2"
@@ -134,6 +137,7 @@ in
     link_skills "$AI_TOOLS/shared/skills"          "$HOME/.config/opencode/skills"
     link_config "$AI_TOOLS/opencode/agents"        "$HOME/.config/opencode/agents"
     link_config "$AI_TOOLS/opencode/commands"      "$HOME/.config/opencode/commands"
+    link_config "$OPENCODE_CLAUDE_AGENT"           "$HOME/.local/lib/opencode-claude-agent"
     concat_with_separator "$AI_TOOLS/shared/AI.md" "$AI_TOOLS/opencode/AGENTS.md" "$HOME/.config/opencode/AGENTS.md"
 
     # Claude Code

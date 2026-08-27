@@ -5,6 +5,9 @@ let
   vampBackendPort = 18821;
   vampPostgresPort = 5433;
   vampPostgresContainerName = "vamp-tutor-postgres";
+  vampPostgresService = "docker-${vampPostgresContainerName}.service";
+  vampPostgresPassword = config.sops.secrets."vamp-tutor-postgres-password".path;
+  vampPostgresPasswordInContainer = "/run/secrets/vamp-tutor-postgres-password";
   kodoApiPort = 18002;
   kodoMLPort = 18001;
   arxivMcpPort = 18003;
@@ -58,15 +61,76 @@ in
       autoStart = true;
       environment = {
         POSTGRES_USER = "postgres";
-        POSTGRES_PASSWORD = "postgres";
+        POSTGRES_PASSWORD_FILE = vampPostgresPasswordInContainer;
         POSTGRES_DB = "carddb";
       };
       ports = [ "127.0.0.1:${toString vampPostgresPort}:5432" ];
-      volumes = [ "vamp-tutor-pgdata:/var/lib/postgresql/data" ];
+      volumes = [
+        "vamp-tutor-pgdata:/var/lib/postgresql/data"
+        "${vampPostgresPassword}:${vampPostgresPasswordInContainer}:ro"
+      ];
     };
   };
 
+  sops.templates."vamp-tutor-backend.env" = {
+    content = ''
+      DATABASE_URL=postgresql://postgres:${config.sops.placeholder."vamp-tutor-postgres-password"}@127.0.0.1:${toString vampPostgresPort}/carddb
+    '';
+    restartUnits = [ "vamp-tutor-backend.service" ];
+  };
+
   systemd.services = {
+    ${vampPostgresService}.unitConfig.ConditionPathExists = vampPostgresPassword;
+
+    vamp-tutor-postgres-password-sync = {
+      description = "Converge the vamp-tutor PostgreSQL role password";
+      after = [ vampPostgresService ];
+      requires = [ vampPostgresService ];
+      before = [ "vamp-tutor-backend.service" ];
+      wantedBy = [ "multi-user.target" ];
+      unitConfig.ConditionPathExists = vampPostgresPassword;
+
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        TimeoutStartSec = "180s";
+        UMask = "0077";
+      };
+
+      script = ''
+        set -euo pipefail
+
+        password="$(<${vampPostgresPassword})"
+        if [[ ! "$password" =~ ^[A-Za-z0-9._~-]+$ ]]; then
+          echo "PostgreSQL password is empty or is not URI-safe" >&2
+          exit 1
+        fi
+
+        ready=false
+        for _ in {1..60}; do
+          if ${config.virtualisation.docker.package}/bin/docker \
+            exec --user postgres ${vampPostgresContainerName} \
+            pg_isready --quiet --username postgres
+          then
+            ready=true
+            break
+          fi
+          ${pkgs.coreutils}/bin/sleep 1
+        done
+
+        if [[ "$ready" != true ]]; then
+          echo "PostgreSQL did not become ready" >&2
+          exit 1
+        fi
+
+        printf '%s\n%s\n' "$password" "$password" |
+          ${config.virtualisation.docker.package}/bin/docker \
+            exec --interactive --user postgres ${vampPostgresContainerName} \
+            psql --no-psqlrc --no-password --username postgres --dbname postgres \
+              --command '\password postgres'
+      '';
+    };
+
     kodo-api = {
       enable = false;
       description = "Kodo Go API";
@@ -183,9 +247,13 @@ in
       description = "FastAPI app: vamp-tutor-backend";
       after = [
         "network-online.target"
-        "docker-${vampPostgresContainerName}.service"
+        vampPostgresService
+        "vamp-tutor-postgres-password-sync.service"
       ];
-      requires = [ "docker-${vampPostgresContainerName}.service" ];
+      requires = [
+        vampPostgresService
+        "vamp-tutor-postgres-password-sync.service"
+      ];
       wants = [ "network-online.target" ];
       wantedBy = [ "multi-user.target" ];
       unitConfig = {
@@ -196,9 +264,7 @@ in
         Type = "simple";
         User = user;
         WorkingDirectory = "${homeDir}/vamp-tutor-website/backend";
-        Environment = [
-          "DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:${toString vampPostgresPort}/carddb"
-        ];
+        EnvironmentFile = config.sops.templates."vamp-tutor-backend.env".path;
         ExecStartPre = "${pkgs.bash}/bin/bash -c 'for i in {1..60}; do ${pkgs.postgresql}/bin/pg_isready --quiet -h 127.0.0.1 -p ${toString vampPostgresPort} && exit 0; sleep 1; done; exit 1'";
         ExecStart = "${pkgs.uv}/bin/uv run --frozen uvicorn vamp_tutor.main:app --host 127.0.0.1 --port ${toString vampBackendPort}";
         Restart = "always";

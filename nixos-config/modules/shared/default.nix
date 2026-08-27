@@ -10,6 +10,7 @@
       allowUnsupportedSystem = false;
       # Allow only specific unfree packages (security: explicit rather than blanket permission)
       allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) [
+        "opencode-claude-agent"
         "unrar"
       ];
     };

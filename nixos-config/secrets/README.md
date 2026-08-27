@@ -8,7 +8,9 @@ the SSH-host-derived age key of the host that consumes it.
 
 - `sleeper-service/telegram-bot.env` — personal Telegram bot (dotenv)
 - `sleeper-service/acme-namesilo.env` — NameSilo DNS-01 creds for ACME (dotenv)
+- `sleeper-service/dev-3000-auth.yaml` — shared password for the dev-3000 proxy
 - `sleeper-service/kodo-api.env` — kodo Go API env (dotenv)
+- `sleeper-service/vamp-tutor-postgres.yaml` — vamp-tutor PostgreSQL password
 - `wsl/telegram-disk-alert.env` — nervous energy token/chat ID for host-local
   disk alerts on `contents-may-differ` (dotenv)
 - `darwin/nix-codesign.p12` — self-signed code-signing identity (binary), used
@@ -47,7 +49,7 @@ Then rebuild; `restartUnits` restarts the consuming service automatically
 
 - **Rotate** the values that previously sat on disk in plaintext, then update
   via `sops`: Telegram bot token, Notion token, NameSilo API key, OpenRouter
-  key, Supabase JWT secret, DB password in `DATABASE_URL`.
+  key, Supabase JWT secret.
 - Old plaintext files are still on disk as rollback fallback; delete after
   rotation: `~/.config/personal-telegram-bot/bot.env`, `~/.config/kodo/api.env`,
   `/var/lib/secrets/acme-0xeljh.env`.

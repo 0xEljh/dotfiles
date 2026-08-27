@@ -331,16 +331,16 @@
     includes = lib.mkDefault [
       "${config.home.homeDirectory}/.ssh/config_external"
     ];
-    matchBlocks = {
+    settings = {
       "*" = {
-        serverAliveInterval = 60;
-        serverAliveCountMax = 30;
+        ServerAliveInterval = 60;
+        ServerAliveCountMax = 30;
       };
 
       # Example SSH configuration for GitHub
       # "github.com" = {
-      #   identitiesOnly = true;
-      #   identityFile = [
+      #   IdentitiesOnly = true;
+      #   IdentityFile = [
       #     (lib.mkIf pkgs.stdenv.hostPlatform.isLinux
       #       "/home/${config.home.username}/.ssh/id_github"
       #     )
