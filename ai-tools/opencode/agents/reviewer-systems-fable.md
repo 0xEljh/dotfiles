@@ -1,8 +1,7 @@
 ---
 description:
   Alternative systems reviewer for critical design decisions. Use for
-  consequential, stateful, or distributed designs. Cannot delegate and has only
-  simple read and search tools.
+  consequential, stateful, or distributed designs.
 
 mode: subagent
 model: claude-agent/fable

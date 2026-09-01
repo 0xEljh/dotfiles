@@ -1,27 +1,13 @@
 ---
 description:
-  Default reviewer for broad consistency and correctness checks of proposals,
-  plans, and designs. Use liberally. Has no access to explore subagents;
-  frontload relevant review context when possible.
+  Maximum-depth reviewer for broad consistency and correctness checks of
+  proposals, plans, and designs. Use selectively when an additional expensive
+  pass is justified; frontload relevant review context when possible.
 mode: subagent
-model: zai-coding-plan/glm-5.3-flash
-variant: max
+model: claude-agent/fable
+variant: high
 permission:
-  read: allow
-  glob: allow
-  grep: allow
-  list: allow
-  bash: deny
-  webfetch: allow
-  websearch: allow
-  lsp: allow
-  skill: allow
-  question: allow
-  edit: deny
-  task:
-    "*": allow
-    general: deny
-    "reviewer*": deny
+  "*": deny
 ---
 
 Perform a breadth-first review of the proposal and its relevant repository

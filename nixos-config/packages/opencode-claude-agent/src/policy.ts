@@ -1,9 +1,13 @@
 import { lstat, realpath, stat } from "node:fs/promises"
 import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path"
 
-export const AGENT_NAME = "reviewer-systems-fable"
 export const AUTH_SENTINEL = "claude-agent-cli-authenticated"
 export const CLIENT_APP = "opencode-claude-agent/0.1.0"
+
+const ALLOWED_AGENT_NAMES = new Set([
+  "reviewer-max",
+  "reviewer-systems-fable",
+])
 
 const ENV_ALLOWLIST = new Set([
   "HOME",
@@ -50,7 +54,7 @@ export function sanitizeClaudeEnvironment(
 }
 
 export function assertAllowedAgent(agent: string | undefined): void {
-  if (agent !== AGENT_NAME) {
+  if (!agent || !ALLOWED_AGENT_NAMES.has(agent)) {
     throw new Error(`Agent ${agent ?? "<missing>"} is not allowed to use Fable`)
   }
 }

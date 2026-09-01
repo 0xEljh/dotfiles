@@ -4,7 +4,7 @@ description:
   Fast primary-source research for precise technical questions. Produces one
   cited Markdown artifact under docs/research/.
 mode: subagent
-model: opencode-go/deepseek-v4-flash
+model: zai-coding-plan/glm-5.3-flash
 variant: max
 permission:
   "*": deny

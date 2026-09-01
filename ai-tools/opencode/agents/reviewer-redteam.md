@@ -1,12 +1,11 @@
 ---
 description:
-  Adversarial DeepSeek V4 Flash pre-mortem reviewer for security, concurrency,
-  destructive operations, and public interfaces. Use selectively for risk. Has
-  no access to explore subagents; frontload relevant review context when
-  possible.
+  Adversarial pre-mortem reviewer for security, concurrency, destructive
+  operations, and public interfaces. Use selectively for risk. Has no access to
+  explore subagents; frontload relevant review context when possible.
 mode: subagent
-model: opencode-go/deepseek-v4-flash
-variant: max
+model: zai-coding-plan/glm-5.3
+variant: high
 permission:
   read: allow
   glob: allow

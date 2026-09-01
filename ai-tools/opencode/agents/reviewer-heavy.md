@@ -1,9 +1,8 @@
 ---
 description:
-  Rigorous GLM-5.3 architecture challenger for independent reframing,
-  alternatives, and blindspots. Use to screen consequential design decisions.
-  Has no access to explore subagents; frontload relevant review context when
-  possible.
+  Rigorous architecture challenger for independent reframing, alternatives,
+  and blindspots. Use to screen consequential design decisions. Has no access
+  to explore subagents; frontload relevant review context when possible.
 mode: subagent
 model: zai-coding-plan/glm-5.3
 variant: max

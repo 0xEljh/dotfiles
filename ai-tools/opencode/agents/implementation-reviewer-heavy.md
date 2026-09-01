@@ -6,8 +6,8 @@ description:
   is a heavy-weight variant. Use to review deep changes.
 mode: subagent
 hidden: true
-model: zai-coding-plan/glm-5.3
-variant: high
+model: zai-coding-plan/glm-5.3-flash
+variant: max
 permission:
   "*": deny
   read: allow

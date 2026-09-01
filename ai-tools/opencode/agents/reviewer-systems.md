@@ -1,9 +1,9 @@
 ---
 description:
-  Kimi K3 systems reviewer for long-context lifecycle and cross-boundary
-  analysis. Use selectively for large, stateful, or distributed designs. Max
-  once per session. Has no access to explore subagents; frontload relevant
-  review context when possible.
+  Systems reviewer for long-context lifecycle and cross-boundary analysis. Use
+  selectively for large, stateful, or distributed designs. Max once per
+  session. Has no access to explore subagents; frontload relevant review
+  context when possible.
 mode: subagent
 model: kimi-for-coding/k3
 variant: max

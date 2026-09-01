@@ -4,7 +4,9 @@ After drafting a non-trivial design, run the default `reviewer` for broad
 consistency and correctness. Use the other reviewers only when their trigger
 applies:
 
-- `reviewer-alt`: material architecture, API, or hard-to-reverse decisions
+- `reviewer-heavy`: material architecture, API, or hard-to-reverse decisions
+- `reviewer-max`: maximum-depth broad review when an additional expensive pass
+  is justified
 - `reviewer-systems`: large, stateful, distributed, migration, or rollout work
 - `reviewer-systems-fable`: an additional/alternative independent systems
   reviewer for critical design decisions
