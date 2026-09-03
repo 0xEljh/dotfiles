@@ -23,6 +23,7 @@ ai-tools/shared/skills/.system/
 !nixos-config/packages/opencode-claude-agent/tsconfig.json
 
 node_modules/
+/nixos-config/packages/opencode-claude-agent/dist/
 
 # python files
 __pycache__

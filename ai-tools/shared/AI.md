@@ -7,6 +7,13 @@
 - Slant for decisions: avoid over-engineering; keep solutions focused (which
   often means balanced approach to managing coupling, abstractions and
   dependencies). (Long term) complexity is the enemy.
+- Bias for expressiveness: we prefer to cede control to the user and provide
+  them with the means to be expressive. This means that a user should be
+  provided the means to overwrite any gates or limits that we've implemented. We
+  should also be clear on what is "advisory" (including best practices) and what
+  is a strict boundary. Users should be allowed to go pass guardrails and hit
+  big failures; we assume everyone knows what they're doing. This does not mean
+  no warnings or failure handling, but rather intentional design around these.
 - Unless stated otherwise, backwards compatibility is NEVER a consideration.
   Assume that we are not working with a production environment and can always
   wipe all data and start afresh. No decision should be based on backwards
