@@ -1,8 +1,8 @@
 ---
 description:
   Maximum-depth reviewer for broad consistency and correctness checks of
-  proposals, plans, and designs. Use selectively when an additional expensive
-  pass is justified; frontload relevant review context when possible.
+  proposals, plans, and designs. Use selectively when a rigourous pass is
+  justified; frontload relevant review context when possible.
 mode: subagent
 model: claude-agent/fable
 variant: high

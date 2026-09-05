@@ -5,7 +5,7 @@ description:
   frontload relevant review context when possible.
 mode: subagent
 model: zai-coding-plan/glm-5.3-flash
-variant: max
+variant: high
 permission:
   read: allow
   glob: allow

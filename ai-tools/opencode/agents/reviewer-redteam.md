@@ -4,7 +4,7 @@ description:
   operations, and public interfaces. Use selectively for risk. Has no access to
   explore subagents; frontload relevant review context when possible.
 mode: subagent
-model: zai-coding-plan/glm-5.3
+model: zai-coding-plan/glm-5.3-flash
 variant: high
 permission:
   read: allow
