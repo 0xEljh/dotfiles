@@ -4,7 +4,7 @@ description:
   Deep primary-source research for difficult or consequential technical
   questions. Produces one cited Markdown artifact under docs/research/.
 mode: subagent
-model: openai/gpt-5.6-sol
+model: openai/gpt-6-astra
 variant: medium
 permission:
   "*": deny
