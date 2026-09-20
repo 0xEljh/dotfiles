@@ -1,5 +1,5 @@
 {
-  description = "Configuration for macOS, WSL, and sleeper-service";
+  description = "Configuration for macOS, WSL, and NixOS hosts";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
@@ -221,6 +221,26 @@
       );
 
       nixosConfigurations = {
+        # Native graphical model-training workstation
+        new-pc = nixpkgs.lib.nixosSystem {
+          system = "x86_64-linux";
+          specialArgs = inputs // { inherit llmAgentsOverlay; };
+          modules = [
+            sops-nix.nixosModules.sops
+            home-manager.nixosModules.home-manager {
+              home-manager = {
+                useGlobalPkgs = true;
+                useUserPackages = true;
+                extraSpecialArgs = inputs;
+                backupFileExtension = "backup";
+                overwriteBackup = true;
+                users.${user} = import ./modules/new-pc/home-manager.nix;
+              };
+            }
+            ./hosts/new-pc
+          ];
+        };
+
         # sleeper-service configuration
         sleeper-service = nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";

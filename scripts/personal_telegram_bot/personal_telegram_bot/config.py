@@ -99,6 +99,7 @@ class Config:
     dev3000_username: str = "dev"
     dev3000_auth_dir: Path = Path("/run/dev-3000-auth")
     dev3000_htpasswd_command: str = "htpasswd"
+    t3_pair_helper: str = "/etc/profiles/per-user/elijah/bin/t3-pair"
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -167,4 +168,5 @@ class Config:
             dev3000_username=env.get("DEV3000_USERNAME", "dev"),
             dev3000_auth_dir=Path(env.get("DEV3000_AUTH_DIR", "/run/dev-3000-auth")),
             dev3000_htpasswd_command=env.get("DEV3000_HTPASSWD_COMMAND", "htpasswd"),
+            t3_pair_helper=env.get("T3_PAIR_HELPER", "/etc/profiles/per-user/elijah/bin/t3-pair"),
         )

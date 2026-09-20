@@ -417,14 +417,63 @@ def send_failure(cfg: Config, args) -> int:
     return 0
 
 
+def _send_t3_link(cfg: Config, host: str, *, dry_run: bool, only_new: bool = False) -> int:
+    from .t3_pairing import LINK_HOSTS, LINK_KIND, format_link_message, run_pair_helper
+
+    if host not in LINK_HOSTS:
+        print("Invalid T3 host", file=sys.stderr)
+        return 1
+    if cfg.default_chat_id <= 0 or cfg.default_chat_id not in cfg.allowed_user_ids:
+        print("T3 link requires an authorized private owner destination", file=sys.stderr)
+        return 1
+
+    db = None
+    try:
+        if dry_run:
+            run_pair_helper(host, "status", cfg.t3_pair_helper)
+            print(f"T3 ready on {host}; dry run does not mint or deliver a link")
+            return 0
+        db = StateDB(cfg.db_path)
+        if only_new:
+            # Status never starts a stopped service. First observation publishes.
+            status = run_pair_helper(host, "status", cfg.t3_pair_helper)
+            if db.was_sent(LINK_KIND, f"{host}/{status['invocationId']}"):
+                return 0
+        link = run_pair_helper(host, "create", cfg.t3_pair_helper)
+        message_id = send_message(
+            cfg.telegram_token, cfg.default_chat_id, format_link_message(host, link),
+        )
+        if not message_id:
+            raise RuntimeError("T3 delivery was not confirmed")
+        # Use create's invocation: the service may have changed since status.
+        db.record_sent(LINK_KIND, f"{host}/{link['invocationId']}", message_id)
+        return 0
+    except Exception:
+        print(f"T3 link unavailable or delivery failed for {host}", file=sys.stderr)
+        return 1
+    finally:
+        if db is not None:
+            db.conn.close()
+
+
+def send_t3_link(cfg: Config, args) -> int:
+    return _send_t3_link(cfg, args.host, dry_run=args.dry_run)
+
+
 def send_t3_pairings(cfg: Config, args) -> int:
     from .t3_pairing import (
+        LINK_HOSTS,
         PAIRING_KIND,
         format_pairing_message,
         load_local_sessions,
         load_remote_sessions,
         select_new_pairings,
     )
+
+    failed = False
+    for host in LINK_HOSTS:
+        if _send_t3_link(cfg, host, dry_run=args.dry_run, only_new=True):
+            failed = True
 
     db = StateDB(cfg.db_path)
     sources = [(args.local_host, lambda: load_local_sessions(args.local_db))]
@@ -436,23 +485,27 @@ def send_t3_pairings(cfg: Config, args) -> int:
             )
         )
 
-    failed = False
     for host, load in sources:
         try:
             sessions = load()
-        except Exception as exc:
-            print(f"T3 pairing query failed for {host}: {type(exc).__name__}: {exc}", file=sys.stderr)
+        except Exception:
+            print(f"T3 pairing query failed for {host}", file=sys.stderr)
             failed = True
             continue
 
         new_sessions = select_new_pairings(db, host, sessions)
         for session in new_sessions:
-            message_id = _deliver(
-                cfg,
-                format_pairing_message(host, session),
-                args.dry_run,
-                parse_mode="HTML",
-            )
+            try:
+                message_id = _deliver(
+                    cfg,
+                    format_pairing_message(host, session),
+                    args.dry_run,
+                    parse_mode="HTML",
+                )
+            except Exception:
+                print(f"T3 pairing notification failed for {host}", file=sys.stderr)
+                failed = True
+                continue
             if not args.dry_run:
                 key = f"{host}/{session.session_id}"
                 db.record_sent(PAIRING_KIND, key, message_id)
@@ -469,6 +522,7 @@ def send_t3_pairings(cfg: Config, args) -> int:
 
         if not new_sessions:
             print(f"No new T3 pairings for {host}")
+    db.conn.close()
     return 1 if failed else 0
 
 
@@ -530,10 +584,15 @@ def main(argv: list[str] | None = None) -> int:
         ("tailscale-keys", send_tailscale_keys),
         ("failure", send_failure),
         ("t3-pairings", send_t3_pairings),
+        ("t3-link", send_t3_link),
     ):
         p = send_sub.add_parser(kind)
-        p.add_argument("--dry-run", action="store_true", help="print instead of sending")
-        p.add_argument("--force", action="store_true", help="bypass dedupe / send full summary")
+        p.add_argument(
+            "--dry-run", action="store_true",
+            help="check readiness without minting or sending" if kind == "t3-link" else "print instead of sending",
+        )
+        if kind != "t3-link":
+            p.add_argument("--force", action="store_true", help="bypass dedupe / send full summary")
         if kind == "failure":
             p.add_argument("--unit", required=True, help="systemd unit that failed")
         if kind == "disk-health":
@@ -544,6 +603,10 @@ def main(argv: list[str] | None = None) -> int:
             p.add_argument("--remote-host")
             p.add_argument("--remote-label")
             p.add_argument("--remote-db", default="/home/elijah/.t3/userdata/state.sqlite")
+        if kind == "t3-link":
+            from .t3_pairing import LINK_HOSTS
+
+            p.add_argument("--host", choices=LINK_HOSTS, default="sleeper-service")
         p.set_defaults(func=func)
 
     args = parser.parse_args(argv)

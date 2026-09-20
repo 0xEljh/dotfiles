@@ -24,6 +24,24 @@ let
 
   needsTailscale = cfg.useTailscaleServe || cfg.bindToTailscaleIp;
 
+  t3Pair = pkgs.writeShellApplication {
+    name = "t3-pair";
+    runtimeInputs = [
+      pkgs.nodejs_24
+      pkgs.coreutils
+      pkgs.bash
+      pkgs.systemd
+      pkgs.tailscale
+      pkgs.python3
+    ];
+    text = ''
+      exec python3 ${../../packages/t3-pair/t3_pair.py} \
+        --package-spec ${t3PackageArg} \
+        --port ${toString cfg.tailscaleServePort} \
+        --home ${lib.escapeShellArg config.home.homeDirectory} "$@"
+    '';
+  };
+
   t3Wrapper = pkgs.writeShellApplication {
     name = "t3-serve-wrapper";
     # node-pty (a t3 transitive dep) runs `sh` and a small build toolchain in
@@ -132,6 +150,8 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    home.packages = lib.optional cfg.useTailscaleServe t3Pair;
+
     systemd.user.services.t3-serve = {
       Unit = {
         Description = "T3 Code headless agent server (npx t3 serve)";

@@ -30,6 +30,7 @@ let
       WorkingDirectory = botDir;
       Environment = [
         "HOME=${homeDir}"
+        "T3_PAIR_HELPER=/etc/profiles/per-user/${user}/bin/t3-pair"
         # Non-secret config (kept out of the sops env): the Bread board URL the
         # morning digest links in its footer.
         "NOTION_BREAD_URL=https://app.notion.com/p/Get-that-bread-132300d83b7f801f9ab7c346ee3e10e6"
@@ -177,7 +178,13 @@ in
       mkOneshot "Weekly paper-log dispatch (unrefined sightings nudge)" "send papers";
 
     personal-telegram-bot-t3-pairings =
-      mkOneshot "Notify on new T3 client pairings" "send t3-pairings --remote-host contents-may-differ --remote-label contents-may-differ";
+      let base = mkOneshot "Publish T3 links and notify on new client pairings" "send t3-pairings --remote-host contents-may-differ --remote-label contents-may-differ";
+      in base // {
+        serviceConfig = base.serviceConfig // {
+          # Two bounded host probes/creates and Telegram delivery, plus session queries.
+          TimeoutStartSec = "8min";
+        };
+      };
 
     personal-telegram-bot-tailscale-keys =
       let base = mkOneshot "Daily Tailscale device key-expiry reminder" "send tailscale-keys";
@@ -278,7 +285,7 @@ in
     };
 
     personal-telegram-bot-t3-pairings = {
-      description = "Check for newly authorized T3 clients";
+      description = "Publish links for new T3 invocations and check authorized clients";
       wantedBy = [ "timers.target" ];
       timerConfig = {
         Unit = "personal-telegram-bot-t3-pairings.service";

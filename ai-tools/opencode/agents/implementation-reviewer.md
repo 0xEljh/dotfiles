@@ -5,7 +5,7 @@ description:
   packet; cannot execute commands or independently reproduce results.
 mode: subagent
 hidden: true
-model: opencode-go/deepseek-v4-flash
+model: opencode-go/deepseek-v4.1-flash
 variant: max
 permission:
   "*": deny

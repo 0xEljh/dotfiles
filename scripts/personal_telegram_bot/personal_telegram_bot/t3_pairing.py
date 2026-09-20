@@ -7,11 +7,58 @@ import sqlite3
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from .db import StateDB
 
 PAIRING_KIND = "t3-pairing"
 MONITOR_KIND = "t3-pairing-monitor"
+LINK_KIND = "t3-link"
+LINK_HOSTS = ("sleeper-service", "contents-may-differ")
+
+
+def run_pair_helper(host: str, action: str, helper_path: str) -> dict[str, str]:
+    if host not in LINK_HOSTS or action not in {"status", "create"}:
+        raise ValueError("Invalid T3 helper request")
+    if not Path(helper_path).is_absolute():
+        raise ValueError("T3 helper path must be absolute")
+    command = [helper_path, action]
+    if host == "contents-may-differ":
+        command = [
+            "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+            "-o", "StrictHostKeyChecking=yes", host, shlex.join(command),
+        ]
+    proc = subprocess.run(
+        command, capture_output=True, text=True, check=True,
+        timeout=30 if action == "status" else 100,
+    )
+    data = json.loads(proc.stdout)
+    fields = ("invocationId", "url")
+    if action == "create":
+        fields += ("pairUrl", "expiresAt")
+    if not isinstance(data, dict) or any(
+        not isinstance(data.get(field), str) or not data[field].strip() for field in fields
+    ):
+        raise ValueError("Invalid T3 helper response")
+    url = urlsplit(data["url"])
+    if url.scheme != "https" or not url.hostname or url.username or url.password:
+        raise ValueError("T3 requires HTTPS")
+    if action == "create":
+        pair_url = urlsplit(data["pairUrl"])
+        if (
+            pair_url.scheme != "https" or pair_url.netloc != url.netloc
+            or pair_url.username or pair_url.password
+        ):
+            raise ValueError("T3 pairing URL must use the public HTTPS origin")
+    return data
+
+
+def format_link_message(host: str, link: dict[str, str]) -> str:
+    return (
+        f"T3 pairing link\nHost: {host}\n{link['pairUrl']}\n"
+        f"Expires: {link['expiresAt']} (5 minutes, single-use).\n"
+        "Connect to Tailscale before opening this link."
+    )
 
 SESSION_QUERY = """
 SELECT

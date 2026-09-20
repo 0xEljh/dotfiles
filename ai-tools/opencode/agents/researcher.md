@@ -4,8 +4,8 @@ description:
   Fast primary-source research for precise technical questions. Produces one
   cited Markdown artifact under docs/research/.
 mode: subagent
-model: zai-coding-plan/glm-5.3-flash
-variant: max
+model: opencode-go/muse-spark-1.3-contributor
+variant: xhigh
 permission:
   "*": deny
   read: allow

@@ -98,4 +98,6 @@ with pkgs; [
   # Secret management
   sops
 ]
-++ lib.optionals (pkgs ? llm-agents && pkgs.llm-agents ? opencode) [ llm-agents.opencode ]
+++ lib.optionals (pkgs ? llm-agents && pkgs.llm-agents ? opencode) [
+  (callPackage ../../packages/opencode-buffered { opencode = llm-agents.opencode; })
+]

@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 HELP_TEXT = """Commands:
 /status — service health and last digests
 /dev3000 [rotate] — show or rotate dev-sharing credentials
+/t3 [sleeper-service|contents-may-differ] - fresh T3 pairing link (owner private chat)
 /ideate <topic> — draft post seeds from a topic
 /improve <draft> — punch up a rough draft (or reply to one)
 /score <text> — score whether text is worth posting
@@ -144,6 +145,40 @@ async def cmd_dev3000(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text(format_credentials(cfg.dev3000_url, credentials))
+
+
+async def cmd_t3(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    from .t3_pairing import LINK_HOSTS, format_link_message, run_pair_helper
+
+    cfg: Config = context.bot_data["config"]
+    user = update.effective_user
+    chat = update.effective_chat
+    if not is_private_owner_chat(
+        user.id if user else None,
+        chat.id if chat else None,
+        chat.type if chat else None,
+        cfg.default_chat_id,
+        cfg.allowed_user_ids,
+    ):
+        logger.warning("Ignoring T3 link request outside owner private chat")
+        return
+
+    if len(context.args) > 1 or (context.args and context.args[0] not in LINK_HOSTS):
+        await update.message.reply_text("Usage: /t3 [sleeper-service|contents-may-differ]")
+        return
+    host = context.args[0] if context.args else "sleeper-service"
+    try:
+        link = await asyncio.to_thread(run_pair_helper, host, "create", cfg.t3_pair_helper)
+        await update.message.reply_text(
+            format_link_message(host, link), disable_web_page_preview=True,
+        )
+    except Exception:
+        # Helper and Telegram exceptions can contain the credential-bearing URL.
+        logger.error("T3 link request or delivery failed for %s", host)
+        try:
+            await update.message.reply_text("T3 pairing link unavailable. Try again later.")
+        except Exception:
+            logger.error("T3 failure reply could not be delivered")
 
 
 def _require_tpot_config(cfg: Config) -> tuple[str, str] | None:
@@ -309,6 +344,7 @@ def build_application(cfg: Config) -> Application:
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("dev3000", cmd_dev3000))
+    app.add_handler(CommandHandler("t3", cmd_t3))
     app.add_handler(CommandHandler("ideate", cmd_ideate))
     app.add_handler(CommandHandler("improve", cmd_improve))
     app.add_handler(CommandHandler("score", cmd_score))
