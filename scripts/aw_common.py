@@ -624,6 +624,16 @@ def get_browser_dev_tool_name(url: str, title: str = "") -> str | None:
     if hostname == T3_CODE_HOST and parsed_url.port == T3_CODE_PORT:
         return "T3 Code"
 
+    if (
+        hostname in (
+            "sleeper-service.inanga-kardashev.ts.net",
+            "contents-may-differ.inanga-kardashev.ts.net",
+        )
+        and parsed_url.scheme == "https"
+        and parsed_url.port in (None, 443)
+    ):
+        return "T3 Code"
+
     if is_domain_or_subdomain(hostname, "kimi.com") and path.startswith("/code"):
         return "Kimi Code"
 

@@ -43,7 +43,7 @@ describe("provider boundary", () => {
       apiKey: "claude-agent-cli-authenticated",
       authenticated: true,
     })
-    const model = provider.languageModel("fable")
+    const model = provider.languageModel("claude-fable-5-1")
     const repository = await mkdtemp(join(tmpdir(), "claude-agent-provider-"))
     await mkdir(join(repository, ".git"))
     const options = {
@@ -62,6 +62,13 @@ describe("provider boundary", () => {
 
     expect(createClaudeCode).toHaveBeenCalledTimes(2)
     expect(languageModel).toHaveBeenCalledTimes(2)
+    for (const [modelId, settings] of languageModel.mock.calls) {
+      expect(modelId).toBe("claude-fable-5-1")
+      expect(settings.settings.switchModelsOnFlag).toBe(false)
+      expect(settings.fallbackModel).toBeUndefined()
+      expect(settings.sdkOptions?.onUserDialog).toBeUndefined()
+      expect(settings.sdkOptions?.supportedDialogKinds).toBeUndefined()
+    }
     expect(createClaudeCode.mock.calls[0]?.[0]).toBeUndefined()
   })
 
@@ -78,7 +85,7 @@ describe("provider boundary", () => {
     })
     const repository = await mkdtemp(join(tmpdir(), "claude-agent-settings-"))
     await mkdir(join(repository, ".git"))
-    const model = provider.languageModel("fable")
+    const model = provider.languageModel("claude-fable-5-1")
 
     await model.doGenerate({
       prompt: [
@@ -96,7 +103,7 @@ describe("provider boundary", () => {
       string,
       Record<string, any>,
     ]
-    expect(modelId).toBe("fable")
+    expect(modelId).toBe("claude-fable-5-1")
     expect(settings).toMatchObject({
       cwd: repository,
       effort: "xhigh",
@@ -112,11 +119,15 @@ describe("provider boundary", () => {
       strictMcpConfig: true,
       persistSession: false,
       settings: {
+        switchModelsOnFlag: false,
         autoMemoryEnabled: false,
         disableClaudeAiConnectors: true,
         enableAllProjectMcpServers: false,
       },
     })
+    expect(settings.fallbackModel).toBeUndefined()
+    expect(settings.sdkOptions?.onUserDialog).toBeUndefined()
+    expect(settings.sdkOptions?.supportedDialogKinds).toBeUndefined()
     expect(settings.disallowedTools).toContain("WebFetch")
     expect(settings.systemPrompt.append).toBe("Review systems.")
     expect(settings.env.ANTHROPIC_CANARY_TEST).toBeUndefined()
@@ -140,7 +151,7 @@ describe("provider boundary", () => {
 
     const repository = await mkdtemp(join(tmpdir(), "claude-agent-reject-"))
     await mkdir(join(repository, ".git"))
-    const model = provider.languageModel("fable")
+    const model = provider.languageModel("claude-fable-5-1")
     const base = {
       prompt: [{ role: "user", content: "Inspect this." }],
       headers: {

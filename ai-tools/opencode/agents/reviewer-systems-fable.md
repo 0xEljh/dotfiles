@@ -4,7 +4,7 @@ description:
   consequential, stateful, or distributed designs.
 
 mode: subagent
-model: claude-agent/fable
+model: claude-agent/claude-fable-5-1
 variant: high
 permission:
   "*": deny

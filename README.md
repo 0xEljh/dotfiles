@@ -76,11 +76,11 @@ uses that key as a Bearer token when supplied.
 
 [T3 Code](https://github.com/pingdotgg/t3code) is a GUI front-end for Claude Code / OpenCode / Codex. This repo wires it up across all three hosts. Design: [`docs/design/ai-agent-mobile-refresh.md`](docs/design/ai-agent-mobile-refresh.md).
 
-- **sleeper-service + WSL** run the exact T3 nightly pinned by `services.t3Serve.t3Version`. T3's built-in Tailscale integration exposes Tailnet-only HTTPS on port `443`.
+- **sleeper-service** retains the pinned July nightly. **WSL** stages T3 `0.0.42` for a Connect pilot. Both keep built-in Tailscale Serve on HTTPS port `443`.
 - **OpenCode direct access** stays on `127.0.0.1:8779` and is proxied by Tailscale Serve at HTTPS port `8779`. `OPENCODE_SERVER_PASSWORD` is mandatory for this endpoint.
 - **macOS** installs the ChatGPT, OpenCode, and T3 Code nightly desktop apps plus Tailscale through Homebrew casks.
 - **Mobile / any device** can pair [https://app.t3.codes](https://app.t3.codes) with the HTTPS URL printed by T3. OpenCode's own interface is available at the same host's HTTPS port `8779`.
-- T3 and OpenCode remain private to the Tailnet. Do not replace Serve with Funnel or publish either backend through the public nginx proxy.
+- T3 stays Tailnet-only until each host is linked interactively. Linking enables an authenticated public T3 Connect tunnel for that host; it does not expose direct OpenCode. Do not use Funnel or the public nginx proxy for either backend. See [Enroll a T3 host in Connect](docs/runbooks/t3-connect.md).
 
 One-time per host after first build:
 

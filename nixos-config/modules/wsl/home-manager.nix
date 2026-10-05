@@ -31,7 +31,6 @@ in
     ../shared/ai-tools.nix
     ../shared/t3-serve.nix
     ../shared/opencode-serve.nix
-    ../shared/tpot-inference.nix
   ];
 
   # Supervise `opencode serve` so a fully-dead daemon auto-restarts and the
@@ -51,17 +50,12 @@ in
     ];
   };
 
-  services.tpotInference = {
-    enable = true;
-    # Pinned 2026-07-05: build 2d973636e (9870). Verified by the --lora ship
-    # gate (base-vs-adapter output diff) before enabling.
-    llamaImage = "ghcr.io/ggml-org/llama.cpp@sha256:c52d27d6c81fa224711ab8fd9cf415fd824bd1eeefb380bf920abaa54bebb752";
-  };
-
   services.t3Serve = {
     enable = true;
     useTailscaleServe = true;
     tailscaleServePort = 443;
+    # Connect pilot: sleeper-service stays on the shared July default.
+    t3Version = "0.0.42";
   };
 
   home = {

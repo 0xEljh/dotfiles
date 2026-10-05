@@ -4,7 +4,7 @@ description:
   proposals, plans, and designs. Use selectively when a rigourous pass is
   justified; frontload relevant review context when possible.
 mode: subagent
-model: claude-agent/fable
+model: claude-agent/claude-fable-5-1
 variant: high
 permission:
   "*": deny

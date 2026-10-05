@@ -5,11 +5,13 @@ import type { Plugin } from "@opencode-ai/plugin"
 
 import {
   AUTH_SENTINEL,
+  MODEL_ID,
+  PROVIDER_ID,
+  assertReviewerModel,
   sanitizeClaudeEnvironment,
 } from "./policy.js"
 
 const execFileAsync = promisify(execFile)
-const PROVIDER_ID = "claude-agent"
 
 type Availability = { available: true } | { available: false; reason: string }
 
@@ -59,8 +61,8 @@ const plugin: Plugin = async ({ directory }) => ({
       name: "Claude Agent",
       npm: new URL("./provider.js", import.meta.url).href,
       models: {
-        fable: {
-          name: "Claude Fable 5 (Agent SDK)",
+        [MODEL_ID]: {
+          name: "Claude Fable 5.1 (Agent SDK)",
           reasoning: true,
           tool_call: false,
           limit: {
@@ -76,6 +78,7 @@ const plugin: Plugin = async ({ directory }) => ({
     } as unknown
   },
   "chat.headers": async (input, output) => {
+    assertReviewerModel(input.agent, input.model.providerID, input.model.id)
     if (input.model.providerID !== PROVIDER_ID) return
     output.headers["x-opencode-agent"] = input.agent
     output.headers["x-opencode-directory"] = directory

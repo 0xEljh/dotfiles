@@ -4,6 +4,70 @@ import plugin from "../src/plugin.js"
 
 const SENTINEL = "claude-agent-cli-authenticated"
 
+describe("Fable reviewer routing", () => {
+  const expectedModel = "claude-agent/claude-fable-5-1"
+  const reviewers = ["reviewer-systems-fable", "reviewer-max"]
+
+  test("registers the exact Fable 5.1 model", async () => {
+    const hooks = await plugin({ directory: "/repo" } as never)
+    const config: Record<string, any> = {}
+    await hooks.config!(config)
+
+    expect(config.provider["claude-agent"].models["claude-fable-5-1"]).toMatchObject({
+      name: "Claude Fable 5.1 (Agent SDK)",
+      variants: { high: { effort: "high" }, xhigh: { effort: "xhigh" } },
+    })
+  })
+
+  test.each(reviewers)("passes request identity for %s on Fable 5.1", async (agent) => {
+    const hooks = await plugin({ directory: "/repo" } as never)
+    const output = { headers: {} }
+    await hooks["chat.headers"]!({
+      agent,
+      sessionID: "review-session",
+      model: { providerID: "claude-agent", id: "claude-fable-5-1" },
+    } as never, output)
+
+    expect(output.headers).toEqual({
+      "x-opencode-agent": agent,
+      "x-opencode-directory": "/repo",
+      "x-opencode-session": "review-session",
+    })
+  })
+
+  for (const agent of reviewers) {
+    test.each([
+      { providerID: "openai", id: "gpt-5.5" },
+      { providerID: "anthropic", id: "claude-fable-5-1" },
+      { providerID: "claude-agent", id: "claude-fable-5" },
+    ])(`rejects a different provider or model for ${agent}: $providerID/$id`, async (model) => {
+      const hooks = await plugin({ directory: "/repo" } as never)
+      const output = { headers: {} }
+
+      await expect(hooks["chat.headers"]!({
+        agent,
+        sessionID: "review-session",
+        model,
+      } as never, output)).rejects.toThrow(
+        `Model policy violation: ${agent} requires ${expectedModel}; selected ${model.providerID}/${model.id}`,
+      )
+      expect(output.headers).toEqual({})
+    })
+  }
+
+  test.each(["build", "compaction", "title"])("allows other models for %s", async (agent) => {
+    const hooks = await plugin({ directory: "/repo" } as never)
+    const output = { headers: {} }
+    await hooks["chat.headers"]!({
+      agent,
+      sessionID: "other-session",
+      model: { providerID: "openai", id: "gpt-5.5" },
+    } as never, output)
+
+    expect(output.headers).toEqual({})
+  })
+})
+
 describe("OpenCode auth plugin", () => {
   afterEach(() => {
     vi.unstubAllEnvs()

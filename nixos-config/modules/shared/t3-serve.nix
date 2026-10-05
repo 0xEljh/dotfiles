@@ -5,6 +5,23 @@ let
   t3PackageSpec =
     if cfg.t3Package == null then "t3@${cfg.t3Version}" else cfg.t3Package;
   t3PackageArg = lib.escapeShellArg t3PackageSpec;
+  t3BaseDir = "${config.home.homeDirectory}/.t3";
+  t3Environment = ''
+    export T3CODE_HOME=${lib.escapeShellArg t3BaseDir}
+    export T3CODE_CLOUDFLARED_PATH=${lib.escapeShellArg "${pkgs.cloudflared}/bin/cloudflared"}
+    export NPM_CONFIG_YES=true
+    export NPM_CONFIG_LOGLEVEL=warn
+  '';
+
+  t3RuntimeInputs = [
+    pkgs.nodejs_24
+    pkgs.bun
+    pkgs.bash
+    pkgs.coreutils
+    pkgs.gnumake
+    pkgs.gcc
+    pkgs.python3
+  ];
 
   staticArgs =
     if cfg.useTailscaleServe then [
@@ -42,23 +59,24 @@ let
     '';
   };
 
+  t3Operator = pkgs.writeShellApplication {
+    name = "t3-operator";
+    runtimeInputs = t3RuntimeInputs;
+    text = t3Environment + ''
+      # This CLI uses the same npm package, identity, and connector as the unit.
+      # Pass --base-dir explicitly so commands always select this environment.
+      unset OPENCODE_SERVER_USERNAME OPENCODE_SERVER_PASSWORD
+      exec npx -y ${t3PackageArg} "$@" --base-dir ${lib.escapeShellArg t3BaseDir}
+    '';
+  };
+
   t3Wrapper = pkgs.writeShellApplication {
     name = "t3-serve-wrapper";
     # node-pty (a t3 transitive dep) runs `sh` and a small build toolchain in
     # its npm postinstall. Systemd user services start with an empty PATH on
     # NixOS, so we have to bring our own coreutils / bash / build deps.
-    runtimeInputs = [
-      pkgs.nodejs_24
-      pkgs.bun
-      pkgs.bash
-      pkgs.coreutils
-      pkgs.gnumake
-      pkgs.gcc
-      pkgs.python3
-    ] ++ lib.optional needsTailscale pkgs.tailscale;
-    text = ''
-      export NPM_CONFIG_YES=true
-      export NPM_CONFIG_LOGLEVEL=warn
+    runtimeInputs = t3RuntimeInputs ++ lib.optional needsTailscale pkgs.tailscale;
+    text = t3Environment + ''
       # These credentials protect the separately managed remote OpenCode
       # service. T3 starts its own loopback OpenCode servers and does not send
       # Basic Auth credentials when connecting to them.
@@ -80,9 +98,9 @@ let
         echo "t3-serve: could not resolve tailscale IPv4 within 30s" >&2
         exit 1
       fi
-      exec npx -y ${t3PackageArg} serve --host "$TSIP" --port ${toString cfg.port}
+      exec npx -y ${t3PackageArg} serve --host "$TSIP" --port ${toString cfg.port} --base-dir ${lib.escapeShellArg t3BaseDir}
     '' else ''
-      exec npx -y ${t3PackageArg} ${staticArgString}
+      exec npx -y ${t3PackageArg} ${staticArgString} --base-dir ${lib.escapeShellArg t3BaseDir}
     '');
   };
 in
@@ -150,7 +168,7 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    home.packages = lib.optional cfg.useTailscaleServe t3Pair;
+    home.packages = [ t3Operator pkgs.cloudflared ] ++ lib.optional cfg.useTailscaleServe t3Pair;
 
     systemd.user.services.t3-serve = {
       Unit = {

@@ -3,6 +3,8 @@ import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:p
 
 export const AUTH_SENTINEL = "claude-agent-cli-authenticated"
 export const CLIENT_APP = "opencode-claude-agent/0.1.0"
+export const PROVIDER_ID = "claude-agent"
+export const MODEL_ID = "claude-fable-5-1"
 
 const ALLOWED_AGENT_NAMES = new Set([
   "reviewer-max",
@@ -56,6 +58,17 @@ export function sanitizeClaudeEnvironment(
 export function assertAllowedAgent(agent: string | undefined): void {
   if (!agent || !ALLOWED_AGENT_NAMES.has(agent)) {
     throw new Error(`Agent ${agent ?? "<missing>"} is not allowed to use Fable`)
+  }
+}
+
+export function assertReviewerModel(agent: string, providerId: string, modelId: string): void {
+  if (
+    ALLOWED_AGENT_NAMES.has(agent) &&
+    (providerId !== PROVIDER_ID || modelId !== MODEL_ID)
+  ) {
+    throw new Error(
+      `Model policy violation: ${agent} requires ${PROVIDER_ID}/${MODEL_ID}; selected ${providerId}/${modelId}`,
+    )
   }
 }
 

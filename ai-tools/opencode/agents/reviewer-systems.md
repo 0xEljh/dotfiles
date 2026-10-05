@@ -5,7 +5,7 @@ description:
   session. Has no access to explore subagents; frontload relevant review
   context when possible.
 mode: subagent
-model: kimi-for-coding/k3
+model: kimi-code-plan-global/k3
 variant: max
 permission:
   read: allow

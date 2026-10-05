@@ -20,9 +20,6 @@ HELP_TEXT = """Commands:
 /status — service health and last digests
 /dev3000 [rotate] — show or rotate dev-sharing credentials
 /t3 [sleeper-service|contents-may-differ] - fresh T3 pairing link (owner private chat)
-/ideate <topic> — draft post seeds from a topic
-/improve <draft> — punch up a rough draft (or reply to one)
-/score <text> — score whether text is worth posting
 /help — this message
 
 Scheduled: wake-triggered morning Bread digest (noon fallback), health checks
@@ -345,10 +342,6 @@ def build_application(cfg: Config) -> Application:
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("dev3000", cmd_dev3000))
     app.add_handler(CommandHandler("t3", cmd_t3))
-    app.add_handler(CommandHandler("ideate", cmd_ideate))
-    app.add_handler(CommandHandler("improve", cmd_improve))
-    app.add_handler(CommandHandler("score", cmd_score))
-    app.add_handler(CallbackQueryHandler(on_tpot_callback, pattern=r"^tpot:"))
     return app
 
 
