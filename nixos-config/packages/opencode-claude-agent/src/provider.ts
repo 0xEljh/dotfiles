@@ -15,7 +15,7 @@ import {
   assertSafeGlobPattern,
   assertSafeToolPath,
   AUTH_SENTINEL,
-  MODEL_ID,
+  MODELS,
   PROVIDER_ID,
   resolveWorkspace,
   sanitizeClaudeEnvironment,
@@ -220,7 +220,9 @@ class ClaudeAgentModel implements LanguageModelV3 {
   readonly supportedUrls = {}
 
   constructor(provider: string, modelId: string) {
-    if (modelId !== MODEL_ID) throw new Error(`Unsupported Claude Agent model: ${modelId}`)
+    if (!Object.hasOwn(MODELS, modelId)) {
+      throw new Error(`Unsupported Claude Agent model: ${modelId}`)
+    }
     this.provider = provider
     this.modelId = modelId
   }
@@ -229,7 +231,7 @@ class ClaudeAgentModel implements LanguageModelV3 {
     const release = await admission.acquire(options.abortSignal)
     try {
       const request = await requestContext(options, this.provider)
-      const inner = createClaudeCode().languageModel(MODEL_ID, request.settings)
+      const inner = createClaudeCode().languageModel(this.modelId, request.settings)
       return await inner.doGenerate(request.options)
     } finally {
       release()
@@ -240,7 +242,7 @@ class ClaudeAgentModel implements LanguageModelV3 {
     const release = await admission.acquire(options.abortSignal)
     try {
       const request = await requestContext(options, this.provider)
-      const inner = createClaudeCode().languageModel(MODEL_ID, request.settings)
+      const inner = createClaudeCode().languageModel(this.modelId, request.settings)
       const result = await inner.doStream(request.options)
       return {
         ...result,

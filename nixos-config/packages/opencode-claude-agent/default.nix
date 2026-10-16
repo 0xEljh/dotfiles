@@ -1,4 +1,4 @@
-{ lib, buildNpmPackage }:
+{ lib, buildNpmPackage, makeWrapper, nodejs }:
 
 buildNpmPackage {
   pname = "opencode-claude-agent";
@@ -14,9 +14,10 @@ buildNpmPackage {
       ./test
     ];
   };
-  npmDepsHash = "sha256-+lj3oDfg6kMlS7j8qYduNpWZtkNbRsFPPfiQGoVGD6I=";
+  npmDepsHash = "sha256-wuirBEcJKdG+TljtvBca8svgel48KSw37yD2qkicL5g=";
 
   npmBuildScript = "build";
+  nativeBuildInputs = [ makeWrapper ];
   doCheck = true;
   checkPhase = ''
     runHook preCheck
@@ -30,6 +31,8 @@ buildNpmPackage {
     npm prune --omit=dev --ignore-scripts --offline
     mkdir -p "$out/lib/opencode-claude-agent"
     cp -r dist node_modules package.json "$out/lib/opencode-claude-agent/"
+    makeWrapper ${lib.getExe nodejs} "$out/lib/opencode-claude-agent/dist/connect-v2" \
+      --add-flags "$out/lib/opencode-claude-agent/dist/connect-v2.js"
 
     runHook postInstall
   '';

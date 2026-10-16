@@ -5,7 +5,7 @@ import type { Plugin } from "@opencode-ai/plugin"
 
 import {
   AUTH_SENTINEL,
-  MODEL_ID,
+  MODELS,
   PROVIDER_ID,
   assertReviewerModel,
   sanitizeClaudeEnvironment,
@@ -60,9 +60,9 @@ const plugin: Plugin = async ({ directory }) => ({
     providers[PROVIDER_ID] = {
       name: "Claude Agent",
       npm: new URL("./provider.js", import.meta.url).href,
-      models: {
-        [MODEL_ID]: {
-          name: "Claude Fable 5.1 (Agent SDK)",
+      models: Object.fromEntries(
+        Object.entries(MODELS).map(([id, name]) => [id, {
+          name,
           reasoning: true,
           tool_call: false,
           limit: {
@@ -73,8 +73,8 @@ const plugin: Plugin = async ({ directory }) => ({
             high: { effort: "high" },
             xhigh: { effort: "xhigh" },
           },
-        },
-      },
+        }]),
+      ),
     } as unknown
   },
   "chat.headers": async (input, output) => {

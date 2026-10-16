@@ -31,7 +31,7 @@ describe("provider boundary", () => {
     expect(createClaudeCode).not.toHaveBeenCalled()
   })
 
-  test("creates a fresh inner model for every call", async () => {
+  test.each(["claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-1"])("streams with a fresh inner model using the selected ID %s", async (selectedModel) => {
     const doStream = vi.fn().mockImplementation(async () => ({
       stream: new ReadableStream({ start: (controller) => controller.close() }),
     }))
@@ -43,7 +43,7 @@ describe("provider boundary", () => {
       apiKey: "claude-agent-cli-authenticated",
       authenticated: true,
     })
-    const model = provider.languageModel("claude-fable-5-1")
+    const model = provider.languageModel(selectedModel)
     const repository = await mkdtemp(join(tmpdir(), "claude-agent-provider-"))
     await mkdir(join(repository, ".git"))
     const options = {
@@ -63,7 +63,7 @@ describe("provider boundary", () => {
     expect(createClaudeCode).toHaveBeenCalledTimes(2)
     expect(languageModel).toHaveBeenCalledTimes(2)
     for (const [modelId, settings] of languageModel.mock.calls) {
-      expect(modelId).toBe("claude-fable-5-1")
+      expect(modelId).toBe(selectedModel)
       expect(settings.settings.switchModelsOnFlag).toBe(false)
       expect(settings.fallbackModel).toBeUndefined()
       expect(settings.sdkOptions?.onUserDialog).toBeUndefined()
@@ -72,7 +72,7 @@ describe("provider boundary", () => {
     expect(createClaudeCode.mock.calls[0]?.[0]).toBeUndefined()
   })
 
-  test("passes only fixed, isolated SDK settings", async () => {
+  test.each(["claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-1"])("generates with selected ID %s and fixed, isolated SDK settings", async (selectedModel) => {
     const doGenerate = vi.fn().mockResolvedValue({ text: "review" })
     languageModel.mockImplementation(() => ({ doGenerate }))
     vi.stubEnv("ANTHROPIC_CANARY_TEST", "secret")
@@ -85,7 +85,7 @@ describe("provider boundary", () => {
     })
     const repository = await mkdtemp(join(tmpdir(), "claude-agent-settings-"))
     await mkdir(join(repository, ".git"))
-    const model = provider.languageModel("claude-fable-5-1")
+    const model = provider.languageModel(selectedModel)
 
     await model.doGenerate({
       prompt: [
@@ -103,7 +103,7 @@ describe("provider boundary", () => {
       string,
       Record<string, any>,
     ]
-    expect(modelId).toBe("claude-fable-5-1")
+    expect(modelId).toBe(selectedModel)
     expect(settings).toMatchObject({
       cwd: repository,
       effort: "xhigh",

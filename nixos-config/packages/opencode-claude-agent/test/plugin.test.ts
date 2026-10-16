@@ -4,36 +4,44 @@ import plugin from "../src/plugin.js"
 
 const SENTINEL = "claude-agent-cli-authenticated"
 
-describe("Fable reviewer routing", () => {
-  const expectedModel = "claude-agent/claude-fable-5-1"
+describe("Claude reviewer routing", () => {
+  const models = [
+    { id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5 (Agent SDK)" },
+    { id: "claude-opus-5-5", name: "Claude Opus 5.5 (Agent SDK)" },
+    { id: "claude-fable-5-1", name: "Claude Fable 5.1 (Agent SDK)" },
+  ]
   const reviewers = ["reviewer-systems-fable", "reviewer-max"]
 
-  test("registers the exact Fable 5.1 model", async () => {
+  test.each(models)("registers $id with its limits and effort variants", async (model) => {
     const hooks = await plugin({ directory: "/repo" } as never)
     const config: Record<string, any> = {}
     await hooks.config!(config)
 
-    expect(config.provider["claude-agent"].models["claude-fable-5-1"]).toMatchObject({
-      name: "Claude Fable 5.1 (Agent SDK)",
+    expect(config.provider["claude-agent"].models[model.id]).toMatchObject({
+      name: model.name,
+      limit: { context: 1_000_000, output: 128_000 },
+      tool_call: false,
       variants: { high: { effort: "high" }, xhigh: { effort: "xhigh" } },
     })
   })
 
-  test.each(reviewers)("passes request identity for %s on Fable 5.1", async (agent) => {
-    const hooks = await plugin({ directory: "/repo" } as never)
-    const output = { headers: {} }
-    await hooks["chat.headers"]!({
-      agent,
-      sessionID: "review-session",
-      model: { providerID: "claude-agent", id: "claude-fable-5-1" },
-    } as never, output)
+  for (const agent of reviewers) {
+    test.each(models)(`passes request identity for ${agent} on $id`, async (model) => {
+      const hooks = await plugin({ directory: "/repo" } as never)
+      const output = { headers: {} }
+      await hooks["chat.headers"]!({
+        agent,
+        sessionID: "review-session",
+        model: { providerID: "claude-agent", id: model.id },
+      } as never, output)
 
-    expect(output.headers).toEqual({
-      "x-opencode-agent": agent,
-      "x-opencode-directory": "/repo",
-      "x-opencode-session": "review-session",
+      expect(output.headers).toEqual({
+        "x-opencode-agent": agent,
+        "x-opencode-directory": "/repo",
+        "x-opencode-session": "review-session",
+      })
     })
-  })
+  }
 
   for (const agent of reviewers) {
     test.each([
@@ -48,9 +56,7 @@ describe("Fable reviewer routing", () => {
         agent,
         sessionID: "review-session",
         model,
-      } as never, output)).rejects.toThrow(
-        `Model policy violation: ${agent} requires ${expectedModel}; selected ${model.providerID}/${model.id}`,
-      )
+      } as never, output)).rejects.toThrow("Model policy violation")
       expect(output.headers).toEqual({})
     })
   }

@@ -136,3 +136,31 @@ function expandSkill(command: string): string {
   return `use the ${skillName} skill`;
 }
 ```
+
+### Evidence
+
+Don't spam. The fact that all tests pass is expected. The approach taken to
+write the code is internal. Do not cite internal documentation or notes. Those
+aren't necessary to a reviewer and not only do they likely not have access but
+they do not have time to be going over these.
+
+Instead, we want to highlight and describe concisely the most critical pieces of
+evidence about the change that would earn trust. This can be an integration test
+flow via playwright, supporting screenshots, benchmark results, or the number of
+surfaces eliminated during testing.
+
+In general, this section should have no more than 12 sentences. There's usually
+only about 2-3 pieces of key evidence.
+
+### Design Choices
+
+Again, don't spam. There's usually only about 2-3 critical decisions. But make
+sure that a reviewer is provided with sufficient context to understand the
+decision (that is contained within the PR text, and not simply name dropped;
+internal docs don't count). Acknowledge any trade-offs that were accepted.
+
+---
+
+Again, this is a guide. You can deviate from it, but do so with intent. The main
+purpose is to facilitate understanding within a limited amount of time. Shooting
+for 100% clarity, 80% accuracy is a good rule of thumb when it comes to that.

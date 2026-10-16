@@ -2,15 +2,44 @@
 
 let
   cfg = config.services.t3Serve;
+  useOpencodeV2 = config.aiTools.opencodeV2.enable or false;
   t3PackageSpec =
     if cfg.t3Package == null then "t3@${cfg.t3Version}" else cfg.t3Package;
   t3PackageArg = lib.escapeShellArg t3PackageSpec;
   t3BaseDir = "${config.home.homeDirectory}/.t3";
+  t3BrowserLibraries = with pkgs; [
+    glib
+    nss
+    nspr
+    at-spi2-core
+    dbus
+    libX11
+    libXcomposite
+    libXdamage
+    libXext
+    libXfixes
+    libXrandr
+    libgbm
+    expat
+    libxcb
+    libxkbcommon
+    systemd
+    alsa-lib
+    glibc
+    stdenv.cc.cc.lib
+  ];
   t3Environment = ''
     export T3CODE_HOME=${lib.escapeShellArg t3BaseDir}
     export T3CODE_CLOUDFLARED_PATH=${lib.escapeShellArg "${pkgs.cloudflared}/bin/cloudflared"}
     export NPM_CONFIG_YES=true
     export NPM_CONFIG_LOGLEVEL=warn
+  '' + lib.optionalString useOpencodeV2 ''
+    # The selected raw CLI precedes profile paths, which supply project tools.
+    export PATH="$PATH:${config.home.homeDirectory}/.nix-profile/bin:/etc/profiles/per-user/${config.home.username}/bin:/run/current-system/sw/bin:/run/wrappers/bin"
+    # T3 downloads Chrome for Testing; its ELF loader needs the Nix libraries.
+    export LD_LIBRARY_PATH="${lib.makeLibraryPath t3BrowserLibraries}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    export NIX_LD_LIBRARY_PATH="$LD_LIBRARY_PATH"
+    unset OPENCODE_PASSWORD
   '';
 
   t3RuntimeInputs = [
@@ -21,7 +50,7 @@ let
     pkgs.gnumake
     pkgs.gcc
     pkgs.python3
-  ];
+  ] ++ lib.optional useOpencodeV2 config.aiTools.opencodePackage;
 
   staticArgs =
     if cfg.useTailscaleServe then [
@@ -78,8 +107,7 @@ let
     runtimeInputs = t3RuntimeInputs ++ lib.optional needsTailscale pkgs.tailscale;
     text = t3Environment + ''
       # These credentials protect the separately managed remote OpenCode
-      # service. T3 starts its own loopback OpenCode servers and does not send
-      # Basic Auth credentials when connecting to them.
+      # service. T3 owns the credentials for its own loopback child servers.
       unset OPENCODE_SERVER_USERNAME
       unset OPENCODE_SERVER_PASSWORD
       echo ${lib.escapeShellArg "t3-serve: using ${t3PackageSpec}"}

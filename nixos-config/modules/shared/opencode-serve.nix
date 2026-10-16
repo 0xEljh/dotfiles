@@ -5,14 +5,15 @@ let
 
   homeDir = config.home.homeDirectory;
   user = config.home.username;
+  useV2 = config.aiTools.opencodeV2.enable or false;
 
-  # opencode is provided by the llm-agents flake overlay (see
-  # modules/shared/packages.nix). Default to that package so the served
-  # binary matches the one on the user's PATH.
+  # Follow the shared CLI selection unless an explicit server override is set.
   opencodePkg =
     if cfg.package != null then cfg.package
-    else if (pkgs ? llm-agents && pkgs.llm-agents ? opencode) then pkgs.llm-agents.opencode
-    else pkgs.opencode;
+    else config.aiTools.opencodePackage or (
+      if (pkgs ? llm-agents && pkgs.llm-agents ? opencode) then pkgs.llm-agents.opencode
+      else pkgs.opencode
+    );
 
   opencodeWrapper = pkgs.writeShellApplication {
     name = "opencode-serve-wrapper";
@@ -48,8 +49,10 @@ let
 
       tailscale serve --bg --yes --https=${toString cfg.tailscaleServePort} \
         http://127.0.0.1:${toString cfg.port}
+    '' + lib.optionalString useV2 ''
+      export OPENCODE_PASSWORD="''${OPENCODE_SERVER_PASSWORD:-}"
     '' + ''
-      exec opencode serve --hostname ${cfg.host} --port ${toString cfg.port}
+      exec ${opencodePkg}/bin/opencode serve --hostname ${lib.escapeShellArg cfg.host} --port ${toString cfg.port}
     '';
   };
 in
@@ -100,6 +103,10 @@ in
 
   config = lib.mkIf cfg.enable {
     assertions = [
+      {
+        assertion = !useV2 || toString opencodePkg == toString config.aiTools.opencodePackage;
+        message = "The OpenCode 2 CLI and direct service must select the same package.";
+      }
       {
         assertion = !cfg.useTailscaleServe || cfg.host == "127.0.0.1";
         message = "services.opencodeServe.useTailscaleServe requires a 127.0.0.1 backend";

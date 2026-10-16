@@ -1,4 +1,4 @@
-{ pkgs, fff, lib ? pkgs.lib }:
+{ pkgs, fff }:
 
 let
   context7Cli = pkgs.callPackage ../../packages/context7-cli { };
@@ -97,7 +97,4 @@ with pkgs; [
 
   # Secret management
   sops
-]
-++ lib.optionals (pkgs ? llm-agents && pkgs.llm-agents ? opencode) [
-  (callPackage ../../packages/opencode-buffered { opencode = llm-agents.opencode; })
 ]

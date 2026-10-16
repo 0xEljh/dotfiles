@@ -4,7 +4,11 @@ import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:p
 export const AUTH_SENTINEL = "claude-agent-cli-authenticated"
 export const CLIENT_APP = "opencode-claude-agent/0.1.0"
 export const PROVIDER_ID = "claude-agent"
-export const MODEL_ID = "claude-fable-5-1"
+export const MODELS = {
+  "claude-sonnet-5-5": "Claude Sonnet 5.5 (Agent SDK)",
+  "claude-opus-5-5": "Claude Opus 5.5 (Agent SDK)",
+  "claude-fable-5-1": "Claude Fable 5.1 (Agent SDK)",
+}
 
 const ALLOWED_AGENT_NAMES = new Set([
   "reviewer-max",
@@ -57,17 +61,17 @@ export function sanitizeClaudeEnvironment(
 
 export function assertAllowedAgent(agent: string | undefined): void {
   if (!agent || !ALLOWED_AGENT_NAMES.has(agent)) {
-    throw new Error(`Agent ${agent ?? "<missing>"} is not allowed to use Fable`)
+    throw new Error(`Agent ${agent ?? "<missing>"} is not allowed to use Claude Agent`)
   }
 }
 
 export function assertReviewerModel(agent: string, providerId: string, modelId: string): void {
   if (
     ALLOWED_AGENT_NAMES.has(agent) &&
-    (providerId !== PROVIDER_ID || modelId !== MODEL_ID)
+    (providerId !== PROVIDER_ID || !Object.hasOwn(MODELS, modelId))
   ) {
     throw new Error(
-      `Model policy violation: ${agent} requires ${PROVIDER_ID}/${MODEL_ID}; selected ${providerId}/${modelId}`,
+      `Model policy violation: ${agent} requires ${PROVIDER_ID} with one of ${Object.keys(MODELS).join(", ")}; selected ${providerId}/${modelId}`,
     )
   }
 }

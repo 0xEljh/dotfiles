@@ -4,7 +4,7 @@ description:
   plans, and designs. Use liberally. Has no access to explore subagents;
   frontload relevant review context when possible.
 mode: subagent
-model: zai-coding-plan/glm-5.3-flash
+model: opencode-go/muse-spark-1.3-contributor
 variant: high
 permission:
   read: allow

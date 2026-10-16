@@ -6,8 +6,8 @@ description:
   is a heavy-weight variant. Use to review deep changes.
 mode: subagent
 hidden: true
-model: zai-coding-plan/glm-5.3-flash
-variant: max
+model: opencode-go/muse-spark-1.3-contributor
+variant: xhigh
 permission:
   "*": deny
   read: allow
