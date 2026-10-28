@@ -84,5 +84,3 @@ botctl phone-summary --date $(date +%F) --json
   `screen_off`, `unlocked`. Anything else 400s.
 - Redelivery is idempotent per (event, second, app), so an occasional retry macro
   is safe.
-- This stream feeds the Notion day page (hourly tags) and the evening standdown's
-  link target — see `docs/design/time-accounting-next-steps.md`.

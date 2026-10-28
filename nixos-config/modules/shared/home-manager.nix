@@ -60,7 +60,6 @@
       }
 
       # open (or create) a digital-garden log entry by topic fragment.
-      # Spec: digital-garden docs/design/paper-log-pipeline.md §5.3.
       log() {
         local dir="$HOME/digital-garden/content/posts"
         [ -d "$dir" ] || { echo "no garden checkout at $dir"; return 1; }
@@ -337,18 +336,6 @@
         ServerAliveCountMax = 30;
       };
 
-      # Example SSH configuration for GitHub
-      # "github.com" = {
-      #   IdentitiesOnly = true;
-      #   IdentityFile = [
-      #     (lib.mkIf pkgs.stdenv.hostPlatform.isLinux
-      #       "/home/${config.home.username}/.ssh/id_github"
-      #     )
-      #     (lib.mkIf pkgs.stdenv.hostPlatform.isDarwin
-      #       "/Users/${config.home.username}/.ssh/id_github"
-      #     )
-      #   ];
-      # };
     };
   };
 

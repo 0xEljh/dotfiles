@@ -54,8 +54,6 @@ in
     enable = true;
     useTailscaleServe = true;
     tailscaleServePort = 443;
-    # Connect pilot: sleeper-service stays on the shared July default.
-    t3Version = "0.0.42";
   };
 
   home = {

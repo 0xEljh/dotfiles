@@ -53,7 +53,5 @@ Then rebuild; `restartUnits` restarts the consuming service automatically
 - Old plaintext files are still on disk as rollback fallback; delete after
   rotation: `~/.config/personal-telegram-bot/bot.env`, `~/.config/kodo/api.env`,
   `/var/lib/secrets/acme-0xeljh.env`.
-- Migrate script-level `.env` usage (see design doc Phase 3) once service
-  secrets have proven out.
 
 Do not commit plaintext secrets here.

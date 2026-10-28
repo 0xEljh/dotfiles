@@ -47,3 +47,14 @@ If review requests changes, accept or reject each finding with evidence. Make
 accepted corrections, rerun verification, and rerun review after material
 changes. Keep the reviewer decision, finding dispositions, and post-correction
 verification evidence in the conversation.
+
+## OpenCode tool names
+
+Use the available tool catalog for argument names. The shell tool is `shell`,
+child-session delegation is `subagent`, and patch editing is `patch`.
+File tools use `path`. Load skills by `id`. Resume child sessions with
+`sessionID`; select their agent with `agent`. There is no built-in `todowrite`.
+Use the `design-docs` skill when preparing a design document.
+
+Language-server diagnostics are unavailable in this runtime. Run the project's
+compiler, type checker, or linter when those checks are needed.

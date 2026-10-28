@@ -9,30 +9,22 @@ let
   huggingFaceCli = pkgs.python3Packages.huggingface-hub;
   opencodeClaudeAgent = pkgs.callPackage ../../packages/opencode-claude-agent { };
   playwrightCli = pkgs.callPackage ../../packages/playwright-cli { };
-  useV2 = config.aiTools.opencodeV2.enable;
   opencodePackage = config.aiTools.opencodePackage;
-  opencodeConfig =
-    if useV2 then
-      pkgs.writeText "opencode-v2.json" (
-        builtins.toJSON (
-          builtins.fromJSON (builtins.readFile ./config/opencode-v2.json)
-          // {
-            update = "disable";
-            plugin = [ "file://${opencodeClaudeAgent}/lib/opencode-claude-agent/dist/v2" ];
-          }
-        )
-      )
-    else
-      null;
+  opencodeConfig = pkgs.writeText "opencode.json" (
+    builtins.toJSON (
+      builtins.fromJSON (builtins.readFile ./config/opencode.json)
+      // {
+        plugins = [ "file://${opencodeClaudeAgent}/lib/opencode-claude-agent/dist/v2" ];
+      }
+    )
+  );
 in
 {
   options.aiTools = {
-    opencodeV2.enable = lib.mkEnableOption "the staged OpenCode 2 configuration";
     opencodePackage = lib.mkOption {
       type = lib.types.package;
       readOnly = true;
-      default =
-        if useV2 then pkgs.callPackage ../../packages/opencode-v2 { } else pkgs.llm-agents.opencode;
+      default = pkgs.callPackage ../../packages/opencode-v2 { };
       description = "Raw OpenCode package shared by the CLI and agent services.";
     };
   };
@@ -40,12 +32,7 @@ in
   config = {
     home = {
       packages = [
-        (
-          if useV2 then
-            opencodePackage
-          else
-            pkgs.callPackage ../../packages/opencode-buffered { opencode = opencodePackage; }
-        )
+        (pkgs.callPackage ../../packages/opencode-buffered { opencode = opencodePackage; })
       ];
 
       sessionVariables = {
@@ -62,7 +49,6 @@ in
         HF_CLI=${huggingFaceCli}/bin/hf
         PLAYWRIGHT_CLI=${playwrightCli}/bin/playwright-cli
         PLAYWRIGHT_SKILL=${playwrightCli}/share/playwright-cli/skills/playwright-cli
-        OPENCODE_CLAUDE_AGENT=${opencodeClaudeAgent}/lib/opencode-claude-agent
 
         link_config() {
           local src="$1" dest="$2"
@@ -154,22 +140,15 @@ in
         fi
 
         # OpenCode
-        link_config ${
-          if useV2 then
-            lib.escapeShellArg (toString opencodeConfig)
-          else
-            ''"$AI_TOOLS/opencode/opencode.json"''
-        } "$HOME/.config/opencode/opencode.json"
-        link_config "$AI_TOOLS/opencode/tui.jsonc"     "$HOME/.config/opencode/tui.jsonc"
+        link_config ${lib.escapeShellArg (toString opencodeConfig)} "$HOME/.config/opencode/opencode.json"
+        # The CLI writes its own preferences; only seed new installations.
+        if [ ! -e "$HOME/.config/opencode/cli.json" ]; then
+          link_config "$AI_TOOLS/opencode/cli.json" "$HOME/.config/opencode/cli.json"
+        fi
         link_skills "$AI_TOOLS/shared/skills"          "$HOME/.config/opencode/skills"
         link_config "$AI_TOOLS/opencode/agents"        "$HOME/.config/opencode/agents"
         link_config "$AI_TOOLS/opencode/commands"      "$HOME/.config/opencode/commands"
-        link_config "$OPENCODE_CLAUDE_AGENT"           "$HOME/.local/lib/opencode-claude-agent"
         concat_with_separator "$AI_TOOLS/shared/AI.md" "$AI_TOOLS/opencode/AGENTS.md" "$HOME/.config/opencode/AGENTS.md"
-        ${lib.optionalString useV2 ''
-          printf '\n\n---\n\n' >> "$HOME/.config/opencode/AGENTS.md"
-          cat ${./config/opencode-v2-instructions.md} >> "$HOME/.config/opencode/AGENTS.md"
-        ''}
 
         # Claude Code
         link_config "$AI_TOOLS/claude-code/settings.json" "$HOME/.claude/settings.json"

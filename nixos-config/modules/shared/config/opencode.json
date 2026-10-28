@@ -1,5 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "update": "disable",
   "model": "openai/gpt-6.1-sol",
   "agent": {
     "build": {
@@ -26,9 +27,6 @@
     "exa_*": "deny",
     "parallel_*": "deny"
   },
-  "plugin": [
-    "file://{env:HOME}/.local/lib/opencode-claude-agent/dist/plugin.js"
-  ],
   "mcp": {
     "arxiv": {
       "type": "local",

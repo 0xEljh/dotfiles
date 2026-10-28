@@ -45,7 +45,7 @@ class DiscoveryTests(unittest.TestCase):
             "args = sys.argv[1:]\n"
             "assert args == json.loads(os.environ['EXPECTED_ARGS'])\n"
             "fd = os.fstat(1)\n"
-            "if not (args[:1] == ['models'] or args[:2] == ['agent', 'list']):\n"
+            "if not (args[:1] == ['models'] or args[:2] == ['debug', 'agents']):\n"
             "    assert stat.S_ISFIFO(fd.st_mode)\n"
             "    os.write(1, sys.stdin.buffer.read())\n"
             "    sys.exit(0)\n"
@@ -72,7 +72,7 @@ class DiscoveryTests(unittest.TestCase):
         )
 
     def test_raw_pipe_reproduces_truncation(self):
-        args = ["models", "--verbose"]
+        args = ["models"]
         env = self.environment(args)
         with tempfile.TemporaryFile() as output:
             result = subprocess.run(
@@ -88,7 +88,7 @@ class DiscoveryTests(unittest.TestCase):
         print(f"raw producer: {len(output)}/{len(PAYLOAD)} bytes", flush=True)
 
     def test_discovery_survives_delayed_reader(self):
-        for args in (["models", "--verbose"], ["agent", "list"]):
+        for args in (["models"], ["debug", "agents"]):
             for delay in (0.1, 0.2, 0.3):
                 with self.subTest(args=args, delay=delay):
                     status, output, stderr = delayed_read(
@@ -101,7 +101,7 @@ class DiscoveryTests(unittest.TestCase):
                     self.assertEqual(list(self.spool.iterdir()), [])
 
     def test_nonzero_status_keeps_output_and_stderr(self):
-        args = ["models", "--verbose"]
+        args = ["models"]
         status, output, stderr = delayed_read(
             ["bash", WRAPPER, self.producer, *args],
             env=self.environment(args, status=17),
@@ -112,7 +112,7 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(list(self.spool.iterdir()), [])
 
     def test_other_commands_preserve_pipe_stdin_and_args(self):
-        for args in ([], ["agent"], ["agent", "create"], ["run", "two words", ""]):
+        for args in ([], ["debug"], ["debug", "config"], ["run", "two words", ""]):
             with self.subTest(args=args):
                 result = subprocess.run(
                     ["bash", WRAPPER, self.producer, *args],
@@ -124,7 +124,7 @@ class DiscoveryTests(unittest.TestCase):
                 self.assertEqual(list(self.spool.iterdir()), [])
 
     def test_signal_cleans_spool(self):
-        args = ["models", "--verbose"]
+        args = ["models"]
         with subprocess.Popen(
             ["bash", WRAPPER, self.producer, *args],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -153,7 +153,7 @@ class DiscoveryTests(unittest.TestCase):
 class InstalledDiscoveryTests(unittest.TestCase):
     def test_models_match_regular_file_baseline(self):
         binary = os.environ["OPENCODE_REAL_BINARY"]
-        args = ["models", "--verbose"]
+        args = ["models"]
         with tempfile.TemporaryFile() as output:
             result = subprocess.run(
                 [binary, *args], stdout=output, stderr=subprocess.PIPE, timeout=60,

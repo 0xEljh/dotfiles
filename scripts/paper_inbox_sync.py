@@ -20,8 +20,6 @@ Deliberately mechanical: reaction text is copied verbatim, never rewritten
 failed push leaves them pending, and the content-based idempotency guard
 makes the retry safe. Works in its own clone (GARDEN_BRIDGE_DIR), never the
 serving checkout — digital-garden-deploy hard-resets that one.
-
-Spec: digital-garden docs/design/paper-log-pipeline.md §5.2.
 """
 
 import os

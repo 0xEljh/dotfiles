@@ -80,8 +80,6 @@ class Config:
     # Auth reuses NOTION_TOKEN; unset means the dispatch is a no-op.
     paper_inbox_datasource_id: str | None = None
     paper_inbox_url: str | None = None
-    # TPOT social assistant: inference endpoint from docs/design/06 and the
-    # WakaTime key needed for per-project topic construction.
     tpot_inference_url: str | None = None
     tpot_inference_token: str | None = None
     wakatime_api_key: str | None = None

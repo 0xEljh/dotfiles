@@ -2,7 +2,6 @@
 
 let
   cfg = config.services.t3Serve;
-  useOpencodeV2 = config.aiTools.opencodeV2.enable or false;
   t3PackageSpec =
     if cfg.t3Package == null then "t3@${cfg.t3Version}" else cfg.t3Package;
   t3PackageArg = lib.escapeShellArg t3PackageSpec;
@@ -33,7 +32,6 @@ let
     export T3CODE_CLOUDFLARED_PATH=${lib.escapeShellArg "${pkgs.cloudflared}/bin/cloudflared"}
     export NPM_CONFIG_YES=true
     export NPM_CONFIG_LOGLEVEL=warn
-  '' + lib.optionalString useOpencodeV2 ''
     # The selected raw CLI precedes profile paths, which supply project tools.
     export PATH="$PATH:${config.home.homeDirectory}/.nix-profile/bin:/etc/profiles/per-user/${config.home.username}/bin:/run/current-system/sw/bin:/run/wrappers/bin"
     # T3 downloads Chrome for Testing; its ELF loader needs the Nix libraries.
@@ -50,7 +48,8 @@ let
     pkgs.gnumake
     pkgs.gcc
     pkgs.python3
-  ] ++ lib.optional useOpencodeV2 config.aiTools.opencodePackage;
+    config.aiTools.opencodePackage
+  ];
 
   staticArgs =
     if cfg.useTailscaleServe then [
@@ -177,7 +176,7 @@ in
 
     t3Version = lib.mkOption {
       type = lib.types.str;
-      default = "0.0.29-nightly.20260725.899";
+      default = "0.0.46-nightly.20261014.3093";
       description = ''
         npm tag or version of `t3` to run via `npx` when `t3Package` is unset.
         Keep this pinned to avoid alpha churn.

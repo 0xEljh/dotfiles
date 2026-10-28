@@ -50,20 +50,9 @@ Inputs:
 - Claude MCP: `ai-tools/claude-code/mcp.json`
 - Codex layer: `ai-tools/codex/AGENTS.md`
 
-Wiring:
-
 - Home Manager activation: `nixos-config/modules/shared/ai-tools.nix`
-
-What activation does:
-
-- Links shared skills into each harness and adds pinned CLI-provided skills.
-- -> Only need to maintain the global configs in this folder.
-- Generates combined instruction files by concatenating `shared/AI.md` + tool layer, separated by `---`:
-  - `~/.config/opencode/AGENTS.md`
-  - `~/.claude/CLAUDE.md`
-  - `~/.codex/AGENTS.md`
-- Replaces only `~/.claude.json.mcpServers` from `ai-tools/claude-code/mcp.json`, preserving Claude's unrelated auth/state while reconciling removed servers.
-- Installs the browser revision pinned by Playwright CLI and generates the skill matching the installed Hugging Face CLI.
+- OpenCode server config: `nixos-config/modules/shared/config/opencode.json`
+- OpenCode terminal config: `ai-tools/opencode/cli.json`
 
 Managed-search credentials stay in the untracked
 `~/.config/ai-tools/secrets.env`; start from `ai-tools/secrets.env.example` and
@@ -74,12 +63,14 @@ uses that key as a Bearer token when supplied.
 
 ### 2a) T3 Code remote agents (mobile + cross-device)
 
-[T3 Code](https://github.com/pingdotgg/t3code) is a GUI front-end for Claude Code / OpenCode / Codex. This repo wires it up across all three hosts. Design: [`docs/design/ai-agent-mobile-refresh.md`](docs/design/ai-agent-mobile-refresh.md).
+[T3 Code](https://github.com/pingdotgg/t3code) is a GUI front-end for Claude Code, OpenCode, and Codex.
 
-- **sleeper-service** retains the pinned July nightly. **WSL** stages T3 `0.0.42` for a Connect pilot. Both keep built-in Tailscale Serve on HTTPS port `443`.
-- **OpenCode direct access** stays on `127.0.0.1:8779` and is proxied by Tailscale Serve at HTTPS port `8779`. `OPENCODE_SERVER_PASSWORD` is mandatory for this endpoint.
-- **macOS** installs the ChatGPT, OpenCode, and T3 Code nightly desktop apps plus Tailscale through Homebrew casks.
-- **Mobile / any device** can pair [https://app.t3.codes](https://app.t3.codes) with the HTTPS URL printed by T3. OpenCode's own interface is available at the same host's HTTPS port `8779`.
+All host outputs use OpenCode V2. Package and service pins live in
+[`ai-tools.nix`](nixos-config/modules/shared/ai-tools.nix) and
+[`t3-serve.nix`](nixos-config/modules/shared/t3-serve.nix).
+
+- Pair [https://app.t3.codes](https://app.t3.codes) with sleeper-service or WSL using [the pairing runbook](docs/runbooks/t3-pairing.md).
+- OpenCode's direct interface is available at the same host's HTTPS port `8779`. `OPENCODE_SERVER_PASSWORD` is mandatory for this endpoint.
 - T3 stays Tailnet-only until each host is linked interactively. Linking enables an authenticated public T3 Connect tunnel for that host; it does not expose direct OpenCode. Do not use Funnel or the public nginx proxy for either backend. See [Enroll a T3 host in Connect](docs/runbooks/t3-connect.md).
 
 One-time per host after first build:
@@ -88,14 +79,13 @@ One-time per host after first build:
 - macOS: launch Tailscale.app, sign in
 - WSL: `sudo tailscale up` (Tailscale was already enabled here)
 - Enable HTTPS certificates in the Tailscale admin console if the first `tailscale serve` invocation prints a consent URL.
-- Add `OPENCODE_SERVER_USERNAME=opencode` and a strong `OPENCODE_SERVER_PASSWORD` to `~/.config/ai-tools/secrets.env`, then set the file mode to `0600`.
+- Add a strong `OPENCODE_SERVER_PASSWORD` to `~/.config/ai-tools/secrets.env`, then set the file mode to `0600`. The username is always `opencode`.
 
 Then on the desktop client (Mac), pair via the QR / URL printed by the running `t3-serve` user service:
 `journalctl --user -u t3-serve -f` on the host.
 
-In each T3 environment's OpenCode provider settings, use
-`http://127.0.0.1:8779` and the same OpenCode password. T3 stores this setting
-in its own local state, so update it whenever the password is rotated.
+T3 manages its own loopback OpenCode servers and credentials. The direct
+OpenCode endpoint's password is not a T3 pairing credential.
 
 Useful checks:
 
@@ -121,8 +111,6 @@ Examples:
 - rg "TODO" -n . | notion-cat --title "TODO scan"
 - notion-cat --suppress-output README.md  # omit document echo, but print the page URL
 
-May add other versions and integrate with ai-tools in the future.
-
 ---
 
 ## Nix on macOS
@@ -138,6 +126,7 @@ sh <(curl --proto '=https' --tlsv1.2 -L https://nixos.org/nix/install)
 ```
 
 ```bash
+cd ~/dotfiles/nixos-config
 find apps/$(uname -m | sed 's/arm64/aarch64/')-darwin -type f \( -name apply -o -name build -o -name build-switch -o -name create-keys -o -name copy-keys -o -name check-keys -o -name rollback \) -exec chmod +x {} \;
 ```
 
@@ -162,6 +151,7 @@ readable build view and prints a generation diff after every switch. The flake
 apps are the same verbs darwin uses:
 
 ```bash
+cd ~/dotfiles/nixos-config
 nix run .#build-switch   # build + activate + generation diff
 nix run .#build          # build only
 nix run .#rollback       # roll back to the previous generation
@@ -185,9 +175,9 @@ sudo nixos-rebuild switch --flake .#contents-may-differ
 ## Linting and formatting nix
 
 ```bash
+cd ~/dotfiles/nixos-config
 nix run .#lint           # statix + deadnix (optional path arg, default .)
 nix fmt                  # nixfmt via nixfmt-tree
 ```
 
 Both are also on `PATH` inside the repo via direnv (`use flake ./nixos-config`).
-Note the lint backlog is not yet clean — see `docs/design/dev-tooling-roadmap.md`.

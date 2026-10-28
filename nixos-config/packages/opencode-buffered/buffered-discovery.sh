@@ -4,7 +4,7 @@ set -euo pipefail
 binary=${1:?expected the real OpenCode executable}
 shift
 
-if [[ ${1-} != models ]] && [[ ${1-} != agent || ${2-} != list ]]; then
+if [[ ${1-} != models ]] && [[ ${1-} != debug || ${2-} != agents ]]; then
   exec "$binary" "$@"
 fi
 

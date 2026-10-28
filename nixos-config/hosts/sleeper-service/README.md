@@ -25,56 +25,11 @@ NIX_CONFIG="experimental-features = nix-command flakes" \
   /nix/var/nix/profiles/system/sw/bin/nixos-rebuild boot --flake path:/root/nixos-config#sleeper-service
 ```
 
-### Web stack (nginx + ACME + app services)
+### Web stack
 
-This host now imports:
-
-- `hosts/sleeper-service/services/nginx-acme.nix`
-- `hosts/sleeper-service/services/web-apps.nix`
-
-Ad hoc dev/staging hosts:
-
-- `dev-3000.0xeljh.com` -> `127.0.0.1:3000`
-- `dev-3001.0xeljh.com` -> `127.0.0.1:3001`
-- `dev-5173.0xeljh.com` -> `127.0.0.1:5173`
-- `dev-8000.0xeljh.com` -> `127.0.0.1:8000`
-
-These are generic nginx entry points for temporary local servers you start yourself.
-
-Managed websites:
-
-- `0xeljh.com` -> `127.0.0.1:3005`
-- `teathegathering.com` -> `127.0.0.1:3006`
-- `vamptutor.com` -> `127.0.0.1:3007`
-
-Internal backend:
-
-- `vamp-tutor-backend` listens on `127.0.0.1:18821`
-
-Firewall:
-
-- Public TCP ports: `22` (SSH), `80` (HTTP), `443` (HTTPS)
-- App processes bind to `127.0.0.1` and are only exposed through nginx
-
-Managed systemd services:
-
-- `digital-garden`
-- `tea-the-gathering`
-- `vamp-tutor-website`
-- `vamp-tutor-backend`
-- `dotfiles-sync` (oneshot job)
-
-Managed timer:
-
-- `dotfiles-sync.timer` runs `~/dotfiles/scripts/run-sync.sh` roughly every 20 minutes.
-- `nix-gc.timer` removes unreachable Nix paths and generations older than 30 days weekly.
-- `nix-optimise.timer` deduplicates the Nix store weekly after garbage collection.
-- `docker-prune.timer` prunes Docker resources unused for seven days weekly; volumes are excluded.
-
-Service guards:
-
-- Next.js units only start when `<app>/.next/BUILD_ID` exists.
-- `vamp-tutor-backend` only starts when `backend/.venv/bin/python` exists.
+- Routes and TLS: [nginx-acme.nix](services/nginx-acme.nix)
+- App services, deploy jobs, and timers: [web-apps.nix](services/web-apps.nix)
+- Firewall and host configuration: [default.nix](default.nix)
 
 Deployment workflow per app:
 

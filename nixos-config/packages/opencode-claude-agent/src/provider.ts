@@ -257,8 +257,6 @@ class ClaudeAgentModel implements LanguageModelV3 {
 
 export function createOpenCodeClaudeAgent(options: FactoryOptions = {}) {
   if (options.apiKey !== AUTH_SENTINEL || options.authenticated !== true) {
-    // The auth loader reports why it declined, so the operator sees the real
-    // cause here rather than a sentinel message that names the wrong problem.
     throw new Error(
       options.unavailableReason ?? "Claude Agent authentication sentinel is missing",
     )

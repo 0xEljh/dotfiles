@@ -37,8 +37,6 @@
   # Use the standard path that the nix-ld module expects
   NIX_LD = lib.mkForce "/run/current-system/sw/share/nix-ld/lib/ld.so";
 
- # TODO: needs review
-
   # Triton fallback for NixOS where /sbin/ldconfig does not exist
   TRITON_LIBCUDA_PATH = "/usr/lib/wsl/lib";
 

@@ -61,11 +61,6 @@
       };
       forDevShellSystems = f: nixpkgs.lib.genAttrs devShellSystems f;
 
-      # Nix code-quality tools, defined once and reused by the devShell (so
-      # direnv puts them on PATH in this repo) and by the `lint` app (so
-      # `nix run .#lint` needs nothing installed). Deliberately repo-scoped
-      # rather than added to modules/shared/packages.nix: they are only useful
-      # where there is nix source to lint.
       nixQualityTools = system: with nixpkgs.legacyPackages.${system}; [
         deadnix
         nixfmt
@@ -121,10 +116,6 @@
         );
       };
 
-      # NixOS hosts get the same verbs darwin already has, so `nix run
-      # .#build-switch` means the same thing everywhere. nh supplies the build
-      # progress view and the post-switch generation diff.
-      #
       # NH_FLAKE (set by programs.nh) points at the dotfiles working tree, so
       # uncommitted edits are picked up; $PWD is the fallback when bootstrapping
       # a host whose home-manager generation does not exist yet.
@@ -167,6 +158,10 @@
       # `nixfmt --check <dir>` exits 0 even when files are unformatted, and
       # nixfmt 1.4 deprecates directory arguments outright.
       formatter = forDevShellSystems (system: nixpkgs.legacyPackages.${system}.nixfmt-tree);
+
+      packages = forDevShellSystems (system: {
+        opencode-v2 = nixpkgs.legacyPackages.${system}.callPackage ./packages/opencode-v2 { };
+      });
 
       apps =
         nixpkgs.lib.genAttrs darwinSystems (system: mkDarwinApps system // mkQualityApps system)
@@ -241,7 +236,6 @@
           ];
         };
 
-        # sleeper-service configuration
         sleeper-service = nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
           specialArgs = inputs // { inherit llmAgentsOverlay; };

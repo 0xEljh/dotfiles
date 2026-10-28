@@ -1,8 +1,7 @@
 """Normalized phone-originated life events (sleep, screen sessions).
 
-Storage and normalization follow docs/design/personal-presence-sleep-tracking.md
-and docs/design/time-accounting-next-steps.md: redacted payloads only, with
-deterministic event IDs so webhook redelivery is idempotent.
+Retain only redacted payloads. Deterministic event IDs make webhook redelivery
+idempotent.
 """
 
 from __future__ import annotations

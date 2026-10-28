@@ -97,8 +97,6 @@ in
       extraSetFlags = [ "--operator=${user}" ];
     };
 
-    # TODO: Consider enabling these services later
-    # syncthing = { ... };
   };
 
   # ============================================================================
@@ -228,9 +226,6 @@ in
     # Editor
     neovim
 
-    # TODO: Consider adding these packages later
-    # wl-clipboard  # For Wayland clipboard (WSLg)
-    # xclip         # For X11 clipboard fallback
   ];
 
   # ============================================================================

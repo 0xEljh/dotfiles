@@ -309,8 +309,7 @@ in
     # new commits, restart only after a successful build — a failed build
     # leaves the running server untouched (Telegram OnFailure alert wired in
     # telegram-bot.nix). No `git clean`: data/ analytics exports and .next
-    # are untracked and must survive. Spec: digital-garden
-    # docs/design/paper-log-pipeline.md §5.1.
+    # are untracked and must survive.
     digital-garden-deploy = {
       description = "Pull and rebuild digital-garden on new commits";
       after = [ "network-online.target" ];
@@ -362,7 +361,6 @@ in
     # (GARDEN_BRIDGE_DIR), never the serving checkout — digital-garden-deploy
     # hard-resets that one and would eat unpushed commits. Decoupled from the
     # deploy unit through git: the bridge pushes, the deploy timer picks it up.
-    # Spec: digital-garden docs/design/paper-log-pipeline.md §5.2.
     paper-inbox-sync = {
       description = "Land Notion paper-inbox captures into the digital garden";
       after = [ "network-online.target" ];

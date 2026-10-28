@@ -25,10 +25,6 @@ def page(title="Do the thing", status="Not started", start="2026-06-11", end=Non
     }
 
 
-def test_terminal_statuses_match_bread_schema():
-    assert set(TERMINAL_STATUSES) == {"Done", "DNF", "Delegated", "Cancelled"}
-
-
 def test_filter_excludes_terminal_statuses_and_bounds_date():
     f = build_open_tasks_filter(TODAY)
     clauses = f["and"]
@@ -39,7 +35,7 @@ def test_filter_excludes_terminal_statuses_and_bounds_date():
         for c in clauses
         if c.get("property") == "Status"
     }
-    assert excluded == set(TERMINAL_STATUSES)
+    assert excluded == {"Done", "DNF", "Delegated", "Cancelled"}
 
 
 def test_parse_task_basic():

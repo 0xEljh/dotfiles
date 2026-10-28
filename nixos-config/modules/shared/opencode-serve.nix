@@ -5,15 +5,10 @@ let
 
   homeDir = config.home.homeDirectory;
   user = config.home.username;
-  useV2 = config.aiTools.opencodeV2.enable or false;
-
   # Follow the shared CLI selection unless an explicit server override is set.
   opencodePkg =
     if cfg.package != null then cfg.package
-    else config.aiTools.opencodePackage or (
-      if (pkgs ? llm-agents && pkgs.llm-agents ? opencode) then pkgs.llm-agents.opencode
-      else pkgs.opencode
-    );
+    else config.aiTools.opencodePackage;
 
   opencodeWrapper = pkgs.writeShellApplication {
     name = "opencode-serve-wrapper";
@@ -49,9 +44,8 @@ let
 
       tailscale serve --bg --yes --https=${toString cfg.tailscaleServePort} \
         http://127.0.0.1:${toString cfg.port}
-    '' + lib.optionalString useV2 ''
-      export OPENCODE_PASSWORD="''${OPENCODE_SERVER_PASSWORD:-}"
     '' + ''
+      export OPENCODE_PASSWORD="''${OPENCODE_SERVER_PASSWORD:-}"
       exec ${opencodePkg}/bin/opencode serve --hostname ${lib.escapeShellArg cfg.host} --port ${toString cfg.port}
     '';
   };
@@ -97,14 +91,14 @@ in
     package = lib.mkOption {
       type = lib.types.nullOr lib.types.package;
       default = null;
-      description = "opencode package to serve. Defaults to the llm-agents overlay's opencode.";
+      description = "OpenCode package to serve. Defaults to the shared OpenCode CLI package.";
     };
   };
 
   config = lib.mkIf cfg.enable {
     assertions = [
       {
-        assertion = !useV2 || toString opencodePkg == toString config.aiTools.opencodePackage;
+        assertion = toString opencodePkg == toString config.aiTools.opencodePackage;
         message = "The OpenCode 2 CLI and direct service must select the same package.";
       }
       {
@@ -116,7 +110,7 @@ in
     systemd.user.services.opencode-serve = {
       Unit = {
         Description = "opencode headless agent server (opencode serve)";
-        Documentation = [ "https://opencode.ai/docs/server/" ];
+        Documentation = [ "https://opencode.ai/v2/docs/api" ];
         Wants = [ "network-online.target" ];
         After = [ "network-online.target" ];
       };

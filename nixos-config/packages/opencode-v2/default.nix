@@ -7,13 +7,16 @@
   makeWrapper,
   ripgrep,
   nodejs,
+  sysctl,
   writableTmpDirAsHomeHook,
   idleTimeout ? "16 hours",
 }:
 
-assert stdenv.hostPlatform.system == "x86_64-linux";
-
 let
+  platform = {
+    x86_64-linux = "linux-x64";
+    aarch64-darwin = "darwin-arm64";
+  }.${stdenv.hostPlatform.system};
   upstreamSource = fetchzip {
     url = "https://github.com/anomalyco/opencode/archive/026b106bc5d41b679ffc413264229c340871e4d3.tar.gz";
     hash = "sha256-7bpaROwB9JYucjqOKh92oWi2iuYmo7pXyUxYKgj4OkI=";
@@ -36,11 +39,10 @@ stdenv.mkDerivation (finalAttrs: {
   nativeBuildInputs = [
     buildBun
     nodejs
-    autoPatchelfHook
     makeWrapper
     writableTmpDirAsHomeHook
-  ];
-  buildInputs = [ stdenv.cc.cc.lib ];
+  ] ++ lib.optional stdenv.hostPlatform.isLinux autoPatchelfHook;
+  buildInputs = lib.optional stdenv.hostPlatform.isLinux stdenv.cc.cc.lib;
 
   # The Bun executable includes the CLI, native addons, and web assets.
   dontStrip = true;
@@ -61,17 +63,18 @@ stdenv.mkDerivation (finalAttrs: {
   '';
 
   env = {
-    LD_LIBRARY_PATH = lib.makeLibraryPath [ stdenv.cc.cc.lib ];
-    LD_PRELOAD = "${stdenv.cc.cc.lib}/lib/libstdc++.so.6";
     OPENCODE_VERSION = finalAttrs.version;
     OPENCODE_CHANNEL = "latest";
     NODE_OPTIONS = "--max-old-space-size=4096";
     OPENCODE_TEST_IDLE_TTL = idleTimeout;
+  } // lib.optionalAttrs stdenv.hostPlatform.isLinux {
+    LD_LIBRARY_PATH = lib.makeLibraryPath [ stdenv.cc.cc.lib ];
+    LD_PRELOAD = "${stdenv.cc.cc.lib}/lib/libstdc++.so.6";
   };
 
   buildPhase = ''
     runHook preBuild
-    bun run --cwd packages/cli script/build.ts --target=opencode-linux-x64 --skip-install
+    bun run --cwd packages/cli script/build.ts --target=opencode-${platform} --skip-install
     runHook postBuild
   '';
 
@@ -89,16 +92,18 @@ stdenv.mkDerivation (finalAttrs: {
 
     # Preserve the complete platform distribution and its relative layout.
     mkdir -p "$out/lib/opencode-v2" "$out/bin"
-    cp -r packages/cli/dist/cli-linux-x64/. "$out/lib/opencode-v2/"
+    cp -r packages/cli/dist/cli-${platform}/. "$out/lib/opencode-v2/"
     chmod +x "$out/lib/opencode-v2/bin/opencode"
 
     # Embedded native addons are extracted/dlopen'd at runtime, so the ELF
     # patching hook cannot give them their own Nix library search paths.
     # Preload libstdc++ for @parcel/watcher, as in the upstream Nix package.
     makeWrapper "$out/lib/opencode-v2/bin/opencode" "$out/bin/opencode" \
-      --prefix PATH : ${lib.makeBinPath [ ripgrep ]} \
+      --prefix PATH : ${lib.makeBinPath ([ ripgrep ] ++ lib.optional stdenv.hostPlatform.isDarwin sysctl)} \
+      ${lib.optionalString stdenv.hostPlatform.isLinux ''
       --prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath [ stdenv.cc.cc.lib ]} \
       --prefix LD_PRELOAD : "${stdenv.cc.cc.lib}/lib/libstdc++.so.6"
+      ''}
 
     runHook postInstall
   '';
@@ -136,7 +141,7 @@ stdenv.mkDerivation (finalAttrs: {
     homepage = "https://opencode.ai/v2";
     license = lib.licenses.mit;
     sourceProvenance = with lib.sourceTypes; [ fromSource ];
-    platforms = [ "x86_64-linux" ];
+    platforms = [ "x86_64-linux" "aarch64-darwin" ];
     mainProgram = "opencode";
   };
 })

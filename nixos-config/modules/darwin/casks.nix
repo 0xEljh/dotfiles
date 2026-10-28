@@ -5,9 +5,7 @@ _:
   "docker-desktop" # was "docker" (cask renamed by Homebrew)
   "visual-studio-code"
   "devin-desktop" # was "windsurf" (Windsurf rebranded to Devin)
-  # Agent desktops. See docs/design/ai-agent-mobile-refresh.md.
   "chatgpt"
-  "opencode-desktop"
   "t3-code@nightly"
 
   # Networking

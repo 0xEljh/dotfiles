@@ -1,25 +1,9 @@
 # personal-telegram-bot
 
-Telegram bot (`@nervous_energy_bot`) for sleeper-service. Design:
-`docs/design/telegram-bot-sleeper-service.md`.
+Telegram bot (`@nervous_energy_bot`) for sleeper-service.
 
-What it does:
-
-- **On waking** — morning digest of open Bread tasks (due today + overdue),
-  with a noon fallback if no wake event arrives.
-- **Every 5 min** — health checks over hosted systemd units, public HTTPS
-  endpoints, ActivityWatch data freshness (newest `aw-data` push < 26h), and
-  disk usage (warning above 80%, critical above 90%); alerts on state
-  transitions only (failure, escalation, and recovery).
-- **09:00 daily** — checks the local Tailscale network map and reminds you when
-  a visible device key has expired or will expire within 14 days.
-- **:10 past each hour** — reports what the previous hour was classified as
-  (Deep Work / Shallow Work, per `aw_notion_sync.py` thresholds) with a tool
-  breakdown. Silent when unclassified.
-- **Instant** — `OnFailure=` hooks on hosted services push an alert with a
-  journal tail the moment a unit enters failed state.
-- **Daemon** — long-polling command surface: `/status`, `/help`. Allowlisted
-  user IDs only.
+- Commands: [bot.py](personal_telegram_bot/bot.py)
+- Services and schedules: [telegram-bot.nix](../../nixos-config/hosts/sleeper-service/services/telegram-bot.nix)
 
 ## Ops
 

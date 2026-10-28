@@ -3,7 +3,6 @@
 The bridge is deliberately mechanical (no prose generation): reactions are
 copied verbatim, structure is added around them. These tests pin that contract
 plus the idempotency guard that makes retries safe after a failed push.
-Spec: digital-garden docs/design/paper-log-pipeline.md §5.2.
 """
 
 import sys
