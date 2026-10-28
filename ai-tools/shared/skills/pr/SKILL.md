@@ -5,7 +5,7 @@ metadata:
   credits: mattpocock
 ---
 
-Use the template for a PR body:
+Use this template for a PR body:
 
 ```markdown
 ## Summary
@@ -142,12 +142,15 @@ function expandSkill(command: string): string {
 Don't spam. The fact that all tests pass is expected. The approach taken to
 write the code is internal. Do not cite internal documentation or notes. Those
 aren't necessary to a reviewer and not only do they likely not have access but
-they do not have time to be going over these.
+they do not have time to be going over these. And nobody cares about the sheer
+number of tests being written and passing!
 
 Instead, we want to highlight and describe concisely the most critical pieces of
 evidence about the change that would earn trust. This can be an integration test
 flow via playwright, supporting screenshots, benchmark results, or the number of
-surfaces eliminated during testing.
+surfaces eliminated during testing. Describe the test(s) qualitatively and what
+they prove about the implementation. The point is to answer the question of "why
+should we trust this code?"
 
 In general, this section should have no more than 12 sentences. There's usually
 only about 2-3 pieces of key evidence.

@@ -1,8 +1,8 @@
 ---
 name: cleanup-basic
 description: >-
-  The lowest hanging fruit of any code/codebase cleanup:
-  to strip out redundant doc and test surfaces.
+  The lowest hanging fruit of any code/codebase cleanup: to strip out redundant
+  doc and test surfaces.
 ---
 
 This is to help identify files and surfaces for deletion.
@@ -13,4 +13,6 @@ This is to help identify files and surfaces for deletion.
   maintained. Docs should contain what the code cannot itself explain. Docs that
   serve plainly as indexes that point to the code (and let's the code explain
   itself) are okay.
+- Comments can also be handled in a similar manner to docs. Comments should only
+  add what the code itself can't.
 - Remove also all plans from git. These should not live in git.
