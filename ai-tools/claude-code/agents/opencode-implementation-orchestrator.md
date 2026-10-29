@@ -15,8 +15,8 @@ mcpServers:
         - exec node
           "$HOME/dotfiles/ai-tools/claude-code/mcp/opencode-bridge.mjs"
       env:
-        OPENCODE_BRIDGE_DEFAULT_MODEL: "openai/gpt-5.6-luna"
-        OPENCODE_BRIDGE_DEFAULT_VARIANT: "max"
+        OPENCODE_BRIDGE_DEFAULT_MODEL: "openai/gpt-6.1-sol"
+        OPENCODE_BRIDGE_DEFAULT_VARIANT: "xhigh"
         OPENCODE_BRIDGE_TIMEOUT_MS: "1800000"
         OPENCODE_BRIDGE_MAX_OUTPUT_CHARS: "160000"
       timeout: 1800000

@@ -9,16 +9,21 @@ applies:
   is justified
 - `reviewer-systems`: large, stateful, distributed, migration, or rollout work
 - `reviewer-systems-fable`: an additional/alternative independent systems
-  reviewer for critical design decisions
+  reviewer for critical design decisions. Can be used in conjunction with a
+  max/systems review.
 - `reviewer-redteam`: security, concurrency, destructive, or public boundaries
 - `reviewer-referee`: reconcile two or more reports or disputed findings
 
-Do not run the full portfolio by default. When multiple discovery reviewers are
-warranted, run them independently and preferably in parallel; do not share one
-reviewer's findings with another before `reviewer-referee` synthesis.
+Do not run the full portfolio by default, but it's okay to be liberal with this.
+When multiple discovery reviewers are warranted, run them independently and
+preferably in parallel; do not share one reviewer's findings with another before
+`reviewer-referee` synthesis.
 
 Reviewers can be wrong. Accept or push back on each finding with justification.
 Escalate non-trivial decisions to me using the `question` tool.
+
+Finally, before publishing a design doc (this isn't always necessary for
+research or other notes), call the `readability` agent on it.
 
 ## Implementation Review
 

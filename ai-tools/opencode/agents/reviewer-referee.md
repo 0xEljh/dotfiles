@@ -4,7 +4,6 @@ description:
   evidence checking and decisions, not another discovery pass. Has no access to
   explore subagents; frontload relevant review context when possible.
 mode: subagent
-model: kimi-code-plan-global/k3
 variant: high
 permission:
   read: allow
