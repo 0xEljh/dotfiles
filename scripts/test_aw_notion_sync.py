@@ -228,6 +228,60 @@ class PhoneMergeTests(unittest.TestCase):
 
 
 class DesktopFilteringWarningTests(unittest.TestCase):
+    def test_drops_uncovered_host_when_another_host_has_afk_coverage(self) -> None:
+        all_data = {
+            "aw-watcher-window_Central-Node": [
+                {
+                    "timestamp": "2026-07-01T10:00:00+08:00",
+                    "duration": 3600,
+                    "data": {"app": "Zen", "title": "Claude"},
+                }
+            ],
+            "aw-watcher-web-firefox_Central-Node": [
+                {
+                    "timestamp": "2026-07-01T10:00:00+08:00",
+                    "duration": 3600,
+                    "data": {"url": "https://claude.ai/login", "title": "Claude"},
+                }
+            ],
+            "aw-watcher-window_mac": [
+                {
+                    "timestamp": "2026-07-01T10:00:00+08:00",
+                    "duration": 600,
+                    "data": {"app": "kitty", "title": "opencode"},
+                }
+            ],
+            "aw-watcher-afk_mac": [
+                {
+                    "timestamp": "2026-07-01T10:00:00+08:00",
+                    "duration": 600,
+                    "data": {"status": "not-afk"},
+                }
+            ],
+        }
+
+        stats = aw_notion_sync.compute_hourly_stats(all_data)[10]
+
+        self.assertEqual(600, stats["active_time"])
+        self.assertEqual({"OpenCode": 600.0}, stats["coding_tools"])
+        self.assertEqual({}, stats["ai_chat_time"])
+
+    def test_drops_desktop_activity_when_all_afk_coverage_is_missing(self) -> None:
+        all_data = {
+            "aw-watcher-web-firefox_Central-Node": [
+                {
+                    "timestamp": "2026-07-01T10:00:00+08:00",
+                    "duration": 3600,
+                    "data": {"url": "https://claude.ai/login", "title": "Claude"},
+                }
+            ]
+        }
+
+        with patch("builtins.print"):
+            stats = aw_notion_sync.compute_hourly_stats(all_data)
+
+        self.assertEqual({}, stats)
+
     def test_warns_when_afk_filter_removes_all_desktop_activity(self) -> None:
         all_data = {
             "aw-watcher-window_host": [
@@ -298,7 +352,14 @@ class WebsiteClassificationTests(unittest.TestCase):
                         "duration": 3600.0,
                         "data": {"url": url, "title": title},
                     }
-                ]
+                ],
+                "aw-watcher-afk_host": [
+                    {
+                        "timestamp": "2026-07-02T10:00:00+08:00",
+                        "duration": 3600.0,
+                        "data": {"status": "not-afk"},
+                    }
+                ],
             }
         )[10]
         return aw_notion_sync.determine_hourly_select_value(stats), stats

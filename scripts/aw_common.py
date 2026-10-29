@@ -497,11 +497,11 @@ def build_not_afk_periods_by_host(afk_events_by_host: dict) -> dict:
 
 
 def filter_events_by_afk(events: list, not_afk_periods_by_host: dict) -> list:
-    """Filter events to only include portions that overlap with 'not-afk' periods."""
+    """Keep only event portions covered by same-host ``not-afk`` periods."""
     if not events:
         return []
     if not not_afk_periods_by_host:
-        return events
+        return []
 
     filtered_events = []
 
@@ -509,12 +509,10 @@ def filter_events_by_afk(events: list, not_afk_periods_by_host: dict) -> list:
         bucket_name = event.get("_bucket", "")
         host = extract_host_from_bucket(bucket_name)
         if not host:
-            filtered_events.append(event)
             continue
 
         host_periods = not_afk_periods_by_host.get(host)
         if host_periods is None:
-            filtered_events.append(event)
             continue
         if not host_periods:
             continue

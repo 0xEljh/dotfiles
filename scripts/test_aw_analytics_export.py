@@ -12,6 +12,21 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import aw_analytics_export
 
 
+def with_not_afk(
+    day_data: dict, timestamp: str = "2026-07-02T10:00:00+08:00"
+) -> dict:
+    return {
+        **day_data,
+        "aw-watcher-afk_test": [
+            {
+                "timestamp": timestamp,
+                "duration": 7200.0,
+                "data": {"status": "not-afk"},
+            }
+        ],
+    }
+
+
 class PhoneAggregationTests(unittest.TestCase):
     def test_phone_usage_contributes_to_analytics_buckets(self) -> None:
         aggregate = aw_analytics_export.aggregate_day_data(
@@ -98,7 +113,7 @@ class PhoneAggregationTests(unittest.TestCase):
 class ActivityTaxonomyTests(unittest.TestCase):
     def test_devin_counts_as_dev_tool_while_claude_counts_as_ai_planning(self) -> None:
         aggregate = aw_analytics_export.aggregate_day_data(
-            {
+            with_not_afk({
                 "aw-watcher-window_test": [
                     {
                         "timestamp": "2026-07-02T10:00:00+08:00",
@@ -124,7 +139,7 @@ class ActivityTaxonomyTests(unittest.TestCase):
                         },
                     },
                 ],
-            }
+            })
         )
 
         self.assertEqual(1200.0, aggregate["totals"]["active_time"])
@@ -137,7 +152,7 @@ class ActivityTaxonomyTests(unittest.TestCase):
 
     def test_reviewed_ambiguous_taxonomy_updates(self) -> None:
         aggregate = aw_analytics_export.aggregate_day_data(
-            {
+            with_not_afk({
                 "aw-watcher-window_test": [
                     {
                         "timestamp": "2026-07-02T10:00:00+08:00",
@@ -184,7 +199,7 @@ class ActivityTaxonomyTests(unittest.TestCase):
                         },
                     },
                 ],
-            }
+            })
         )
 
         self.assertEqual(0.0, aggregate["totals"]["active_time"])
@@ -206,7 +221,7 @@ class ActivityTaxonomyTests(unittest.TestCase):
             }
 
         aggregate = aw_analytics_export.aggregate_day_data(
-            {
+            with_not_afk({
                 "aw-watcher-web_test": [
                     web_event("https://github.com/org/repo/pull/1", "Pull request"),
                     web_event("https://huggingface.co/models", "Models"),
@@ -221,7 +236,7 @@ class ActivityTaxonomyTests(unittest.TestCase):
                     web_event("https://teams.microsoft.com/light-meetings/launch", "Call"),
                     web_event("https://app.macroscope.com/overview", "Overview"),
                 ]
-            }
+            })
         )
 
         self.assertEqual(1500.0, aggregate["totals"]["dev_time"])
@@ -257,23 +272,26 @@ class ActivityTaxonomyTests(unittest.TestCase):
 
     def test_ambiguous_recent_sites_remain_unclassified(self) -> None:
         aggregate = aw_analytics_export.aggregate_day_data(
-            {
-                "aw-watcher-web_test": [
-                    {
-                        "timestamp": "2026-07-17T10:00:00+08:00",
-                        "duration": 600.0,
-                        "data": {
-                            "url": "https://www.goodfire.ai/",
-                            "title": "Goodfire",
+            with_not_afk(
+                {
+                    "aw-watcher-web_test": [
+                        {
+                            "timestamp": "2026-07-17T10:00:00+08:00",
+                            "duration": 600.0,
+                            "data": {
+                                "url": "https://www.goodfire.ai/",
+                                "title": "Goodfire",
+                            },
                         },
-                    },
-                    {
-                        "timestamp": "2026-07-17T10:10:00+08:00",
-                        "duration": 600.0,
-                        "data": {"url": "https://x.com/home", "title": "Home"},
-                    },
-                ]
-            }
+                        {
+                            "timestamp": "2026-07-17T10:10:00+08:00",
+                            "duration": 600.0,
+                            "data": {"url": "https://x.com/home", "title": "Home"},
+                        },
+                    ]
+                },
+                timestamp="2026-07-17T10:00:00+08:00",
+            )
         )
 
         self.assertEqual(0, aggregate["totals"]["dev_time"])
