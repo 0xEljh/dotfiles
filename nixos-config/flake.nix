@@ -161,6 +161,7 @@
 
       packages = forDevShellSystems (system: {
         opencode-v2 = nixpkgs.legacyPackages.${system}.callPackage ./packages/opencode-v2 { };
+        ai-agent-sync = nixpkgs.legacyPackages.${system}.callPackage ./packages/ai-agent-sync { };
       });
 
       apps =

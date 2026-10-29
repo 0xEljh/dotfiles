@@ -9,6 +9,7 @@ let
   huggingFaceCli = pkgs.python3Packages.huggingface-hub;
   opencodeClaudeAgent = pkgs.callPackage ../../packages/opencode-claude-agent { };
   playwrightCli = pkgs.callPackage ../../packages/playwright-cli { };
+  agentSync = pkgs.callPackage ../../packages/ai-agent-sync { };
   opencodePackage = config.aiTools.opencodePackage;
   opencodeConfig = pkgs.writeText "opencode.json" (
     builtins.toJSON (
@@ -20,6 +21,8 @@ let
   );
 in
 {
+  imports = [ ./ai-agent-sync.nix ];
+
   options.aiTools = {
     opencodePackage = lib.mkOption {
       type = lib.types.package;
@@ -146,16 +149,18 @@ in
           link_config "$AI_TOOLS/opencode/cli.json" "$HOME/.config/opencode/cli.json"
         fi
         link_skills "$AI_TOOLS/shared/skills"          "$HOME/.config/opencode/skills"
-        link_config "$AI_TOOLS/opencode/agents"        "$HOME/.config/opencode/agents"
         link_config "$AI_TOOLS/opencode/commands"      "$HOME/.config/opencode/commands"
         concat_with_separator "$AI_TOOLS/shared/AI.md" "$AI_TOOLS/opencode/AGENTS.md" "$HOME/.config/opencode/AGENTS.md"
 
         # Claude Code
         link_config "$AI_TOOLS/claude-code/settings.json" "$HOME/.claude/settings.json"
         link_skills "$AI_TOOLS/shared/skills"             "$HOME/.claude/skills"
-        link_config "$AI_TOOLS/claude-code/agents"        "$HOME/.claude/agents"
         reconcile_claude_mcp "$AI_TOOLS/claude-code/mcp.json"
         concat_with_separator "$AI_TOOLS/shared/AI.md" "$AI_TOOLS/claude-code/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
+
+        ${lib.optionalString (!config.aiTools.sharedAgents.enable) ''
+          ${agentSync}/bin/ai-agents-sync --seed-native --source-root "$AI_TOOLS" --home "$HOME"
+        ''}
 
         # Codex CLI: portable instructions and skills only, with no global MCPs.
         link_skills "$AI_TOOLS/shared/skills" "$HOME/.agents/skills"

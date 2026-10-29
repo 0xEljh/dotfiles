@@ -33,6 +33,11 @@ in
     ../shared/opencode-serve.nix
   ];
 
+  aiTools.sharedAgents = {
+    enable = true;
+    watch.enable = true;
+  };
+
   # Supervise `opencode serve` so a fully-dead daemon auto-restarts and the
   # process gets a clean environment each boot (replaces the ad-hoc,
   # 2-day-uptime daemon that hit a stale-worker race). Localhost-only.
