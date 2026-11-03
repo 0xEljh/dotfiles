@@ -8,10 +8,12 @@ dependencies = [
     "notion-client>=2.2.1",
     "httpx>=0.27",
     "python-dotenv>=1.0",
+    "mcp==1.26.0",
 ]
 
 [project.scripts]
 botctl = "personal_telegram_bot.cli:main"
+agent-notify-mcp = "personal_telegram_bot.notification_mcp:main"
 
 [dependency-groups]
 dev = ["pytest>=8.0"]

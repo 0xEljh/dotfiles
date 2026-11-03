@@ -27,7 +27,10 @@ research or other notes), call the `readability` agent on it.
 
 ## Implementation Review
 
-After implementation and verification, run `implementation-reviewer` for:
+After implementation and verification, run
+`implementation-reviewer`/`implementation-reviewer-heavy`.
+
+Use heavy and multiple reviewers liberally for:
 
 - Non-trivial observable behavior changes.
 - Correctness-sensitive bug fixes.
@@ -53,13 +56,18 @@ accepted corrections, rerun verification, and rerun review after material
 changes. Keep the reviewer decision, finding dispositions, and post-correction
 verification evidence in the conversation.
 
+Implementation review is not a substitute for verification.
+
+After the changes have been made, if creating a PR, delegate to the `pr-creator`
+agent.
+
 ## OpenCode tool names
 
 Use the available tool catalog for argument names. The shell tool is `shell`,
-child-session delegation is `subagent`, and patch editing is `patch`.
-File tools use `path`. Load skills by `id`. Resume child sessions with
-`sessionID`; select their agent with `agent`. There is no built-in `todowrite`.
-Use the `design-docs` skill when preparing a design document.
+child-session delegation is `subagent`, and patch editing is `patch`. File tools
+use `path`. Load skills by `id`. Resume child sessions with `sessionID`; select
+their agent with `agent`. There is no built-in `todowrite`. Use the
+`design-docs` skill when preparing a design document.
 
 Language-server diagnostics are unavailable in this runtime. Run the project's
 compiler, type checker, or linter when those checks are needed.

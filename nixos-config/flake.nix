@@ -3,6 +3,7 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    nixpkgs-kernel.url = "github:NixOS/nixpkgs/nixos-unstable";
     home-manager.url = "github:nix-community/home-manager";
     darwin = {
       url = "github:LnL7/nix-darwin/master";
@@ -50,7 +51,7 @@
   # unused to deadnix, but the pattern has no `...`, so every input must stay
   # listed here or evaluation fails.
   # deadnix: skip
-  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, home-manager, nixpkgs, nixos-wsl, llm-agents, sops-nix, fff, nix-index-database } @inputs:
+  outputs = { self, darwin, nix-homebrew, homebrew-bundle, homebrew-core, homebrew-cask, home-manager, nixpkgs, nixpkgs-kernel, nixos-wsl, llm-agents, sops-nix, fff, nix-index-database } @inputs:
     let
       user = "elijah";
       darwinSystems = [ "aarch64-darwin" ];
@@ -187,6 +188,7 @@
             (import ./overlays/10-yabai-fix.nix)
             (import ./overlays/20-notion-cat.nix)
             (import ./overlays/30-ty.nix)
+            (import ./overlays/40-gh-attachments.nix)
             llmAgentsOverlay
           ];
         };
@@ -241,6 +243,10 @@
           system = "x86_64-linux";
           specialArgs = inputs // { inherit llmAgentsOverlay; };
           modules = [
+	    {
+              # Update this host's kernel without changing the userspace package pin.
+              boot.kernelPackages = nixpkgs-kernel.legacyPackages.x86_64-linux.linuxPackages_6_18;
+            }
 	    sops-nix.nixosModules.sops
 	    home-manager.nixosModules.home-manager {
 	      home-manager = {

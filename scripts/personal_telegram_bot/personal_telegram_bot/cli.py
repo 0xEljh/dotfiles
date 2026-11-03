@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import socket
 import subprocess
 import sys
@@ -442,6 +443,7 @@ def _send_t3_link(cfg: Config, host: str, *, dry_run: bool, only_new: bool = Fal
         link = run_pair_helper(host, "create", cfg.t3_pair_helper)
         message_id = send_message(
             cfg.telegram_token, cfg.default_chat_id, format_link_message(host, link),
+            parse_mode="HTML",
         )
         if not message_id:
             raise RuntimeError("T3 delivery was not confirmed")
@@ -542,12 +544,56 @@ def run_tpot_seed(cfg: Config, args) -> int:
     return result.exit_code
 
 
+def report_plain(args) -> int:
+    """One-shot private adapter: stdin text in, JSON ID or safe error out."""
+    from .telegram_api import (
+        PLAIN_REPORT_LIMIT,
+        ReportDeliveryError,
+        send_plain_report,
+        validate_private_owner,
+    )
+
+    try:
+        cfg = Config.from_env()
+    except (Exception, SystemExit):
+        print(json.dumps({"error": "configuration"}))
+        return 1
+    try:
+        if args.validate_only:
+            validate_private_owner(cfg.telegram_token, cfg.default_chat_id, cfg.allowed_user_ids)
+            result = {"destination_valid": True}
+        else:
+            # Bound stdin and reject, rather than silently discard, extra text.
+            text = sys.stdin.read(PLAIN_REPORT_LIMIT + 1)
+            message_id = send_plain_report(
+                cfg.telegram_token, cfg.default_chat_id, text, allowed_user_ids=cfg.allowed_user_ids,
+            )
+            result = {"message_id": message_id}
+    except ReportDeliveryError as error:
+        result = {"error": error.kind}
+        if error.retry_after is not None:
+            result["retry_after"] = error.retry_after
+        print(json.dumps(result))
+        return 1
+    except Exception:
+        # Neither httpx URLs (which contain the token) nor supplied report text
+        # belongs in CLI output, even for an unexpected adapter failure.
+        print(json.dumps({"error": "transient"}))
+        return 1
+    print(json.dumps(result))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="botctl", description="sleeper-service personal Telegram bot")
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("run", help="start the long-polling bot daemon")
     sub.add_parser("serve-ingest", help="serve the tailnet life-event ingest endpoint")
+    report = sub.add_parser("report-plain", help="send supplied stdin text to the verified private owner; emit JSON")
+    report.add_argument("--validate-only", action="store_true", help="validate the destination without reading text or sending")
+    notify = sub.add_parser("serve-notify-mcp", help="serve the private owner notification tool over MCP stdio")
+    notify.add_argument("--env-file", required=True, type=Path, help="fixed host-local notification credential file")
 
     sleep_summary = sub.add_parser(
         "sleep-summary", help="emit sleep summary for a date (no Telegram token needed)"
@@ -610,6 +656,13 @@ def main(argv: list[str] | None = None) -> int:
         p.set_defaults(func=func)
 
     args = parser.parse_args(argv)
+
+    if args.command == "report-plain":
+        return report_plain(args)
+    if args.command == "serve-notify-mcp":
+        from .notification_mcp import main as notify_main
+
+        return notify_main(["--env-file", str(args.env_file)])
 
     # Token-free path: must not construct Config (which requires the bot secret).
     if args.command == "sleep-summary":

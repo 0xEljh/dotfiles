@@ -1,4 +1,5 @@
 import asyncio
+import html
 import json
 import shlex
 import subprocess
@@ -120,6 +121,7 @@ def test_command_fresh_link_in_worker_thread_with_no_preview(cfg, monkeypatch, a
     text = update.message.reply_text.call_args.args[0]
     assert all(part in text for part in (host, payload(host)["pairUrl"], "12:05:00", "Tailscale", "single-use", "5 minutes"))
     assert update.message.reply_text.call_args.kwargs["disable_web_page_preview"] is True
+    assert update.message.reply_text.call_args.kwargs["parse_mode"] == "HTML"
 
 
 @pytest.mark.parametrize("delivery_fails", [False, True])
@@ -258,6 +260,34 @@ def test_cli_link_send_disables_previews(cfg, monkeypatch):
     assert cli.send_t3_link(cfg, SimpleNamespace(host=HOSTS[0], dry_run=False)) == 0
     assert post.call_args.kwargs["json"]["disable_web_page_preview"] is True
     assert post.call_args.kwargs["json"]["chat_id"] == 123
+    assert post.call_args.kwargs["json"]["parse_mode"] == "HTML"
+
+
+def test_link_formatter_escapes_host_expiry_and_url_attribute_and_keeps_warnings():
+    host = 'host <&> "label"'
+    link = payload() | {
+        "pairUrl": 'https://host.example/pair?x=1&next="<bad>"#token=secret',
+        "expiresAt": '<expiry> & "timezone"',
+    }
+    text = t3_pairing.format_link_message(host, link)
+    assert text.startswith("<b>T3 pairing link</b>\n")
+    assert f"Host: <code>{html.escape(host)}</code>" in text
+    assert f'<a href="{html.escape(link["pairUrl"], quote=True)}">Open T3 pairing link</a>' in text
+    assert html.escape(link["expiresAt"]) in text
+    assert all(value in text for value in ("5 minutes", "single-use", "Connect to Tailscale before opening"))
+    assert "<bad>" not in text and "<expiry>" not in text
+
+
+@pytest.mark.parametrize("command", [bot.cmd_help, bot.cmd_start])
+def test_help_commands_send_short_sectioned_html_to_authorized_users(cfg, command):
+    update, context = owner_request(cfg, [])
+    asyncio.run(command(update, context))
+    text = update.message.reply_text.call_args.args[0]
+    assert "<b>Commands</b>" in text
+    assert "\n\n<b>Scheduled</b>\n" in text
+    assert all(value in text for value in ("/status", "/dev3000", "/t3", "/help", "owner private chat",
+                                          "noon fallback", "5 minutes", "09:00", ":10"))
+    assert update.message.reply_text.call_args.kwargs["parse_mode"] == "HTML"
 
 
 def test_t3_command_registered(cfg):

@@ -21,6 +21,7 @@ permission:
     "*": deny
     pr: allow
     technical-writing: allow
+    github-attachments: allow
   bash: allow
   "*link_pull_request": allow
   "*list_thread_pull_requests": allow
@@ -30,6 +31,12 @@ permission:
 
 Create or update the requested PR. Use the `pr` and `technical-writing` skill to
 write the body.
+
+For task-authorized screenshot publication, load the `github-attachments` skill.
+Use it only for push-access GitHub.com repositories with user credentials.
+Prefer a new conversation comment. Editing an existing body or owned comment
+requires explicit authorization for that exact target. A request to create or
+update a PR does not by itself authorize uploading incidental screenshots.
 
 ## Locate the worktree
 

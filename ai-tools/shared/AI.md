@@ -101,6 +101,12 @@ Bad work is worse than no work. You will not be penalized for escalating.
 - If you are uncertain about an irreversible change, stop and escalate.
 - If the scope of work exceeds what you can verify, stop and escalate.
 
+## Telegram notifications
+
+If `notify_user` is available, you may use it to update the user about ready,
+failed, blocked, or other important requested milestones (e.g. periodic updates)
+Prefer one parent summary over one notification per child task.
+
 ## Task completion
 
 When completing a workflow/task, report status using one of:
@@ -127,18 +133,28 @@ of it. Then give a short breakdown of what changes should be read vs skimmed.
 
 ### Verification Evidence
 
-Completion evidence must state the verification decision and its exact outcome.
-Keep it concise and quote decisive output instead of full logs. Omit fields that
-do not apply, but never omit the decision or the evidence supporting it.
+As an orchestrator, verification is most of the job. Tests like linting, type
+checks, red-green tests etc. are the expected baseline. These can be provided in
+a single line as part of completion evidence.
 
-```
-Verification:
-- Decision: new red-green test | existing tests | direct observation |
-  no test warranted
-- Red evidence: failing command and expected failure, when applicable
-- Green evidence: exact command and result
-- Additional checks: lint, type check, build, benchmark, or stress test
-- Limitations: relevant checks not run and why
+More important than this baseline is the decision log of verification decisions
+and their evidence based outcomes.
+
+Further, depending on the shape of the task, the task-specific verification
+evidence is the "headline" that the user needs to know.
+
+When providing this evidence, the proclivity would be to provide quantitative
+evidence and spam, but instead prefer targeted qualitative descriptions with
+supporting quantitative evidence where applicable.
+
+```verification evidence
+The new components implemented in module_file.tsx satisfy the lint rule requiring
+all buttons to be icon buttons. The only exception was the custom "Book a Demo"
+CTA button which does not have an intuitive button. 6 of the 9 buttons added are
+icon-only buttons.
+
+The UAT tests executed by reviewer agents passed, with each agent successfully
+executing the flow on their first try.
 ```
 
 ### Pushing auditable files for review

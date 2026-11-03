@@ -16,6 +16,7 @@ let
 in
 {
 	imports = [
+		./agent-notify-mcp.nix
 		../shared/ai-tools.nix
 		../shared/t3-serve.nix
 		../shared/opencode-serve.nix

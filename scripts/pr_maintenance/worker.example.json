@@ -1,0 +1,16 @@
+{
+  "state_dir": "/home/elijah/.local/state/pr-maintenance",
+  "checkout_root": "/home/elijah/.local/state/pr-maintenance/checkouts",
+  "skills_dir": "/home/elijah/dotfiles/ai-tools/shared/skills",
+  "opencode_binary": "opencode",
+  "opencode_server": "",
+  "opencode_connection": "explicit",
+  "runner_version": "opencode v2.0.28-preserve.1",
+  "runner_contract_verified": false,
+  "runner_quiescence_argv": [],
+  "worker_quiescence_argv": [],
+  "execution_enabled": false,
+  "rollout_acknowledged": false,
+  "min_free_bytes": 1073741824,
+  "authorization_max_seconds": 60
+}

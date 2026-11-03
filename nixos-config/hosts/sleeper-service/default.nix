@@ -20,6 +20,7 @@ in
     ./services/nginx-acme.nix
     (import ./services/web-apps.nix { inherit user; })
     (import ./services/telegram-bot.nix { inherit user; })
+    (import ./services/pr-maintenance.nix { inherit user; })
   ]
   ++ lib.optional (builtins.pathExists ./hardware-configuration.nix) ./hardware-configuration.nix
   ++ lib.optional (builtins.pathExists ./networking.nix) ./networking.nix;
@@ -123,6 +124,31 @@ in
       PasswordAuthentication = false;
       KbdInteractiveAuthentication = false;
       PermitRootLogin = "prohibit-password";
+    };
+  };
+
+  services.prMaintenance = {
+    enable = true;
+    knownHostsFile = "/home/${user}/.ssh/known_hosts";
+    botEnvironmentFile = "/home/${user}/.config/personal-telegram-bot/bot.env";
+    settings = {
+      execution_enabled = true;
+      rollout_acknowledged = true;
+      github_auth = "gh";
+      personal_auth_acknowledged = true;
+      organization_wide = true;
+      private_repositories_only = true;
+      organization = "EigenformAI";
+      organization_id = 97932676;
+      author_id = 34589654;
+      models = lib.genAttrs [ "deep_modules" "cleanup" "feedback" "conflicts" "review" ] (_: "openai/gpt-6.1-sol");
+      agents = {
+        deep_modules = "build";
+        cleanup = "build";
+        feedback = "build";
+        conflicts = "build";
+        review = "plan";
+      };
     };
   };
 

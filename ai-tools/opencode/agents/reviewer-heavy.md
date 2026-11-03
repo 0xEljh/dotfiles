@@ -4,8 +4,7 @@ description:
   blindspots. Use to screen consequential design decisions. Has no access to
   explore subagents; frontload relevant review context when possible.
 mode: subagent
-model: opencode-go/muse-spark-1.3-contributor
-variant: xhigh
+model: zai-coding-plan/glm-5.3-flash#high
 permission:
   read: allow
   glob: allow

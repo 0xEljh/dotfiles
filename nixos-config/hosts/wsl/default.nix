@@ -13,6 +13,7 @@ in
     ../../modules/shared
     ./secrets.nix
     (import ./services/disk-alert.nix { inherit user; })
+    (import ./services/pr-maintenance.nix { inherit user; })
   ];
 
   # ============================================================================
@@ -82,6 +83,24 @@ in
   # ============================================================================
 
   services = {
+    prMaintenanceWorker = {
+      enable = true;
+      settings = {
+        execution_enabled = true;
+        rollout_acknowledged = true;
+        quiescence_mode = "best_effort";
+        best_effort_acknowledged = true;
+        runner_contract_verified = false;
+        runner_version = "opencode v${config.home-manager.users.${user}.aiTools.opencodePackage.version}";
+        opencode_connection = "managed";
+        opencode_server = "http://127.0.0.1:49374";
+        private_repositories_only = true;
+        dependency_sources = {
+          "EigenformAI/geocluster-native-ui" = "/home/${user}/geocluster-fe-restructure";
+        };
+      };
+    };
+
     # SSH for remote access (useful for VS Code Remote, etc.)
     openssh = {
       enable = true;

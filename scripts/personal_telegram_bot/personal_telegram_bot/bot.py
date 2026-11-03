@@ -16,15 +16,17 @@ from .providers.health import run_all
 
 logger = logging.getLogger(__name__)
 
-HELP_TEXT = """Commands:
+HELP_TEXT = """<b>Commands</b>
 /status — service health and last digests
 /dev3000 [rotate] — show or rotate dev-sharing credentials
-/t3 [sleeper-service|contents-may-differ] - fresh T3 pairing link (owner private chat)
+/t3 [sleeper-service|contents-may-differ] — fresh T3 pairing link (owner private chat)
 /help — this message
 
-Scheduled: wake-triggered morning Bread digest (noon fallback), health checks
-every 5 minutes, Tailscale key-expiry check daily at 09:00, and hourly activity
-classification at :10 past the hour."""
+<b>Scheduled</b>
+• Morning Bread digest: wake-triggered (noon fallback)
+• Health checks: every 5 minutes
+• Tailscale key-expiry check: daily at 09:00
+• Hourly activity classification: :10 past the hour"""
 
 
 def is_authorized(user_id: int | None, allowed: frozenset[int]) -> bool:
@@ -72,12 +74,12 @@ def parse_tpot_callback_data(data: str | None) -> tuple[str, int] | None:
 
 @_guard
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("nervous energy online.\n\n" + HELP_TEXT)
+    await update.message.reply_text("nervous energy online.\n\n" + HELP_TEXT, parse_mode="HTML")
 
 
 @_guard
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(HELP_TEXT)
+    await update.message.reply_text(HELP_TEXT, parse_mode="HTML")
 
 
 @_guard
@@ -167,7 +169,7 @@ async def cmd_t3(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         link = await asyncio.to_thread(run_pair_helper, host, "create", cfg.t3_pair_helper)
         await update.message.reply_text(
-            format_link_message(host, link), disable_web_page_preview=True,
+            format_link_message(host, link), parse_mode="HTML", disable_web_page_preview=True,
         )
     except Exception:
         # Helper and Telegram exceptions can contain the credential-bearing URL.

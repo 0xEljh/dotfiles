@@ -55,8 +55,10 @@ def run_pair_helper(host: str, action: str, helper_path: str) -> dict[str, str]:
 
 def format_link_message(host: str, link: dict[str, str]) -> str:
     return (
-        f"T3 pairing link\nHost: {host}\n{link['pairUrl']}\n"
-        f"Expires: {link['expiresAt']} (5 minutes, single-use).\n"
+        "<b>T3 pairing link</b>\n"
+        f"Host: <code>{html.escape(host)}</code>\n\n"
+        f'<a href="{html.escape(link["pairUrl"], quote=True)}">Open T3 pairing link</a>\n\n'
+        f"Expires: {html.escape(link['expiresAt'])} (5 minutes, single-use).\n"
         "Connect to Tailscale before opening this link."
     )
 
