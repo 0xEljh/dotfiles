@@ -5,10 +5,11 @@ import json
 import math
 import sqlite3
 import subprocess
+import textwrap
 import time
 from collections.abc import Callable, Sequence
 
-from .common import canonical, check_secrets
+from .common import check_secrets, first_secret
 
 
 PART_LIMIT = 3499
@@ -102,14 +103,23 @@ def _atomic(connection: sqlite3.Connection):
         raise
 
 
-def _split(report_key: str, text: str) -> list[str]:
+def brief(value: object, limit: int = 240) -> str:
+    text = str(value)
+    # Preserve a complete match for the existing withholding/retention path.
+    if first_secret(text):
+        return text
+    return textwrap.shorten(text, width=limit, placeholder="…")
+
+
+def _split(text: str) -> list[str]:
+    if len(text) <= PART_LIMIT:
+        return [text]
+    label = brief(text.splitlines()[0], 100)
     total = 1
     while True:
         bodies, start = [], 0
         while start < len(text):
-            capacity = PART_LIMIT - len(f"\n\nRef: {report_key} | Part {len(bodies) + 1}/{total}")
-            if capacity < 1:
-                raise ValueError("report key is too long for a delivery label")
+            capacity = PART_LIMIT - len(f"\n\n{label} · Part {len(bodies) + 1}/{total}")
             end = min(len(text), start + capacity)
             if end < len(text):
                 for boundary in ("\n\n", "\n"):
@@ -121,7 +131,7 @@ def _split(report_key: str, text: str) -> list[str]:
             start = end
         # Only the total's digit count affects capacity. Re-split when it grows.
         if len(str(len(bodies))) <= len(str(total)):
-            return [f"{body}\n\nRef: {report_key} | Part {index}/{len(bodies)}"
+            return [f"{body}\n\n{label} · Part {index}/{len(bodies)}"
                     for index, body in enumerate(bodies, 1)]
         total = len(bodies)
 
@@ -131,7 +141,7 @@ class Outbox:
 
     Pass a private SQLite connection. Enqueue can join the caller's transaction;
     deliver must run outside it so attempts are durable before external effects.
-    A crash or timeout can repeat a part with the same label, never rerun coding.
+    A crash or timeout can repeat the same persisted part, never rerun coding.
     """
 
     def __init__(self, connection: sqlite3.Connection, now: Callable[[], float] = time.time):
@@ -167,7 +177,7 @@ class Outbox:
         check_secrets(text)
         if not report_key or "\n" in report_key or "\r" in report_key or not text:
             raise ValueError("a nonempty report and single-line report key are required")
-        parts = _split(report_key, text)
+        parts = _split(text)
         with _atomic(self.connection):
             cursor = self.connection.execute(
                 "INSERT OR IGNORE INTO reports (report_key, workflow_id, text, created_at) VALUES (?, ?, ?, ?)",
@@ -300,21 +310,53 @@ def stage_title(kind: str) -> str:
 
 
 def state_title(state: str) -> str:
-    return {"noop": "No checkout changes"}.get(state, state.replace("_", " ").capitalize())
+    return {"noop": "No changes"}.get(state, state.replace("_", " ").capitalize())
+
+
+def _verification_summary(value: object) -> str:
+    trusted = _mapping(value)
+    evidence = _items(trusted.get("commands")) if "commands" in trusted else _items(value)
+    if not evidence:
+        return "Verification: not recorded."
+    passed = failed = unknown = 0
+    notes = []
+    for check in evidence:
+        record = _mapping(check)
+        code = record.get("returncode")
+        if type(code) is int:
+            passed += code == 0
+            failed += code != 0
+        else:
+            unknown += 1
+            note = (record.get("outcome") or record.get("result") or record.get("evidence")) if record else check
+            if note:
+                notes.append(brief(note, 100))
+    counts = [f"{count} {label}" for count, label in
+              ((passed, "passed"), (failed, "failed"), (unknown, "unconfirmed")) if count]
+    detail = f" (reported: {notes[0]})" if notes else ""
+    return "Verification: " + "; ".join(counts) + detail + "."
 
 
 def render_summary(workflow: dict, stages: list[dict], final: bool) -> str:
-    """Render selected report fields, never entire worker logs or feedback bodies.
+    """Render a notification, not the private diagnostic record.
 
-    Stage result can be a decoded worker status or its JSON serialization. Missing
-    verification/session/host evidence is explicit, not manufactured as success.
+    This formatter does not scan unused inputs. Pass its output through the notice
+    or outbox gate before delivery. Stage results can be decoded or JSON serialized.
+    Missing verification is explicit, not manufactured as success.
     """
-    check_secrets(canonical({"workflow": workflow, "stages": stages}))
     repository = workflow.get("repository") or workflow.get("repository_full_name") or "unknown repository"
     number = workflow.get("number") or workflow.get("pr_number") or "?"
     url = (workflow.get("url") or workflow.get("html_url") or _mapping(workflow.get("pr")).get("html_url")
            or f"https://github.com/{repository}/pull/{number}")
     lines = [f"{'Final' if final else 'Initial'} maintenance summary: {repository} #{number}", str(url)]
+    if workflow.get("lifecycle_state") in {"cancelled", "cancel_requested"}:
+        lines.extend(["", brief(workflow.get("paused_reason") or "Maintenance cancelled")])
+        if final and not workflow.get("has_attempts", any(s.get("active_attempt_id") or _mapping(s.get("result")) for s in stages)):
+            lines.append("Maintenance never started. No maintenance checks ran and no changes were published.")
+        blocker = _mapping(workflow.get("last_queue_blocker"))
+        if blocker:
+            lines.append(f"Previously waiting for {stage_title(blocker['stage'])}: "
+                         f"https://github.com/{blocker['repository']}/pull/{blocker['number']}")
     for stage in stages:
         result = _mapping(stage.get("result"))
         result = {**result, **_mapping(result.get("result"))}
@@ -322,71 +364,40 @@ def render_summary(workflow: dict, stages: list[dict], final: bool) -> str:
         data = {**stage, **summary, **result}
         kind = stage.get("kind", "unknown stage")
         state = stage.get("state", data.get("state", "unknown"))
+        if state == "cancelled" and not stage.get("active_attempt_id") and not result and not stage.get("spec"):
+            lines.extend(["", f"{stage_title(kind)}: Not started (cancelled)"])
+            continue
         lines.extend(["", f"{stage_title(kind)}: {state_title(state)}"])
+        if state == "published_with_concern":
+            lines.append("Changes were published; incident requires acknowledgement.")
+        for decision in _items(data.get("unresolved_decisions")):
+            lines.append(f"Decision needed: {brief(decision)}")
         reason = data.get("reason") or data.get("error") or summary.get("summary")
         if not reason and isinstance(data.get("summary"), str):
             reason = data["summary"]
         if reason:
-            lines.append(f"Reason: {reason}")
+            lines.append(brief(reason))
         commits = _items(data.get("commits"))
         candidate = data.get("candidate_sha")
         if candidate and candidate not in commits:
             commits.append(candidate)
         published = state in ("pushed", "published_with_concern")
-        if published:
-            lines.append("Pushed changes" + (" (incident requires acknowledgement)" if state == "published_with_concern" else ""))
-        elif candidate or commits:
-            lines.append("Retained local work; NOT confirmed pushed")
-        elif data.get("checkout"):
-            lines.append("Unchanged checkout retained for inspection" if state == "noop"
-                         else "Checkout retained for inspection; no published candidate recorded")
+        if candidate or commits:
+            if not published:
+                lines.append("Local changes retained; not confirmed pushed.")
         elif state in ("blocked", "failed", "publication_unknown"):
-            lines.append("Publication: NOT confirmed pushed; inspect the attempt")
-        lines.extend(["", "Evidence:"])
-        for commit in commits:
-            record = _mapping(commit)
-            sha = record.get("sha") if record else str(commit)
-            link = record.get("url") or f"https://github.com/{repository}/commit/{sha}"
-            lines.append(f"- {'Commit' if published else 'Unpublished candidate'}: {sha} {link}")
-        for module in _items(data.get("modules") or data.get("changed_modules") or data.get("changed_paths")):
-            lines.append(f"- Module: {module}")
-        for deleted in _items(data.get("deleted_paths") or data.get("deleted_files")):
-            lines.append(f"- Deleted: {deleted}")
-        verification = data.get("verification")
-        trusted = _mapping(verification)
-        evidence = _items(trusted.get("commands")) if "commands" in trusted else _items(verification)
-        if trusted.get("candidate_sha"):
-            lines.append(f"- Verified candidate: {trusted['candidate_sha']}")
-        if not evidence:
-            lines.append("- Verification: not recorded" + (" (no checkout changes)" if state == "noop" else ""))
-        for check in evidence:
-            record = _mapping(check)
-            if record:
-                command = canonical(record["argv"]) if "argv" in record else record.get("command", "check")
-                outcome = record.get("outcome") or record.get("result") or record.get("evidence") or "outcome not recorded"
-                if "returncode" in record:
-                    outcome = f"exit {record['returncode']}"
-                if record.get("log_sha256"):
-                    outcome += f"; private log sha256 {record['log_sha256']}"
-                lines.append(f"- Verification: {command} -> {outcome}")
-            else:
-                lines.append(f"- Verification: {check}")
+            lines.append("Publication not confirmed.")
+        if published:
+            for commit in commits:
+                record = _mapping(commit)
+                sha = record.get("sha") if record else str(commit)
+                link = record.get("url") or f"https://github.com/{repository}/commit/{sha}"
+                lines.append(f"Commit: {link}")
+        lines.append(_verification_summary(data.get("verification")))
         for finding in _items(data.get("feedback_dispositions") or data.get("dispositions")):
             if isinstance(finding, dict):
-                lines.append(f"- Feedback {finding.get('id', '?')} {finding.get('url', '')}: "
-                             f"{finding.get('disposition', 'needs decision')} — {finding.get('reason', 'reason not recorded')}")
-        for decision in _items(data.get("unresolved_decisions")):
-            lines.append(f"- Decision needed: {decision}")
-        session = data.get("opencode_session_id") or data.get("session_id") or "not recorded"
-        host = data.get("worker_host") or data.get("host") or _mapping(stage.get("spec")).get("worker_host") or "not recorded"
-        lines.extend(["", "Inspection:", f"- Session: {session}", f"- Host: {host}"])
-        if data.get("checkout"):
-            lines.append(f"- Checkout: {data['checkout']}")
-        attempt = data.get("active_attempt_id") or data.get("attempt_id")
-        if attempt:
-            lines.append(f"- Attempt: {attempt}")
-        if data.get("review_session_id"):
-            lines.append(f"- Review session: {data['review_session_id']}")
-    text = "\n".join(lines)
-    check_secrets(text)
-    return text
+                lines.append(f"Feedback {finding.get('id', '?')}: {finding.get('disposition', 'needs decision')} "
+                             f"— {brief(finding.get('reason', 'reason not recorded'), 120)}")
+                if finding.get("url"):
+                    lines.append(str(finding["url"]))
+    return "\n".join(lines)

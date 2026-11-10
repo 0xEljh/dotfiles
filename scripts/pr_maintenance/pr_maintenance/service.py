@@ -2,26 +2,49 @@ from __future__ import annotations
 
 import json
 import re
+import socket
 import time
 from datetime import datetime, timezone
 
-from .common import Blocked, TERMINAL, canonical, check_secrets, digest, transaction
+from .common import Blocked, TERMINAL, canonical, check_secrets, digest, first_secret, private_write, transaction
 from .coordinator import Coordinator, identity
-from .reporting import stage_title, state_title
+from .reporting import brief, stage_title, state_title
 from .transport import WorkerOffline
 
 
 def execution_assurance(stages: list[dict]) -> str:
-    modes = [(stage["kind"], stage["result"].get("execution_assurance")) for stage in stages]
-    modes = [(kind, mode) for kind, mode in modes if mode in ("strict", "best_effort")]
-    if not modes:
+    affected = [stage_title(stage["kind"]) for stage in stages
+                if stage["result"].get("execution_assurance") == "best_effort"]
+    if not affected:
         return ""
-    text = "\n\nExecution assurance:\n" + "\n".join(
-        f"- {stage_title(kind)}: {mode.replace('_', ' ')}" for kind, mode in modes
-    )
-    if any(mode == "best_effort" for _, mode in modes):
-        text += "\nBest-effort shared-instance observation does not prove descendants stopped."
-    return text
+    return f"\n\nBackground processes may still be running: {', '.join(affected)}."
+
+
+def github_failure_details(error, at: float) -> str:
+    """Explain a sanitized GitHubError, never an arbitrary upstream exception."""
+    message = str(error)
+    reason = brief({
+        "GitHub API transport failed": "Could not connect to GitHub",
+        "GitHub API request deferred": "GitHub could not complete the request",
+    }.get(message, message)).rstrip(".")
+    if error.status is not None and f"HTTP {error.status}" not in reason:
+        reason += f" (HTTP {error.status})"
+    retry = "Automatically on a scheduled poll."
+    if error.retry_at is not None and error.retry_at > at:
+        try:
+            earliest = datetime.fromtimestamp(error.retry_at, timezone.utc)
+            retry = f"Automatically on a scheduled poll, no earlier than {earliest:%Y-%m-%d %H:%M:%S UTC}."
+        except (OverflowError, OSError, ValueError):
+            pass
+    if error.status in (401, 403):
+        action = "Check the maintenance GitHub credentials and repository permissions."
+    elif error.status == 404:
+        action = "Check that the repository or PR still exists and that maintenance has permission to read it."
+    elif error.retry_at is not None or error.status == 408 or (error.status is not None and error.status >= 500):
+        action = "No immediate action. If this repeats, check GitHub availability and the coordinator's network connection."
+    else:
+        action = "If this repeats, inspect the coordinator's private GitHub diagnostics."
+    return f"Reason: {reason}.\nRetry: {retry}\nAction: {action}"
 
 
 class Service:
@@ -29,12 +52,43 @@ class Service:
         self.c, self.github, self.worker, self.outbox, self.now = coordinator, github, worker, outbox, now
 
     def notice(self, key: str, workflow_id: int | None, text: str):
+        if first_secret(text):
+            self.withheld_notice(key, workflow_id, text)
+            return
         try:
-            check_secrets(text)
-            self.outbox.enqueue(key, workflow_id, text)
+            check_secrets(key)
         except Blocked:
-            self.outbox.enqueue(f"secret:{digest(key)}", workflow_id,
-                                f"PR maintenance: possible secret detected for workflow {workflow_id}; content withheld. Inspect private artifacts.")
+            # An internal-key match is not evidence of a credential in the body.
+            key = f"report:{digest(key)}"
+        self.outbox.enqueue(key, workflow_id, text)
+
+    def withheld_notice(self, key: str, workflow_id: int | None, text: str):
+        def safe(value):
+            value = str(value).replace("\r", " ").replace("\n", " ")
+            return "[withheld]" if first_secret(value) else value
+
+        workflow = self.c.workflow(workflow_id) if workflow_id is not None else None
+        identity = (f"{workflow['repository']} #{workflow['number']}" if workflow else f"workflow {workflow_id}")
+        lines = [f"PR maintenance: {safe(identity)}", "", "Notification withheld by outbound credential filter.",
+                 "This is not a confirmed credential leak and not a repository scan.",
+                 "", f"Host: {safe(socket.gethostname())}"]
+        path = self.c.path.resolve().parent / "withheld-reports" / f"{digest(key)}.txt"
+        report_key = f"secret:{digest(key)}"
+        try:
+            if path.exists():
+                text = path.read_text(encoding="utf-8")
+            else:
+                private_write(path, text)
+            match = first_secret(text)
+            line = text.count("\n", 0, match.start()) + 1 if match else 1
+            lines.extend([f"File: {safe(path)}", f"Line: {line} of the retained notification (not a repository file)",
+                          "", "Inspect that private file. If the match is a real credential, revoke or rotate it "
+                          "and remove it from its original source. Do not rerun coding to recover this report."])
+        except (OSError, UnicodeError):
+            report_key = f"secret-storage:{digest(key)}"
+            lines.extend(["Could not retain the rejected notification.", f"Directory: {safe(path.parent)}",
+                          "Check free space, directory permissions, and retained-file encoding. No flagged text was sent."])
+        self.outbox.enqueue(report_key, workflow_id, "\n".join(lines))
 
     def allowed(self, repository: dict):
         config = self.c.config
@@ -60,14 +114,17 @@ class Service:
         repositories = list(self.github.repositories())
         accessible = {repo["id"]: repo for repo in repositories}
 
-        def record(pr, repository_id):
+        def record(pr, repository):
             try:
                 c.observe(pr, at)
                 refreshed.add(pr["id"])
                 return True
             except (KeyError, TypeError, ValueError, AttributeError):
-                self.notice(f"invalid-pr:{repository_id}", None,
-                            f"PR maintenance: malformed GitHub PR data in repository ID {repository_id}. That record is deferred; its scan cursor is retained.")
+                self.notice(f"invalid-pr:{repository['id']}:details", None,
+                            f"PR maintenance: {repository['full_name']}\nhttps://github.com/{repository['full_name']}\n\n"
+                            "Could not read a PR record.\n"
+                            + github_failure_details(GitHubError("GitHub returned malformed PR data"), at)
+                            + "\nImpact: This PR record was skipped; other valid records can still be checked.")
                 return False
 
         def fetch(repository, number):
@@ -75,9 +132,15 @@ class Service:
                 return self.github.get_pr(repository["full_name"], number)
             except (IntegrationRemoved, RequestBudgetExceeded):
                 raise
-            except (GitHubError, KeyError, TypeError, ValueError):
-                self.notice(f"pr-read:{repository['id']}:{number}", None,
-                            f"PR maintenance: live read deferred for repository ID {repository['id']} PR {number}. No new work is authorized for that record.")
+            except (GitHubError, KeyError, TypeError, ValueError) as error:
+                if not isinstance(error, GitHubError):
+                    error = GitHubError("GitHub returned malformed PR data")
+                self.notice(f"pr-read:{repository['id']}:{number}:details", None,
+                            f"PR maintenance: {repository['full_name']} #{number}\n"
+                            f"https://github.com/{repository['full_name']}/pull/{number}\n\n"
+                            "Could not refresh this PR from GitHub.\n"
+                            + github_failure_details(error, at)
+                            + "\nImpact: No new work or publication will be authorized for this PR without a fresh read.")
                 return None
         # A successful complete inventory is needed before treating removal as authoritative.
         for row in list(c.db.execute("SELECT pr_id FROM workflows WHERE lifecycle_state NOT IN ('completed','cancelled','baselined_excluded')")):
@@ -97,7 +160,7 @@ class Service:
                 c.control("pause", row[0], reason="repository outside configured discovery scope")
                 continue
             live = fetch(repository, workflow["number"])
-            if live is None or not record(live, repository["id"]):
+            if live is None or not record(live, repository):
                 continue
             if workflow["lifecycle_state"] == "waiting_draft" and not live.get("draft") and live["state"] == "open":
                 if not c.db.execute("SELECT 1 FROM ready_observations WHERE pr_id=?", (live["id"],)).fetchone():
@@ -112,7 +175,7 @@ class Service:
                 c.db.execute("DELETE FROM refreshes WHERE repository=? AND number=?", (repository, number))
                 continue
             live = fetch(repo, number)
-            if live is not None and record(live, repo["id"]):
+            if live is not None and record(live, repo):
                 c.db.execute("DELETE FROM refreshes WHERE repository=? AND number=?", (repository, number))
         reset = c.meta("inventory_required") == "1"
         if reset:
@@ -131,12 +194,19 @@ class Service:
                 since = (inventory["cursor"] or float(c.meta("enabled_at"))) - c.config.get("scan_overlap", 600)
                 items = self.github.updated_prs(repo["full_name"], since) if inventory["inventoried"] else self.github.open_prs(repo["full_name"])
                 for pr in items:
-                    valid = record(pr, repo["id"]) and valid
+                    valid = record(pr, repo) and valid
             except (IntegrationRemoved, RequestBudgetExceeded):
                 raise
-            except GitHubError:
+            except GitHubError as error:
                 valid = False
-                self.notice(f"scan:{repo['id']}", None, f"PR maintenance: repository ID {repo['id']} scan deferred; cursor retained.")
+                impact = ("Discovery of new or updated PRs is delayed; PRs refreshed separately can still proceed."
+                          if c.meta("baseline_complete") else
+                          "Initial PR inventory is incomplete; new maintenance work will not start until it finishes.")
+                self.notice(f"scan:{repo['id']}:details", None,
+                            f"PR maintenance: {repo['full_name']}\nhttps://github.com/{repo['full_name']}\n\n"
+                            "Could not finish checking for new or updated PRs.\n"
+                            + github_failure_details(error, at)
+                            + f"\nImpact: {impact}\nThe next scan rechecks the unfinished period.")
             if valid:
                 c.db.execute("UPDATE inventories SET inventoried=1,cursor=?,last_success=? WHERE repository_id=?", (at, at, repo["id"]))
         if all(c.db.execute("SELECT inventoried FROM inventories WHERE repository_id=?", (repo["id"],)).fetchone()[0]
@@ -207,14 +277,15 @@ class Service:
         for row in list(self.c.db.execute("SELECT pr_id FROM workflows")):
             workflow, stages = self.c.workflow(row[0]), self.c.stages(row[0])
             generation = digest([s["active_attempt_id"] for s in stages])[:12]
-            if all(s["state"] in TERMINAL for s in stages[:2]):
+            unattempted_cancellation = workflow["lifecycle_state"] == "cancelled" and not workflow["has_attempts"]
+            if all(s["state"] in TERMINAL for s in stages[:2]) and not unattempted_cancellation:
                 initial_generation = digest([s["active_attempt_id"] for s in stages[:2]])[:12]
                 self.summary(f"initial:{row[0]}:{initial_generation}", workflow, stages[:2], False)
             if all(s["state"] in TERMINAL for s in stages):
                 self.summary(f"final:{row[0]}:{generation}", workflow, stages, True)
             if workflow["paused_reason"] and workflow["lifecycle_state"] == "paused":
                 self.notice(f"paused:{row[0]}:reason:{digest(workflow['paused_reason'])}", row[0],
-                            f"PR maintenance {workflow['repository']} #{workflow['number']} paused: {workflow['paused_reason']}. {workflow['pr']['html_url']}" + execution_assurance(stages))
+                            f"PR maintenance {workflow['repository']} #{workflow['number']} paused: {brief(workflow['paused_reason'])}\n{workflow['pr']['html_url']}" + execution_assurance(stages))
             for stage in stages:
                 if stage["state"] in {"failed", "blocked", "published_with_concern"}:
                     result = stage["result"]
@@ -223,19 +294,15 @@ class Service:
                                    if stage["state"] == "published_with_concern"
                                    else "Local attempt artifacts are retained; publication is not confirmed.")
                     self.notice(f"stage:{stage['active_attempt_id']}:{stage['state']}", row[0],
-                                f"PR maintenance: {workflow['repository']} #{workflow['number']}\n\n"
+                                f"PR maintenance: {workflow['repository']} #{workflow['number']}\n"
+                                f"{workflow['pr']['html_url']}\n\n"
                                 f"{stage_title(stage['kind'])}: {state_title(stage['state'])}\n"
-                                f"Reason: {reason}\n{publication}\n\nInspection:\n"
-                                f"- Host: {stage['spec'].get('worker_host', 'worker')}\n"
-                                f"- Attempt: {stage['active_attempt_id']}" + execution_assurance([stage]))
+                                f"{publication}\n{brief(reason)}" + execution_assurance([stage]))
 
     def summary(self, key, workflow, stages, final):
         from .reporting import render_summary
 
-        try:
-            text = render_summary(workflow, stages, final) + execution_assurance(stages)
-        except Blocked:
-            text = f"PR maintenance workflow {workflow['pr_id']}: possible secret detected in summary; content withheld. Inspect private artifacts."
+        text = render_summary(workflow, stages, final) + execution_assurance(stages)
         self.notice(key, workflow["pr_id"], text)
 
     def tick(self):
@@ -265,10 +332,14 @@ class Service:
                     pass
             self.reports()
             return
-        except GitHubError:
+        except GitHubError as error:
             c.db.execute("INSERT OR REPLACE INTO meta VALUES ('api_deferred_at',?)", (str(at),))
             self.notice(f"inventory-deferred:{int(at // 3600)}", None,
-                        "PR maintenance GitHub inventory read deferred. Retained workflows and cursors are unchanged; no new publication is authorized. Inspect host-local authentication and access.")
+                        "PR maintenance: repository discovery delayed\n\n"
+                        "Could not get the repository list from GitHub.\n"
+                        + github_failure_details(error, at)
+                        + "\nImpact: No new maintenance work or publication was authorized during this poll. "
+                        "Existing attempts were not cancelled.")
             self.reports()
             c.db.execute("INSERT OR REPLACE INTO meta VALUES ('last_tick',?)", (str(at),))
             return
@@ -337,7 +408,9 @@ class Service:
                 c.observe(live, self.now())
                 c.control("retry-stage", row[0], "conflicts", f"automatic base advancement recompute {count + 1}")
                 self.notice(f"base-retry:{stage['active_attempt_id']}", row[0],
-                            f"PR maintenance final merge is recomputed after base advancement (attempt {count + 1}). Previous attempt {stage['active_attempt_id']} and its unpublished work are retained.")
+                            f"PR maintenance: {workflow['repository']} #{workflow['number']}\n"
+                            f"{workflow['pr']['html_url']}\n\n"
+                            "Recomputing the final merge because the base branch advanced. Previous local work is retained.")
             for row in list(c.db.execute("SELECT pr_id FROM workflows WHERE lifecycle_state='active' ORDER BY eligible_at,pr_id")):
                 if row[0] not in refreshed:
                     continue

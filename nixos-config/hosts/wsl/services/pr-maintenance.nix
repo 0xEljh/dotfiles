@@ -85,6 +85,13 @@ in
   options.services.prMaintenanceWorker = {
     enable = lib.mkEnableOption "the opt-in PR maintenance worker in the normal user account";
 
+    package = lib.mkOption {
+      type = lib.types.package;
+      readOnly = true;
+      default = worker;
+      description = "Worker wrapper with pinned runtime dependencies, also available for targeted deployment.";
+    };
+
     settings = lib.mkOption {
       type = lib.types.attrsOf json.type;
       default = { };

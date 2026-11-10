@@ -93,7 +93,11 @@ assertions of passing checks or approval are not publication evidence.
 Write {artifacts / 'result.json'} containing summary, changed_paths, deleted_paths,
 verification notes, red-green evidence when appropriate, and feedback_dispositions
 with id, url, disposition and reason for every snapshot item (including non-actionable
-context as not applicable). For a genuine no-op leave the checkout clean at the original
+context as not applicable). Keep summary to at most 240 characters for a phone notification:
+state the outcome, then any blocker and next action. Put blockers first when checks
+cannot run. Do not repeat stage labels, inspection inventories, IDs, hashes, or paths
+in summary. Put full rationale and setup/verification evidence in separate result fields.
+For a genuine no-op leave the checkout clean at the original
 head and stop after writing the result; no empty commit. For a change, stage intended
 paths literally and commit them (a merge commit for conflicts).
 Invoke {canonical(helper + ['publish', spec['attempt_id']])} to record the candidate;

@@ -8,6 +8,7 @@ import subprocess
 from pathlib import Path
 
 from .common import Blocked, canonical, digest
+from .diagnostics import retain_diagnostic
 
 
 class WorkerOffline(RuntimeError):
@@ -49,21 +50,37 @@ class SSHWorker:
             ], input=canonical(request), text=True, capture_output=True, timeout=30, check=False,
                 env=environment)
         except (OSError, subprocess.TimeoutExpired) as error:
-            raise WorkerOffline("worker transport unavailable; existing attempt retained") from error
-        if result.returncode:
-            # stderr can contain credential-helper diagnostics. Keep it out of reports.
-            raise WorkerOffline(f"worker transport exit {result.returncode}; inspect private host journal")
+            category = "transport_timeout" if isinstance(error, subprocess.TimeoutExpired) else "transport_os_error"
+            reference = self._diagnostic(category, operation, attempt_id, exception=str(error),
+                                         exception_type=type(error).__name__, stdout=getattr(error, "stdout", None),
+                                         stderr=getattr(error, "stderr", None))
+            raise WorkerOffline(f"{category}; existing attempt retained; {reference}") from None
+        details = {"returncode": result.returncode, "stdout": result.stdout, "stderr": getattr(result, "stderr", None)}
+        # Exit 1 is the worker's structured application-error contract. Other
+        # exits, especially SSH's 255, never establish a worker acknowledgement.
+        if result.returncode not in {0, 1}:
+            reference = self._diagnostic("transport_exit", operation, attempt_id, **details)
+            raise WorkerOffline(f"transport_exit; existing attempt retained; {reference}") from None
         try:
             response = json.loads(result.stdout)
-        except ValueError as error:
-            if operation == "collect":
-                raise Blocked("worker ledger acknowledgement is not valid JSON") from error
-            raise WorkerOffline("invalid worker acknowledgement; reconcile the same attempt") from error
+        except ValueError:
+            response = None
+        if isinstance(response, dict) and response.get("error") and not response.get("state"):
+            reference = self._diagnostic("worker_rejection", operation, attempt_id, **details)
+            raise Blocked(f"worker_rejection; existing attempt retained; {reference}") from None
+        if result.returncode:
+            reference = self._diagnostic("transport_exit", operation, attempt_id, **details)
+            raise WorkerOffline(f"transport_exit; existing attempt retained; {reference}") from None
         if not isinstance(response, dict):
-            raise Blocked("worker acknowledgement is not an object; reconcile ledgers")
-        if response.get("error") and not response.get("state"):
-            raise Blocked("worker rejected request; inspect private worker status")
+            reference = self._diagnostic("transport_response", operation, attempt_id, **details)
+            exception = Blocked if operation == "collect" else WorkerOffline
+            raise exception(f"transport_response; reconcile the same attempt; {reference}") from None
         return response
+
+    def _diagnostic(self, category, operation, attempt_id, **details):
+        path = retain_diagnostic(self.config["database"], category, operation=operation, attempt_id=attempt_id,
+                                 host=self.config["worker_host"], executable=self.config["worker_executable"], **details)
+        return f"private artifact: {path}" if path is not None else "private diagnostic not retained"
 
     def submit(self, spec: dict, feedback=None):
         values = {"spec": spec, "spec_hash": digest(spec)}

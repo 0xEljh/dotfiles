@@ -134,6 +134,7 @@ in
     settings = {
       execution_enabled = true;
       rollout_acknowledged = true;
+      worker_executable = "/home/${user}/.local/share/pr-maintenance/nix/worker/bin/pr-worker";
       github_auth = "gh";
       personal_auth_acknowledged = true;
       organization_wide = true;

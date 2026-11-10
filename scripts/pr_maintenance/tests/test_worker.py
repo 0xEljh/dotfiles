@@ -67,6 +67,44 @@ class WorkerTests(unittest.TestCase):
         with self.assertRaisesRegex(Blocked, "branch"):
             worker.submit(other)
 
+    def test_unresolved_pr_owner_survives_retarget_and_restart(self):
+        worker = Worker(self.config)
+        worker.submit(self.spec)
+        worker._update(self.spec["attempt_id"], state="inspection_required", started=True, quiescent=False)
+        worker.close()
+        worker = Worker(self.config)
+        self.addCleanup(worker.close)
+        other = specification()
+        other["pr"]["head"]["ref"] = "retargeted"
+        with self.assertRaisesRegex(Blocked, "PR"):
+            worker.submit(other)
+        self.assertFalse(worker.status(self.spec["attempt_id"])["quiescent"])
+
+    def test_jitter_same_pr_on_different_branches_accepts_one_owner(self):
+        specs = []
+        for index in range(24):
+            spec = specification()
+            spec["pr"]["head"]["ref"] = f"retarget-{index}"
+            specs.append(spec)
+
+        def submit(spec):
+            time.sleep(random.uniform(0, .02))
+            worker = Worker(self.config)
+            try:
+                return worker.submit(spec)["attempt_id"]
+            except Blocked as error:
+                self.assertIn("PR", str(error))
+                return None
+            finally:
+                worker.close()
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+            owners = [owner for owner in pool.map(submit, specs) if owner is not None]
+        self.assertEqual(len(owners), 1)
+        worker = Worker(self.config)
+        self.addCleanup(worker.close)
+        self.assertEqual(len(worker.transport({"operation": "collect"})["attempts"]), 1)
+
     def test_started_crash_is_held_without_second_prompt(self):
         worker = Worker(self.config)
         self.addCleanup(worker.close)
@@ -210,7 +248,7 @@ class WorkerTests(unittest.TestCase):
         @contextlib.contextmanager
         def competing_lock(name):
             with original_lock(name):
-                if name == "execution":
+                if name == "attempt-" + self.spec["attempt_id"]:
                     worker._update(self.spec["attempt_id"], state="running", started=True, quiescent=False)
                 yield
         with patch.object(worker, "lock", side_effect=competing_lock), patch.object(worker.runner, "check_contract") as check:
@@ -273,6 +311,18 @@ class WorkerPublicationTests(Repository):
             with self.assertRaisesRegex(Blocked, "verification failed"):
                 self.worker._finish_coding(self.spec)
             create.assert_not_called()
+        self.assertEqual(git(self.origin, "rev-parse", "refs/heads/topic"), self.head)
+
+    def test_result_secret_rejection_identifies_existing_private_file_without_echo(self):
+        result = self.worker.artifacts(self.spec["attempt_id"]) / "result.json"
+        token = "ghp_" + "x" * 30
+        result.write_text(json.dumps({"summary": token}))
+        with self.assertRaises(Blocked) as error:
+            self.worker._finish_coding(self.spec)
+        self.assertIn(str(result), str(error.exception))
+        self.assertIn("not a confirmed credential leak", str(error.exception))
+        self.assertNotIn(token, str(error.exception))
+        self.assertIn(token, result.read_text())
         self.assertEqual(git(self.origin, "rev-parse", "refs/heads/topic"), self.head)
 
     def test_verification_spawn_is_durably_nonquiescent_before_process_start(self):
@@ -343,7 +393,7 @@ class WorkerPublicationTests(Repository):
 
 
 class ExecutionStressTests(Repository):
-    def test_jitter_parallel_branches_have_one_writer_and_no_duplicate_prompts(self):
+    def test_jitter_independent_prs_overlap_despite_held_owner_without_duplicate_prompts(self):
         config = {"state_dir": str(self.root / "state"), "checkout_root": str(self.root / "checkouts"),
                   "skills_dir": str(self.root / "skills"), "execution_enabled": True, "rollout_acknowledged": True,
                   "runner_version": "test", "config_file": "/fixed/config.json", "worker_executable": "/fixed/bin/pr-worker", "min_free_bytes": 0}
@@ -352,11 +402,25 @@ class ExecutionStressTests(Repository):
         (skill / "SKILL.md").write_text("Keep scope narrow.")
         specs = []
         worker = Worker(config)
+        held_attempts = []
+        for index, (state, publication) in enumerate((("cancel_requested", "unpublished"),
+                                                      ("inspection_required", "unpublished"),
+                                                      ("deadline_exceeded", "unpublished"),
+                                                      ("publication_unknown", "push_in_flight"))):
+            held = specification()
+            held["pr_id"] = held["pr"]["id"] = 200 + index
+            held["pr"]["head"]["ref"] = f"held-{index}"
+            with patch.object(worker, "_schedule"):
+                worker.submit(held)
+            worker._update(held["attempt_id"], state=state, started=True,
+                           quiescent=False, publication_state=publication)
+            held_attempts.append((held, state))
         for index in range(6):
             branch = f"work-{index}"
             git(self.seed, "branch", branch, self.head)
             git(self.seed, "push", "origin", branch)
             spec = specification()
+            spec["pr_id"] = spec["pr"]["id"] = 100 + index
             spec["pr"]["head"]["ref"] = branch
             spec["input_head_sha"] = spec["pr"]["head"]["sha"] = self.head
             spec["base_sha"] = spec["pr"]["base"]["sha"] = self.base
@@ -367,11 +431,13 @@ class ExecutionStressTests(Repository):
         worker.close()
         state = {"active": 0, "maximum": 0, "sessions": []}
         mutex = threading.Lock()
+        overlap = threading.Barrier(len(specs))
         def run(cwd, session, model, agent, prompt, events, timeout):
             with mutex:
                 state["active"] += 1
                 state["maximum"] = max(state["maximum"], state["active"])
                 state["sessions"].append(session)
+            overlap.wait(timeout=10)
             time.sleep(random.uniform(.015, .05))
             with mutex:
                 state["active"] -= 1
@@ -387,14 +453,18 @@ class ExecutionStressTests(Repository):
              patch("pr_maintenance.runner.Runner.check_contract"), patch("pr_maintenance.runner.Runner.check_available"), \
              patch("pr_maintenance.runner.Runner.create_session", side_effect=lambda cwd, title, agent, model, session, metadata: session), \
              patch("pr_maintenance.runner.Runner.run", side_effect=run), patch("pr_maintenance.runner.Runner.quiescent", return_value=True):
-            with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=18) as pool:
                 list(pool.map(execute, specs * 3))
-            # Busy accepted attempts can be scheduled later, never rerun started ones.
             for spec in specs:
                 result = execute(spec)
                 self.assertEqual(result["state"], "noop")
                 self.assertIsInstance(result["started_at"], float)
                 self.assertLessEqual(result["started_at"], time.time())
-        self.assertEqual(state["maximum"], 1)
+        self.assertEqual(state["maximum"], len(specs))
         self.assertEqual(len(state["sessions"]), len(specs))
         self.assertEqual(len(set(state["sessions"])), len(specs))
+        worker = Worker(config)
+        self.addCleanup(worker.close)
+        for held, state in held_attempts:
+            self.assertEqual(worker.status(held["attempt_id"])["state"], state)
+            self.assertFalse(worker.status(held["attempt_id"])["quiescent"])

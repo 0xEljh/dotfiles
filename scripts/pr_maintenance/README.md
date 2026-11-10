@@ -90,11 +90,61 @@ observations of owned session activity, inboxes, child sessions, and registered
 shells/terminals. Versions, model selection, exact verification/review, fresh
 grants, and private-scope checks still apply. This mode cannot prove detached
 descendants stopped. It does not automatically release interrupted or failed
-attempts; those retain ownership for inspection. Status and private reports name
-the selected assurance. Do not set `runner_contract_verified` merely to use this
+attempts; those retain ownership for inspection. Status records the selected
+assurance; notifications warn when monitoring is best effort. Do not set
+`runner_contract_verified` merely to use this
 mode.
 
 ## Inspect and control workflows
+
+`health` reports tick liveness separately from operational readiness. Worker
+transport failures, retained execution holds, a recovery hold, stale ticks, and
+stale pending reports make `healthy` false. Normal running work does not. Health
+does not wait behind the coordinator's operator lock; private report delivery has
+its own nonblocking lock.
+
+Transport failures and unexpected coordinator exceptions retain owner-only JSON
+diagnostics beside the coordinator database. Journal entries name the safe
+category and artifact, not raw tool output. Diagnostic text can still contain
+credentials and must remain private. Retention keeps at most 200 generated records,
+with 64 KiB per private text field and 256 KiB per record. Truncation is explicit.
+Storage failure reports that evidence was not retained.
+
+Telegram summaries show stage outcomes, short explanations, verification status,
+and decisions. PR, published commit, and review links replace inspection metadata.
+Session IDs, attempt IDs, checkout paths, exact commands, and log hashes remain in
+private status and artifacts. Single-message reports have no delivery footer.
+Multipart reports repeat the report heading with `Part N/M`; internal deduplication
+keys never become delivery labels. Previously queued messages keep their stored text.
+Delivery does not depend on an extra model or readability subagent.
+
+Known limitation: an unchanged checkout can be recorded as `noop` even when
+`result.json` explicitly reports `BLOCKED`. Inspect the private result, checks,
+and feedback dispositions before interpreting historical no-ops as success.
+
+Discovery failure notices name the repository or PR and link to GitHub when known.
+They explain the reason, HTTP status when available, automatic retry, impact, and
+action. A retry timestamp is the earliest allowed retry, not a scheduled run time.
+Initial-inventory failures prevent new work from starting; later repository scan
+failures can delay discovery while independently refreshed PRs continue. Existing
+queued reports remain unchanged. Contextual scan, malformed-record, and PR-read
+notices are deduplicated separately from the older numeric-ID-only notices. Each
+such notice still sends once per repository or PR identity, not once per outage.
+
+The outbound credential filter is not a repository secret scanner. A rejected
+notification now identifies its coordinator host, a private text file, and the
+first matching line in that file. The file contains the rejected notification,
+not proof that a repository file contains a credential. Inspect it to decide
+whether to rotate a real credential or dismiss a false positive.
+
+Rejected notifications are retained under `withheld-reports/` beside the configured
+coordinator database. Each report identity keeps its first rejected body in a
+`0600` file within a `0700` directory. These files may contain real secrets. Apply
+the private-state backup and retention policy, and do not paste their contents
+into Telegram or public issues. An internal-key-only match hashes the key
+and sends the safe body without a secret warning. Unused PR bodies
+and logs do not suppress summaries. Worker result rejections name the existing
+private `result.json` file to inspect.
 
 Use the local CLI as the service account. Its database and artifacts contain
 private repository information. Use the immutable PR ID shown by `status`, not
@@ -118,6 +168,31 @@ Cancellation revokes future grants first. An unreachable worker means pending
 cancellation, not confirmed cancellation. A push already in flight cannot be
 recalled. Do not remove a branch claim or replace an attempt to work around an
 unknown result.
+
+Independent PRs run concurrently, including branches in the same repository.
+There is no global maintenance queue or worker-slot limit. Stages within one PR
+remain sequential. Durable ownership prevents overlapping attempts for the same
+PR or head branch, including after restart. An interrupted attempt holds its own
+PR and branch, not unrelated PRs. `status.metrics.active_workflows` counts active
+workflows; same-branch conflicts appear as `waiting_same_branch` pauses.
+A merged PR that never received an attempt gets one final report explaining that
+maintenance never started. Previously recorded wait evidence remains in final
+reports, but no new shared-worker queue notices are generated.
+
+GitHub throttling, discovery budgets, worker outages, and ledger integrity holds
+can still delay dispatch. Parallel execution does not remove these checks or
+reserve disk space. Each attempt keeps its isolated checkout and checks free
+space before execution; failures retain artifacts for inspection.
+
+For inspected best-effort interruptions with known nonpublication, the worker's
+local `resolve-interrupted ATTEMPT_ID --accept-best-effort --reason '...'` command
+records explicit acceptance of detached-process uncertainty. It requires stopped
+unit and verification-process observations, quiet owned sessions, and a fresh
+unpublished-candidate check. It retains artifacts and ends the attempt as blocked
+without another prompt or push. It is not available through the SSH transport.
+Cancel the workflow on the coordinator before recovery, then reconcile the worker
+outcome before restoring dispatch. This command does not prove detached
+descendants stopped or recover an unknown publication outcome.
 
 After a publication incident, `resume` records an audited acknowledgement with a
 fresh epoch. The worker must confirm that acknowledgement before it releases the

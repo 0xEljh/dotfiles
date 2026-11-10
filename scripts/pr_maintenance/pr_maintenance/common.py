@@ -89,6 +89,11 @@ SECRET_PATTERNS = (
 )
 
 
+def first_secret(text: str) -> re.Match[str] | None:
+    matches = [match for pattern in SECRET_PATTERNS if (match := re.search(pattern, text))]
+    return min(matches, key=lambda match: match.start(), default=None)
+
+
 def check_secrets(text: str) -> None:
-    if any(re.search(pattern, text) for pattern in SECRET_PATTERNS):
+    if first_secret(text):
         raise Blocked("possible secret detected; content withheld, inspect private artifacts")

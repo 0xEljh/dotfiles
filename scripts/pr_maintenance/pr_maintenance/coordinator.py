@@ -88,6 +88,10 @@ class Coordinator:
                 attempt_id TEXT PRIMARY KEY REFERENCES attempts(id),
                 epoch INTEGER NOT NULL, delivered INTEGER NOT NULL DEFAULT 0
             );
+            CREATE TABLE IF NOT EXISTS queue_waits (
+                pr_id INTEGER PRIMARY KEY REFERENCES workflows(pr_id),
+                blocker TEXT NOT NULL, observed_at REAL NOT NULL
+            );
         """)
 
     def enable(self, at: float | None = None):
@@ -105,6 +109,9 @@ class Coordinator:
             return None
         result = dict(row)
         result["pr"] = json.loads(result["pr"])
+        result["has_attempts"] = self.db.execute("SELECT 1 FROM attempts WHERE pr_id=? LIMIT 1", (pr_id,)).fetchone() is not None
+        wait = self.db.execute("SELECT blocker FROM queue_waits WHERE pr_id=?", (pr_id,)).fetchone()
+        result["last_queue_blocker"] = json.loads(wait[0]) if wait else None
         return result
 
     def stages(self, pr_id: int):
@@ -166,7 +173,9 @@ class Coordinator:
                          or not pr.get("head", {}).get("repo"))
             preserved = state in {"completed", "cancelled", "baselined_excluded"}
             if cancelled and not preserved:
-                state, reason = "cancel_requested", "closed, removed, or identity no longer eligible"
+                state = "cancel_requested"
+                reason = ("PR merged" if pr.get("merged", False) else "PR closed" if pr["state"] != "open"
+                          else "closed, removed, or identity no longer eligible")
             elif state in {"cancel_requested", "cancelled", "completed", "baselined_excluded"}:
                 pass
             elif pr.get("draft", False):
@@ -264,8 +273,6 @@ class Coordinator:
                 (*head, pr_id)).fetchone()
             if (claim and claim["pr_id"] != pr_id) or (not claim and other and other[0] < pr_id):
                 self.db.execute("UPDATE workflows SET lifecycle_state='paused',paused_reason='waiting_same_branch' WHERE pr_id=?", (pr_id,))
-                return None
-            if self.db.execute("SELECT 1 FROM branch_claims WHERE unresolved=1").fetchone():
                 return None
             pr = workflow["pr"]
             attempt_id = str(uuid.uuid4())
@@ -469,13 +476,13 @@ class Coordinator:
             value = dict(row)
             result = json.loads(value.pop("result"))
             value.update({key: result.get(key) for key in
-                          ("session_id", "candidate_sha", "publication_state", "error", "quiescent")})
+                          ("session_id", "candidate_sha", "publication_state", "error", "quiescent", "operator_recovery")})
             attempts.append(value)
         active = [a for a in attempts if a["state"] not in TERMINAL]
         at = self.now()
         eligible = [w["eligible_at"] for w in workflows if w["lifecycle_state"] == "active" and w["eligible_at"] is not None]
         overdue = [at - w["feedback_due_at"] for w in workflows if w["lifecycle_state"] == "active" and w["feedback_due_at"] is not None]
-        metrics = {"queue_size": len(eligible), "oldest_eligible_age": max(0, at - min(eligible)) if eligible else None,
+        metrics = {"active_workflows": len(eligible), "oldest_eligible_age": max(0, at - min(eligible)) if eligible else None,
                    "feedback_overdue": max([0, *overdue]), "active_attempts": len(active),
                    "oldest_running_age": max([at - a["created_at"] for a in active] or [0]),
                    "worker_last_contact": max([a["last_contact"] for a in attempts if a["last_contact"] is not None] or [0]),

@@ -77,6 +77,28 @@ def test_unknown_execution_retains_branch_and_attempt(coordinator):
         c.control("retry-stage", 100, "deep_modules", "network timeout")
 
 
+@pytest.mark.parametrize("other_repository", [False, True])
+def test_unresolved_attempt_does_not_delay_independent_pr(coordinator, other_repository):
+    c = coordinator
+    c.enable(500)
+    c.observe(pr(), 1000)
+    owner = c.claim(100)
+    c.accept_status(owner["attempt_id"], {"state": "cancel_requested", "quiescent": False,
+                    "publication_state": "not_published", "error": "execution not proved stopped"})
+    waiting = pr(101, ref="other-feature", number=2)
+    if other_repository:
+        for side in ("head", "base"):
+            waiting[side]["repo"].update(id=78, full_name="EigenformAI/other",
+                                          clone_url="https://github.com/EigenformAI/other.git")
+    c.observe(waiting, 1001)
+    independent = c.claim(101)
+    assert independent and independent["stage"] == "deep_modules"
+    assert independent["attempt_id"] != owner["attempt_id"]
+    assert c.workflow(101)["lifecycle_state"] == "active"
+    assert c.claim(100)["attempt_id"] == owner["attempt_id"]
+    assert c.attempt(owner["attempt_id"])["result"]["quiescent"] is False
+
+
 def test_draft_resume_and_close_do_not_repeat_stages(coordinator):
     c = coordinator
     c.enable(500)

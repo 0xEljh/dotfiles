@@ -1,6 +1,6 @@
 import pytest
 
-from pr_maintenance.common import Blocked, check_secrets, digest
+from pr_maintenance.common import Blocked, canonical, check_secrets, digest
 from pr_maintenance.coordinator import Coordinator
 from pr_maintenance.service import Service
 from test_coordinator import pr
@@ -122,21 +122,192 @@ def test_narrowed_numeric_scope_pauses_instead_of_cancelling_missing_inventory(t
     assert c.stages(100)[0]["state"] == "pending"
 
 
-def test_personal_inventory_access_failure_defers_without_cancelling_work(tmp_path):
+@pytest.mark.parametrize("status,retry_at,action", [
+    (403, None, "permissions"),
+    (503, 3600, "No immediate action"),
+    (None, 3600, "No immediate action"),
+])
+def test_personal_inventory_access_failure_defers_without_cancelling_work(tmp_path, status, retry_at, action):
     from pr_maintenance.github import GitHubError
 
     c = coordinator(tmp_path)
 
     class GitHub:
         def repositories(self):
-            raise GitHubError("personal authentication or access denied", status=403)
+            raise GitHubError("GitHub inventory unavailable", status=status, retry_at=retry_at)
 
     outbox = Outbox()
     Service(c, GitHub(), None, outbox, now=lambda: 2000).tick()
     assert c.workflow(100)["lifecycle_state"] == "active"
     assert c.meta("api_deferred_at") == "2000"
     assert c.meta("last_tick") == "2000"
-    assert outbox.messages
+    message = next(iter(outbox.messages.values()))
+    assert "Could not get the repository list from GitHub" in message
+    assert "Reason: GitHub inventory unavailable" in message
+    assert action in message
+    assert "No new maintenance work or publication was authorized during this poll" in message
+    assert "Existing attempts were not cancelled" in message
+    if status:
+        assert f"HTTP {status}" in message
+    if retry_at:
+        assert "no earlier than 1970-01-01 01:00:00 UTC" in message
+    else:
+        assert "Retry: Automatically on a scheduled poll" in message
+
+
+@pytest.mark.parametrize("inventoried", [False, True])
+@pytest.mark.parametrize("diagnostic,status,retry_at,reason,action", [
+    ("GitHub API request deferred", 503, 3600, "HTTP 503", "No immediate action"),
+    ("GitHub API transport failed", None, 3600, "Could not connect to GitHub", "network"),
+    ("personal authentication or access denied", 403, None, "HTTP 403", "permissions"),
+    ("GitHub API request failed (HTTP 404)", 404, None, "HTTP 404", "still exists"),
+    ("GitHub API returned invalid JSON", None, None, "invalid JSON", "diagnostics"),
+])
+def test_scan_failure_explains_repository_reason_retry_and_impact(
+    tmp_path, inventoried, diagnostic, status, retry_at, reason, action,
+):
+    from pr_maintenance.github import GitHubError
+
+    c = coordinator(tmp_path)
+    c.config["allow_repositories"] = ["EigenformAI/test"]
+    if inventoried:
+        c.db.execute("INSERT INTO inventories(repository_id,repository,inventoried,cursor,last_success) "
+                     "VALUES (77,'EigenformAI/test',1,1500,1500)")
+        c.db.execute("INSERT INTO meta VALUES ('baseline_complete','1500')")
+
+    class GitHub:
+        def repositories(self):
+            return [pr()["base"]["repo"]]
+
+        def get_pr(self, repo, number):
+            return pr()
+
+        def open_prs(self, repo):
+            yield pr(101, created=1600, number=2)
+            raise GitHubError(diagnostic, status=status, retry_at=retry_at)
+
+        def updated_prs(self, repo, since):
+            assert since == 900
+            return self.open_prs(repo)
+
+    outbox = Outbox()
+    refreshed = Service(c, GitHub(), None, outbox, now=lambda: 2000).scan()
+    message = next(iter(outbox.messages.values()))
+    assert "PR maintenance: EigenformAI/test\nhttps://github.com/EigenformAI/test" in message
+    assert "Could not finish checking for new or updated PRs" in message
+    assert "Reason:" in message and reason in message
+    assert "Action:" in message and action in message
+    assert "The next scan rechecks the unfinished period" in message
+    if retry_at:
+        assert "no earlier than 1970-01-01 01:00:00 UTC" in message
+    else:
+        assert "Retry: Automatically on a scheduled poll" in message
+    if inventoried:
+        assert "Discovery of new or updated PRs is delayed" in message
+        assert "PRs refreshed separately can still proceed" in message
+    else:
+        assert "Initial PR inventory is incomplete" in message
+        assert "new maintenance work will not start" in message
+        assert not c.meta("baseline_complete")
+    inventory = c.db.execute("SELECT * FROM inventories WHERE repository_id=77").fetchone()
+    assert inventory["inventoried"] == inventoried
+    assert inventory["cursor"] == inventory["last_success"] == (1500 if inventoried else None)
+    assert 100 in refreshed and 101 in refreshed
+
+
+@pytest.mark.parametrize("malformed", [False, True])
+def test_live_pr_read_failure_identifies_pr_and_does_not_expose_arbitrary_exception(tmp_path, malformed):
+    from pr_maintenance.github import GitHubError
+
+    c = coordinator(tmp_path)
+    c.config["allow_repositories"] = ["EigenformAI/test"]
+
+    class GitHub:
+        def repositories(self):
+            return [pr()["base"]["repo"]]
+
+        def get_pr(self, repo, number):
+            if malformed:
+                raise ValueError("private upstream response")
+            raise GitHubError("GitHub API request failed (HTTP 404)", status=404)
+
+        def open_prs(self, repo):
+            return []
+
+    outbox = Outbox()
+    refreshed = Service(c, GitHub(), None, outbox, now=lambda: 2000).scan()
+    message = next(iter(outbox.messages.values()))
+    assert "PR maintenance: EigenformAI/test #1\n" + pr()["html_url"] in message
+    assert "Could not refresh this PR from GitHub" in message
+    assert "No new work or publication will be authorized for this PR without a fresh read" in message
+    assert "Retry: Automatically on a scheduled poll" in message
+    assert "private upstream response" not in message
+    assert ("malformed PR data" if malformed else "HTTP 404") in message
+    assert 100 not in refreshed
+
+
+def test_scan_notice_delivers_context_once_without_rewriting_legacy_report(tmp_path):
+    from pr_maintenance.github import GitHubError
+    from pr_maintenance.reporting import Outbox as DurableOutbox
+
+    c = coordinator(tmp_path)
+    c.config["allow_repositories"] = ["EigenformAI/test"]
+    outbox = DurableOutbox(c.db)
+    legacy = "PR maintenance: repository ID 77 scan deferred; cursor retained."
+    outbox.enqueue("scan:77", None, legacy)
+    assert outbox.deliver(lambda _: 1) == 1
+
+    class GitHub:
+        retry_at = 3600
+
+        def repositories(self):
+            return [pr()["base"]["repo"]]
+
+        def get_pr(self, repo, number):
+            return pr()
+
+        def open_prs(self, repo):
+            raise GitHubError("GitHub API transport failed", retry_at=self.retry_at)
+
+    github = GitHub()
+    service = Service(c, github, None, outbox, now=lambda: 2000)
+    service.scan()
+    github.retry_at = 7200
+    service.scan()
+    delivered = []
+    assert outbox.deliver(lambda body: delivered.append(body) or 2) == 1
+    assert "EigenformAI/test" in delivered[0]
+    assert "Could not connect to GitHub" in delivered[0]
+    assert "01:00:00 UTC" in delivered[0]
+    assert c.db.execute("SELECT text FROM reports WHERE report_key='scan:77'").fetchone()[0] == legacy
+    assert outbox.status()["sent_reports"] == 2
+
+
+def test_scan_error_credential_match_is_withheld_before_delivery(tmp_path):
+    from pr_maintenance.github import GitHubError
+    from pr_maintenance.reporting import Outbox as DurableOutbox
+
+    c = coordinator(tmp_path)
+    c.config["allow_repositories"] = ["EigenformAI/test"]
+    token = "ghp_" + "x" * 30
+
+    class GitHub:
+        def repositories(self):
+            return [pr()["base"]["repo"]]
+
+        def get_pr(self, repo, number):
+            return pr()
+
+        def open_prs(self, repo):
+            raise GitHubError("x " * 200 + token, status=503)
+
+    outbox = DurableOutbox(c.db)
+    Service(c, GitHub(), None, outbox, now=lambda: 2000).scan()
+    delivered = []
+    assert outbox.deliver(lambda body: delivered.append(body) or 1) == 1
+    assert "Notification withheld by outbound credential filter" in delivered[0]
+    assert token not in delivered[0]
+    assert token in next((tmp_path / "withheld-reports").glob("*.txt")).read_text()
 
 
 def test_malformed_pr_does_not_stall_other_repositories_or_advance_bad_cursor(tmp_path):
@@ -161,12 +332,19 @@ def test_malformed_pr_does_not_stall_other_repositories_or_advance_bad_cursor(tm
             else:
                 yield good
 
-    refreshed = Service(c, GitHub(), None, Outbox()).scan()
+    outbox = Outbox()
+    refreshed = Service(c, GitHub(), None, outbox).scan()
     assert 102 in refreshed and 103 in refreshed
     assert c.workflow(101) is None
     assert c.db.execute("SELECT cursor FROM inventories WHERE repository_id=77").fetchone()[0] is None
     assert c.db.execute("SELECT inventoried FROM inventories WHERE repository_id=78").fetchone()[0] == 1
     assert c.meta("baseline_complete") is None
+    message = next(iter(outbox.messages.values()))
+    assert "PR maintenance: EigenformAI/test\nhttps://github.com/EigenformAI/test" in message
+    assert "malformed PR data" in message
+    assert "Retry: Automatically on a scheduled poll" in message
+    assert "Action:" in message
+    assert "cursor" not in message
 
 
 def test_lost_submit_ack_reconciles_same_attempt_without_resubmission(tmp_path):
@@ -400,9 +578,7 @@ def test_private_reports_name_best_effort_and_disclaim_descendant_proof(tmp_path
     outbox = Outbox()
     Service(c, None, None, outbox).reports()
     summary = next(text for key, text in outbox.messages.items() if key.startswith("initial:"))
-    assert "Deep modules: strict" in summary
-    assert "Cleanup: best effort" in summary
-    assert "does not prove descendants stopped" in summary
+    assert "Background processes may still be running: Cleanup." in summary
 
 
 def test_recovered_readiness_notice_uses_explicit_utc_and_preserves_polling_delay_caveat(tmp_path):
@@ -444,9 +620,10 @@ def test_published_with_concern_notice_requires_acknowledgement_without_claiming
     assert "Deep modules: Published with concern" in message
     assert "Changes were published; incident requires acknowledgement" in message
     assert "unpublished" not in message.lower()
-    assert all(value in message for value in ("Unexpected post-push observation", attempt["attempt_id"],
-                                              "best effort", "does not prove descendants stopped"))
-    assert "\n\nInspection:\n- Host:" in message
+    assert all(value in message for value in ("Unexpected post-push observation", pr()["html_url"],
+                                              "Background processes may still be running"))
+    assert attempt["attempt_id"] not in message
+    assert "Inspection:" not in message
 
 
 def test_paused_private_workflow_reports_complete_ticks_without_replaying_attempt(tmp_path):
@@ -493,16 +670,16 @@ def test_paused_private_workflow_reports_complete_ticks_without_replaying_attemp
     assert "paused: repository absent from private inventory" in delivered[0]
 
 
-@pytest.mark.parametrize("secret_in_key", [False, True])
-def test_secret_notice_fallback_is_safe_deduplicated_and_deliverable(tmp_path, secret_in_key):
+def test_secret_notice_retains_exact_private_text_and_delivers_inspection_location(tmp_path, monkeypatch):
     from pr_maintenance.reporting import Outbox as DurableOutbox
 
+    monkeypatch.setattr("socket.gethostname", lambda: "coordinator-test")
     c = coordinator(tmp_path)
     outbox = DurableOutbox(c.db)
     service = Service(c, None, None, outbox)
     token = "1234567890:" + "A" * 35
-    key = token if secret_in_key else "notice:100"
-    text = "Private diagnostic" if secret_in_key else f"Diagnostic contains {token}"
+    key = "notice:100"
+    text = f"Private diagnostic\nDiagnostic contains {token}\nInspect this exact text"
     with pytest.raises(Blocked, match="possible secret"):
         outbox.enqueue(key, 100, text)
     for _ in range(2):
@@ -511,9 +688,216 @@ def test_secret_notice_fallback_is_safe_deduplicated_and_deliverable(tmp_path, s
     reports = c.db.execute("SELECT report_key,text FROM reports").fetchall()
     assert len(reports) == 1
     report_key, body = reports[0]
-    assert "possible secret detected" in body
+    artifact = c.path.parent / "withheld-reports" / f"{digest(key)}.txt"
+    assert artifact.is_file()
+    assert artifact.read_text() == text
+    assert artifact.stat().st_mode & 0o777 == 0o600
+    assert artifact.parent.stat().st_mode & 0o777 == 0o700
+    assert all(value in body for value in ("EigenformAI/test #1", "coordinator-test", str(artifact),
+                                           "Line: 2", "not a confirmed credential leak", "not a repository scan"))
     assert token not in report_key + body
     check_secrets(report_key + "\n" + body)
     delivered = []
     assert outbox.deliver(lambda part: delivered.append(part) or 123) == 1
     assert token not in delivered[0]
+    service.notice(key, 100, f"A later {token}")
+    assert artifact.read_text() == text
+    assert c.db.execute("SELECT COUNT(*) FROM reports").fetchone()[0] == 1
+    assert token not in "\n".join(c.db.iterdump())
+
+
+def test_generated_reference_match_delivers_safe_body_without_secret_alarm(tmp_path):
+    from pr_maintenance.reporting import Outbox as DurableOutbox
+
+    c = coordinator(tmp_path)
+    outbox = DurableOutbox(c.db)
+    service = Service(c, None, None, outbox)
+    key = "queue:5138916024:eff4d3e8-6af3-4c94-9d8b-a5e49ecf6ec0"
+    with pytest.raises(Blocked):
+        check_secrets(key)
+    for _ in range(2):
+        service.notice(key, 100, "Waiting for the retained attempt; inspect PR #71")
+    report_key, text = c.db.execute("SELECT report_key,text FROM reports").fetchone()
+    assert key not in report_key
+    assert text == "Waiting for the retained attempt; inspect PR #71"
+    delivered = []
+    assert outbox.deliver(lambda body: delivered.append(body) or 123) == 1
+    check_secrets(delivered[0])
+    assert not (c.path.parent / "withheld-reports").exists()
+
+
+def test_summary_filter_retains_rendered_match_not_unused_inputs(tmp_path):
+    from pr_maintenance.reporting import Outbox as DurableOutbox
+
+    c = coordinator(tmp_path)
+    service = Service(c, None, None, DurableOutbox(c.db))
+    token = "ghp_" + "x" * 30
+    workflow = c.workflow(100)
+    workflow["pr"]["body"] = token
+    stages = [{"kind": "cleanup", "state": "blocked", "result": {"logs": token}}]
+    service.summary("unused-inputs", workflow, stages, False)
+    text = c.db.execute("SELECT text FROM reports WHERE report_key='unused-inputs'").fetchone()[0]
+    assert "Initial maintenance summary" in text
+    assert token not in text
+    assert not (c.path.parent / "withheld-reports").exists()
+
+    stages[0]["result"]["error"] = token
+    service.summary("rendered-match", workflow, stages, False)
+    artifact = c.path.parent / "withheld-reports" / f"{digest('rendered-match')}.txt"
+    assert token in artifact.read_text()
+    report = c.db.execute("SELECT text FROM reports WHERE report_key=?", (f"secret:{digest('rendered-match')}",)).fetchone()[0]
+    assert str(artifact) in report
+    assert token not in report
+
+
+def test_withheld_notice_storage_failure_and_unsafe_metadata_do_not_echo_secrets(tmp_path, monkeypatch):
+    from pr_maintenance.reporting import Outbox as DurableOutbox
+
+    c = coordinator(tmp_path)
+    token = "ghp_" + "x" * 30
+    c.db.execute("UPDATE workflows SET repository=? WHERE pr_id=100", (token,))
+    monkeypatch.setattr("socket.gethostname", lambda: token)
+    # Make the diagnostic directory unwritable even when tests run as root.
+    (c.path.parent / "withheld-reports").write_text("not a directory")
+    outbox = DurableOutbox(c.db)
+    Service(c, None, None, outbox).notice("storage-failure", 100, token)
+    body = c.db.execute("SELECT text FROM reports").fetchone()[0]
+    assert "could not retain" in body.lower()
+    assert "permissions" in body
+    assert token not in body
+    assert outbox.deliver(lambda _: 123) == 1
+    (c.path.parent / "withheld-reports").unlink()
+    Service(c, None, None, outbox).notice("storage-failure", 100, token)
+    retained = c.path.parent / "withheld-reports" / f"{digest('storage-failure')}.txt"
+    assert retained.read_text() == token
+    delivered = []
+    assert outbox.deliver(lambda body: delivered.append(body) or 124) == 1
+    assert str(retained) in delivered[0]
+    assert token not in delivered[0]
+
+
+def test_retained_notification_points_to_earliest_match_across_patterns(tmp_path):
+    from pr_maintenance.reporting import Outbox as DurableOutbox
+
+    c = coordinator(tmp_path)
+    token = "ghp_" + "x" * 30
+    text = f"Heading\n{token}\nLater private key header\n-----BEGIN PRIVATE KEY-----"
+    Service(c, None, None, DurableOutbox(c.db)).notice("multiple-patterns", 100, text)
+    body = c.db.execute("SELECT text FROM reports").fetchone()[0]
+    assert "Line: 2 " in body
+    assert token not in body
+
+
+def test_corrupted_retained_notification_does_not_abort_reporting(tmp_path):
+    from pr_maintenance.reporting import Outbox as DurableOutbox
+
+    c = coordinator(tmp_path)
+    artifact = c.path.parent / "withheld-reports" / f"{digest('corrupted')}.txt"
+    artifact.parent.mkdir(mode=0o700)
+    artifact.write_bytes(b"\xff")
+    outbox = DurableOutbox(c.db)
+    Service(c, None, None, outbox).notice("corrupted", 100, "ghp_" + "x" * 30)
+    body = c.db.execute("SELECT text FROM reports").fetchone()[0]
+    assert "could not retain" in body.lower()
+    assert "encoding" in body
+    assert artifact.read_bytes() == b"\xff"
+    assert outbox.deliver(lambda _: 123) == 1
+
+
+def test_tick_dispatches_all_independent_prs_while_owner_is_held(tmp_path):
+    c = coordinator(tmp_path)
+    c.config.update(execution_enabled=True, organization_wide=True)
+    c.db.execute("INSERT INTO meta VALUES ('baseline_complete','1000')")
+    owner = c.claim(100)
+    held = {"attempt_id": owner["attempt_id"], "spec_hash": digest(owner),
+            "state": "publication_unknown", "quiescent": False, "publication_state": "unknown"}
+    payloads = {1: pr()}
+    for number in range(2, 22):
+        payloads[number] = pr(99 + number, ref=f"feature-{number}", number=number)
+        c.observe(payloads[number], 1001)
+
+    class GitHub:
+        def repositories(self):
+            return [pr()["base"]["repo"]]
+
+        def get_pr(self, repo, number):
+            return payloads[number]
+
+        def open_prs(self, repo):
+            return list(payloads.values())
+
+    class ParallelWorker(Worker):
+        def __init__(self):
+            super().__init__([held])
+            self.submitted = []
+
+        def submit(self, spec):
+            self.submitted.append(spec)
+            return {"attempt_id": spec["attempt_id"], "spec_hash": digest(spec),
+                    "state": "accepted", "quiescent": True, "publication_state": "not_published"}
+
+    worker = ParallelWorker()
+    Service(c, GitHub(), worker, Outbox(), now=lambda: 2000).tick()
+    assert {spec["pr_id"] for spec in worker.submitted} == set(range(101, 121))
+    assert all(spec["stage"] == "deep_modules" for spec in worker.submitted)
+    assert c.attempt(owner["attempt_id"])["state"] == "publication_unknown"
+
+
+def test_merged_unattempted_workflow_reports_once_with_earlier_queue_blocker(tmp_path):
+    c = coordinator(tmp_path)
+    owner = c.claim(100)
+    c.observe(pr(101, ref="other", number=2), 1001)
+    # Historical evidence from the former serialized dispatcher stays readable.
+    c.db.execute("INSERT INTO queue_waits VALUES (?,?,?)", (101,
+                 canonical({"repository": "EigenformAI/test", "number": 1,
+                            "stage": "deep_modules", "attempt_id": owner["attempt_id"]}), 1001))
+    # Keep the reason for the earlier wait even after its owner is resolved.
+    c.accept_status(owner["attempt_id"], {"state": "blocked", "quiescent": True,
+                    "publication_state": "not_published"})
+    c.observe(pr(101, ref="other", number=2) | {"state": "closed", "merged": True}, 2200)
+    outbox = Outbox()
+    Service(c, None, None, outbox).reports()
+    messages = [(key, text) for key, text in outbox.messages.items() if key.startswith(("initial:101:", "final:101:"))]
+    assert len(messages) == 1
+    key, text = messages[0]
+    assert key.startswith("final:101:")
+    assert "Maintenance never started" in text
+    assert "PR merged" in text
+    assert "Previously waiting" in text and pr()["html_url"] in text
+    assert "Deep modules: Not started" in text
+    assert "Verification: not recorded" not in text
+    assert "Session: not recorded" not in text
+
+
+def test_cancelled_workflow_with_execution_keeps_initial_summary_and_evidence(tmp_path):
+    c = coordinator(tmp_path)
+    attempt = c.claim(100)
+    c.accept_status(attempt["attempt_id"], {"state": "cancelled", "quiescent": True,
+                    "publication_state": "not_published", "session_id": "ses_real"})
+    c.observe(pr() | {"state": "closed", "merged": True}, 2200)
+    outbox = Outbox()
+    Service(c, None, None, outbox).reports()
+    assert len(outbox.messages) == 2
+    final = next(text for key, text in outbox.messages.items() if key.startswith("final:"))
+    assert "Deep modules: Cancelled" in final
+    assert "Verification: not recorded" in final
+    assert "Maintenance never started" not in final
+
+
+def test_worker_recovery_reconciles_cancelled_owner_without_delaying_other_pr(tmp_path):
+    c = coordinator(tmp_path)
+    owner = c.claim(100)
+    c.accept_status(owner["attempt_id"], {"state": "cancel_requested", "quiescent": False,
+                    "publication_state": "not_published"})
+    c.observe(pr(101, ref="other", number=2), 1001)
+    c.control("cancel", 100, reason="Out-of-scope repository; retain candidate")
+    assert c.workflow(100)["lifecycle_state"] == "cancel_requested"
+    independent = c.claim(101)
+    assert independent["stage"] == "deep_modules"
+    recovery = {"attempt_id": owner["attempt_id"], "spec_hash": digest(owner), "state": "blocked",
+                "quiescent": True, "publication_state": "not_published",
+                "operator_recovery": {"reason": "Inspected; accept best-effort limitation"}}
+    assert Service(c, None, Worker([recovery]), Outbox()).reconcile()
+    assert c.workflow(100)["lifecycle_state"] == "cancelled"
+    assert c.attempt(owner["attempt_id"])["result"]["operator_recovery"] == recovery["operator_recovery"]
+    assert c.claim(101)["attempt_id"] == independent["attempt_id"]

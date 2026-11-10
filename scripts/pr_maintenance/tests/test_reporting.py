@@ -30,9 +30,9 @@ def test_outbox_splits_without_loss_labels_parts_and_deduplicates():
     messages = [call.args[0] for call in sender.call_args_list]
     assert len(messages) > 1
     assert all(len(message) <= 3499 for message in messages)
-    assert "".join(message.rsplit("\n\nRef: ", 1)[0] for message in messages) == text
-    assert all(message.endswith(f"\n\nRef: pr:42:final | Part {i}/{len(messages)}")
-               for i, message in enumerate(messages, 1))
+    assert "".join(message.rsplit("\n\n", 1)[0] for message in messages) == text
+    assert all(message.endswith(f"module change 😀 · Part {i}/{len(messages)}")
+                for i, message in enumerate(messages, 1))
     assert messages[0].startswith("module change 😀")
     assert outbox.deliver(sender) == 0
     assert outbox.status()["sent_reports"] == 1
@@ -41,12 +41,12 @@ def test_outbox_splits_without_loss_labels_parts_and_deduplicates():
 
 @pytest.mark.parametrize("boundary", ["\n\n", "\n", ""])
 def test_split_prefers_paragraph_then_line_then_capacity_without_losing_whitespace(boundary):
-    key = "readability"
-    capacity = PART_LIMIT - len(f"\n\nRef: {key} | Part 1/1")
+    label = "title" if boundary else "…"
+    capacity = PART_LIMIT - len(f"\n\n{label} · Part 1/1")
     first = "title" + boundary if boundary else "x" * capacity
     text = first + "y" * (capacity + 100) + "\n\n"
-    parts = _split(key, text)
-    bodies = [part.rsplit("\n\nRef: ", 1)[0] for part in parts]
+    parts = _split(text)
+    bodies = [part.rsplit("\n\n", 1)[0] for part in parts]
     assert bodies[0] == first
     assert "".join(bodies) == text
     assert all(len(part) <= PART_LIMIT for part in parts)
@@ -54,18 +54,33 @@ def test_split_prefers_paragraph_then_line_then_capacity_without_losing_whitespa
 
 def test_split_prefers_paragraph_even_when_a_later_line_fits():
     text = "First paragraph.\n\nLater line.\n" + "x" * PART_LIMIT
-    assert _split("paragraph", text)[0].rsplit("\n\nRef: ", 1)[0] == "First paragraph.\n\n"
+    assert _split(text)[0].rsplit("\n\n", 1)[0] == "First paragraph.\n\n"
 
 
 @pytest.mark.parametrize("size", [1, 3450, 3500, 35000, 350000])
 def test_split_counts_footer_and_part_number_digits_and_is_deterministic(size):
     text = ("😀\n\n exact whitespace \n" * size)[:size]
-    parts = _split("digits", text)
-    assert _split("digits", text) == parts
-    assert "".join(part.rsplit("\n\nRef: ", 1)[0] for part in parts) == text
+    parts = _split(text)
+    assert _split(text) == parts
+    assert "".join(part.rsplit("\n\n", 1)[0] if len(parts) > 1 else part for part in parts) == text
     assert all(len(part) <= PART_LIMIT for part in parts)
-    assert all(part.endswith(f"\n\nRef: digits | Part {index}/{len(parts)}")
-               for index, part in enumerate(parts, 1))
+    if len(parts) > 1:
+        assert all(part.endswith(f"\n\n😀 · Part {index}/{len(parts)}")
+                   for index, part in enumerate(parts, 1))
+    else:
+        assert parts == [text]
+
+
+def test_single_message_keeps_internal_identity_out_of_telegram_and_still_deduplicates():
+    outbox = Outbox(sqlite3.connect(":memory:"))
+    key = "initial:5148599604:f2f38d213d8d"
+    text = "PR maintenance: no changes.\nhttps://github.com/EigenformAI/example/pull/42"
+    assert outbox.enqueue(key, 42, text)
+    assert not outbox.enqueue(key, 42, "replacement")
+    sender = Mock(return_value=12)
+    assert outbox.deliver(sender) == 1
+    sender.assert_called_once_with(text)
+    assert outbox.connection.execute("SELECT report_key FROM reports").fetchone()[0] == key
 
 
 def test_existing_persisted_parts_remain_unchanged_and_sent_parts_are_not_resent(tmp_path):
@@ -231,7 +246,7 @@ def test_unconfirmed_message_id_remains_pending(message_id):
     assert outbox.status()["pending_parts"] == 1
 
 
-def test_summary_has_publication_evidence_dispositions_deletions_session_host_no_raw_logs():
+def test_summary_uses_real_links_and_keeps_unpublished_work_and_decisions_explicit():
     workflow = {
         "repository": "EigenformAI/example", "number": 42,
         "url": "https://github.com/EigenformAI/example/pull/42",
@@ -261,19 +276,23 @@ def test_summary_has_publication_evidence_dispositions_deletions_session_host_no
     assert all(expected in text for expected in [
         "Final", workflow["repository"], workflow["url"], "Cleanup: Pushed", "Pushed",
         "https://github.com/EigenformAI/example/commit/" + "a" * 40,
-        "Deleted: tests/test_tautology.py", "api/cache.py", "pytest tests/test_cache.py",
-        "4 passed", "Review feedback: Blocked", "Retained", "b" * 40, "/owned/attempt-2",
+        "4 passed", "Review feedback: Blocked", "Local changes retained; not confirmed pushed",
         "Needs an interface decision", "17", "needs decision", "Changes the public contract",
-        "ses_cleanup", "ses_feedback", "contents-may-differ",
+        "https://github.com/EigenformAI/example/pull/42#discussion_r17",
+    ])
+    assert all(value not in text for value in [
+        "ses_cleanup", "ses_feedback", "contents-may-differ", "/owned/attempt-2",
+        "https://github.com/EigenformAI/example/commit/" + "b" * 40,
     ])
     assert "PRIVATE RAW LOG" not in text
     assert "RAW COMMENT" not in text
     assert "Pushed" not in text.split("Review feedback: Blocked", 1)[1]
     with pytest.raises(Blocked):
-        render_summary(workflow, [{"kind": "cleanup", "result": {"error": "ghp_" + "x" * 30}}], False)
+        Outbox(sqlite3.connect(":memory:")).enqueue("unsafe-summary", 42, render_summary(
+            workflow, [{"kind": "cleanup", "result": {"error": "ghp_" + "x" * 30}}], False))
 
 
-def test_summary_renders_worker_status_and_exact_trusted_argv_outcomes():
+def test_summary_condenses_trusted_checks_without_diagnostic_hashes_and_commands():
     text = render_summary({
         "repository": "EigenformAI/example", "number": 42,
         "pr": {"html_url": "https://github.com/EigenformAI/example/pull/42"},
@@ -293,9 +312,11 @@ def test_summary_renders_worker_status_and_exact_trusted_argv_outcomes():
         },
     }], False)
     assert all(value in text for value in [
-        "contents-may-differ", "ses_coding", "ses_review", "api/cache.py", "Deleted: old.py",
-        '["python","-m","pytest","tests with spaces"]', "exit 0", "b" * 64,
+        "Verification: 1 passed",
         "Removed redundant wrapper", "Feedback 7", "fixed", "same defect",
+    ])
+    assert all(value not in text for value in [
+        "contents-may-differ", "ses_coding", "ses_review", "tests with spaces", "b" * 64,
     ])
 
 
@@ -307,19 +328,16 @@ def test_noop_summary_leads_with_outcome_and_never_infers_verification_or_unpubl
                    "summary": "Dependencies unavailable; application checks could not run."},
     }], False)
     assert text.startswith("Initial maintenance summary: EigenformAI/example #42\n")
-    assert "Deep modules: No checkout changes" in text
-    assert "Verification: not recorded (no checkout changes)" in text
-    assert "Unchanged checkout retained for inspection" in text
+    assert "Deep modules: No changes" in text
+    assert "Verification: not recorded" in text
     assert "unpublished" not in text.lower()
     assert "no new check required" not in text
-    assert "\n\nEvidence:\n- Verification:" in text
-    assert "\n\nInspection:\n- Session: ses_noop\n- Host: contents-may-differ" in text
-    assert text.index("Dependencies unavailable") < text.index("Inspection:")
-    assert "- Checkout: /owned/unchanged" in text
-    assert "- Attempt: attempt-42" in text
+    assert all(value not in text for value in ("Inspection:", "ses_noop", "contents-may-differ",
+                                              "/owned/unchanged", "attempt-42"))
+    assert len(text) < 350
 
 
-def test_publication_concern_retains_warning_full_evidence_and_separate_inspection():
+def test_publication_concern_retains_warning_verification_and_required_action():
     sha = "c" * 40
     text = render_summary({"repository": "EigenformAI/example", "number": 42}, [{
         "kind": "conflicts", "state": "published_with_concern",
@@ -329,8 +347,43 @@ def test_publication_concern_retains_warning_full_evidence_and_separate_inspecti
                    "verification": [{"command": "pytest", "outcome": "9 passed"}]},
     }], True)
     assert "Merge conflicts: Published with concern" in text
-    assert "Pushed changes (incident requires acknowledgement)" in text
+    assert "Changes were published; incident requires acknowledgement" in text
+    assert text.index("incident requires acknowledgement") < text.index("Post-push observation uncertain")
     assert "Unpublished" not in text
-    assert all(value in text for value in (sha, "pytest -> 9 passed", "/owned/published",
-                                          "ses_incident", "ses_review", "Acknowledge incident"))
-    assert text.index("Pushed changes") < text.index("Inspection:")
+    assert all(value in text for value in (f"https://github.com/EigenformAI/example/commit/{sha}",
+                                          "9 passed", "Acknowledge incident"))
+
+
+def test_long_stage_explanation_is_bounded_but_explicit_decisions_are_not_hidden():
+    explanation = "Dependencies unavailable. " * 80
+    text = render_summary({"repository": "EigenformAI/example", "number": 42}, [{
+        "kind": "cleanup", "state": "blocked", "result": {
+            "error": explanation, "unresolved_decisions": ["Configure a disposable PostgreSQL database"],
+        },
+    }], False)
+    assert "Dependencies unavailable" in text
+    assert explanation not in text
+    assert "Decision needed: Configure a disposable PostgreSQL database" in text
+    assert text.index("Decision needed:") < text.index("Dependencies unavailable")
+    assert len(text) < 550
+
+
+def test_verification_summary_does_not_turn_failed_or_unknown_checks_into_success():
+    text = render_summary({"repository": "EigenformAI/example", "number": 42}, [{
+        "kind": "cleanup", "state": "blocked", "result": {"verification": {"commands": [
+            {"argv": ["pytest"], "returncode": 0},
+            {"argv": ["ruff", "check"], "returncode": 1},
+            {"argv": ["mypy"], "outcome": "timed out"},
+        ]}},
+    }], False)
+    assert "Verification: 1 passed; 1 failed; 1 unconfirmed" in text
+
+
+def test_shortening_selected_prose_does_not_hide_or_partially_send_a_credential():
+    token = "ghp_" + "x" * 30
+    text = render_summary({"repository": "EigenformAI/example", "number": 42}, [{
+        "kind": "cleanup", "state": "blocked",
+        "result": {"error": "Needs onboarding. " * 30 + token},
+    }], False)
+    with pytest.raises(Blocked):
+        Outbox(sqlite3.connect(":memory:")).enqueue("unsafe", 42, text)

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import errno
 import fcntl
 import hashlib
 import json
@@ -49,6 +50,7 @@ class Worker:
             CREATE TABLE IF NOT EXISTS worker_branches (
                 branch TEXT PRIMARY KEY, attempt_id TEXT NOT NULL UNIQUE
             );
+            CREATE INDEX IF NOT EXISTS worker_attempts_pr_id ON worker_attempts(json_extract(spec, '$.pr_id'));
             CREATE TABLE IF NOT EXISTS worker_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
         """)
         with transaction(self.db):
@@ -106,7 +108,7 @@ class Worker:
         spec, data = self._row(attempt)
         keys = ("attempt_id", "state", "publication_state", "candidate_sha", "session_id", "review_session_id",
                 "skill_hashes", "verification", "error", "quiescent", "authorization_epoch", "summary", "started_at", "updated_at",
-                "incident_acknowledged", "retryable_reason", "execution_assurance")
+                "incident_acknowledged", "retryable_reason", "execution_assurance", "operator_recovery")
         result = {key: data[key] for key in keys if key in data}
         result["spec_hash"] = digest(spec)
         result["worker_host"] = socket.gethostname()
@@ -137,6 +139,28 @@ class Worker:
             raise ValueError("invalid unit operation")
         result = subprocess.run(["systemctl", "--user", operation, self.unit(attempt)], capture_output=True, timeout=30)
         return result.returncode == 0
+
+    def _stopped_unit_evidence(self, attempt: str) -> dict:
+        unit = self.unit(attempt)
+        fields = ("LoadState", "ActiveState", "SubState", "MainPID", "ControlPID")
+        try:
+            result = subprocess.run(["systemctl", "--user", "show", unit, "--property=" + ",".join(fields)],
+                                    capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.SubprocessError, UnicodeError) as error:
+            raise Blocked("worker unit observation unavailable; ownership retained") from error
+        if result.returncode or result.stderr.strip():
+            raise Blocked("worker unit observation failed; ownership retained")
+        values = {}
+        for line in result.stdout.splitlines():
+            key, separator, value = line.partition("=")
+            if not separator or key not in fields or key in values or not value or value != value.strip():
+                raise Blocked("ambiguous worker unit observation; ownership retained")
+            values[key] = value
+        stopped = {("loaded", "inactive", "dead"), ("loaded", "failed", "failed"), ("not-found", "inactive", "dead")}
+        if (set(values) != set(fields) or tuple(values.get(key) for key in fields[:3]) not in stopped
+                or values.get("MainPID") != "0" or values.get("ControlPID") != "0"):
+            raise Blocked("worker unit is not confirmed stopped with zero PIDs; ownership retained")
+        return dict(values, unit=unit, MainPID=0, ControlPID=0)
 
     def _schedule(self, attempt: str) -> None:
         if self.config.get("execution_enabled"):
@@ -197,6 +221,11 @@ class Worker:
                 owner = self.db.execute("SELECT attempt_id FROM worker_branches WHERE branch=?", (self.branch(spec),)).fetchone()
                 if owner:
                     raise Blocked("branch has persistent unresolved ownership")
+                owner = self.db.execute("""SELECT a.id FROM worker_attempts a
+                    JOIN worker_branches b ON b.attempt_id=a.id
+                    WHERE json_extract(a.spec, '$.pr_id')=? LIMIT 1""", (spec["pr_id"],)).fetchone()
+                if owner:
+                    raise Blocked("PR has persistent unresolved ownership")
                 if spec.get("feedback") is not None:
                     expected = spec["feedback"].get("sha256")
                     if not expected or feedback is None or digest(feedback) != expected:
@@ -249,6 +278,98 @@ class Worker:
     def _sessions_quiet(self, spec: dict, data: dict) -> bool:
         sessions = self._active_sessions(data)
         return bool(sessions) and all(self.runner.quiescent(session, self.checkout(spec)) for session in sessions)
+
+    def resolve_interrupted(self, attempt: str, *, accept_best_effort: bool = False, reason: str = "") -> dict:
+        """Locally accept inspected observations, never proof of detached descendant exit."""
+        if accept_best_effort is not True:
+            raise Blocked("local recovery requires explicit --accept-best-effort")
+        if not isinstance(reason, str) or not reason.strip():
+            raise Blocked("local recovery requires a nonblank operator reason")
+        check_secrets(reason)
+        if self.config.get("quiescence_mode") != "best_effort" or self.config.get("best_effort_acknowledged") is not True:
+            raise Blocked("local recovery requires explicitly acknowledged best_effort configuration")
+
+        def eligible(data):
+            if (data.get("started") is not True or data.get("execution_assurance") != "best_effort"
+                    or data["state"] not in ("cancel_requested", "inspection_required", "deadline_exceeded")
+                    or data["publication_state"] not in ("unpublished", "candidate_recorded", "not_started")):
+                raise Blocked("local recovery requires a started, held best-effort attempt with known nonpublication")
+
+        spec, _ = self._row(attempt)
+        # Use execute's ownership locks and order; unrelated PRs remain independent.
+        with self.lock("pr-" + str(spec["pr_id"])), self.lock("branch-" + digest(self.branch(spec))), self.lock("attempt-" + self.identity(attempt)):
+            spec, data = self._row(attempt)
+            if data["state"] in TERMINAL and data.get("operator_recovery"):
+                return self.status(attempt)
+            eligible(data)
+            unit = self._stopped_unit_evidence(attempt)
+            pgid = data.get("local_pgid")
+            if pgid is not None:
+                if type(pgid) is not int or pgid <= 0:
+                    raise Blocked("invalid recorded verification process group; ownership retained")
+                try:
+                    os.killpg(pgid, 0)
+                except OSError as error:
+                    if error.errno != errno.ESRCH:
+                        raise Blocked("verification process group exit is uncertain; ownership retained") from error
+                else:
+                    raise Blocked("verification process group still exists; ownership retained")
+            try:
+                if not self._sessions_quiet(spec, data):
+                    raise Blocked("recorded sessions are not all observed quiet; ownership retained")
+                for session_id in self._active_sessions(data):
+                    session_id = self.runner.session_id(session_id)
+                    response = self.runner.api("get", "/api/session/" + session_id, cwd=self.checkout(spec))
+                    session = response.get("data") if isinstance(response, dict) else None
+                    if (not isinstance(session, dict) or session.get("id") != session_id
+                            or session.get("location") != {"directory": str(self.checkout(spec))}
+                            or not isinstance(session.get("metadata"), dict)
+                            or session["metadata"].get("attempt_id") != attempt
+                            or session["metadata"].get("spec_hash") != digest(spec)):
+                        raise Blocked("recorded session ownership/location is unverified; ownership retained")
+            except (OSError, ValueError, TypeError, subprocess.SubprocessError) as error:
+                raise Blocked("session observations unavailable; ownership retained") from error
+            repository_evidence = {}
+            if data.get("candidate_sha"):
+                # Read the original remote directly. Lifecycle/visibility changes
+                # must not restart work, retarget its remote, or enter _published.
+                try:
+                    expected = spec["pr"]["head"]["repo"]
+                    repository = self._github("repos/" + expected["full_name"])
+                    owner = repository.get("owner") if isinstance(repository, dict) else None
+                    if (not isinstance(repository, dict) or type(repository.get("id")) is not int
+                            or repository["id"] != expected["id"] or not isinstance(owner, dict)
+                            or type(owner.get("id")) is not int or owner["id"] != expected["owner"]["id"]
+                            or owner["id"] != spec["pr"]["base"]["repo"]["owner"]["id"]):
+                        raise Blocked("candidate repository numeric identity changed")
+                    repository_evidence["repository_id"] = repository["id"]
+                    if isinstance(repository.get("full_name"), str):
+                        repository_evidence["repository_full_name"] = repository["full_name"]
+                    publication = self.git(spec).publication(spec["pr"]["head"]["ref"], spec["input_head_sha"], data["candidate_sha"])
+                except (Blocked, OSError, subprocess.SubprocessError) as error:
+                    raise Blocked("candidate repository identity/nonpublication could not be confirmed; ownership retained") from error
+                if publication != "unpublished":
+                    raise Blocked("candidate is not confirmed unpublished; ownership retained")
+            with transaction(self.db):
+                _, current = self._row(attempt)
+                eligible(current)
+                observed_keys = ("started", "execution_assurance", "publication_state", "candidate_sha",
+                                 "session_id", "review_session_id", "local_pgid")
+                if any(current.get(key) != data.get(key) for key in observed_keys):
+                    raise Blocked("attempt evidence changed during recovery; inspect and retry")
+                owner = self.db.execute("SELECT attempt_id FROM worker_branches WHERE branch=?", (self.branch(spec),)).fetchone()
+                if owner is None or owner["attempt_id"] != attempt:
+                    raise Blocked("attempt does not own its recorded branch; reconcile ledgers")
+                now = time.time()
+                current.update(state="blocked", quiescent=True, publication_state="unpublished", authorization=None,
+                               authorization_epoch=current["authorization_epoch"] + 1, execution_interrupted=True, updated_at=now,
+                               operator_recovery={"at": now, "reason": reason.strip(), "prior_state": current["state"],
+                                                  "assurance": "best_effort", "accepted_best_effort": True, "unit": unit,
+                                                  **repository_evidence},
+                               error="manual best-effort recovery: operator accepted best-effort observations, not proof of detached descendant exit; no publication; retained work requires a fresh attempt")
+                self.db.execute("UPDATE worker_attempts SET data=? WHERE id=?", (canonical(current), attempt))
+                self.db.execute("DELETE FROM worker_branches WHERE attempt_id=?", (attempt,))
+            return self.status(attempt)
 
     def cancel(self, attempt: str, epoch: int, pause: bool = False, acknowledge_incident: bool = False) -> dict:
         if not isinstance(epoch, int) or isinstance(epoch, bool) or epoch < 0:
@@ -510,7 +631,11 @@ class Worker:
         result = json.loads(result_path.read_text()) if result_path.exists() else {}
         if not isinstance(result, dict):
             raise Blocked("private result must be a JSON object")
-        check_secrets(canonical(result))
+        try:
+            check_secrets(canonical(result))
+        except Blocked:
+            raise Blocked(f"Credential-shaped text in private result file: {result_path}. "
+                          "Inspect that generated file; this is not a confirmed credential leak.") from None
         dispositions = result.get("feedback_dispositions", [])
         if spec["stage"] == "feedback":
             snapshot = self._prompt_spec(spec)["feedback"]
@@ -727,13 +852,7 @@ class Worker:
         if data.get("started") and data["state"] != "ready_to_publish":
             return self.reconcile_attempt(attempt)
         try:
-            with self.lock("execution"), self.lock("branch-" + digest(self.branch(spec))), self.lock("attempt-" + self.identity(attempt)):
-                # Persistent unknown execution on another branch blocks a second
-                # writer even after reboot released all kernel locks.
-                for row in self.db.execute("SELECT id,data FROM worker_attempts WHERE id!=?", (attempt,)):
-                    other = json.loads(row["data"])
-                    if other.get("started") and not other["quiescent"]:
-                        raise Busy("another attempt has unresolved execution ownership")
+            with self.lock("pr-" + str(spec["pr_id"])), self.lock("branch-" + digest(self.branch(spec))), self.lock("attempt-" + self.identity(attempt)):
                 spec, data = self._row(attempt)
                 if data["state"] in TERMINAL or data["state"] == "cancel_requested":
                     return self.status(attempt)
@@ -828,6 +947,11 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("reconcile")
     execute = sub.add_parser("execute")
     execute.add_argument("attempt_id")
+    resolve = sub.add_parser("resolve-interrupted", help="locally accept inspected best-effort observations without publishing")
+    resolve.add_argument("attempt_id")
+    resolve.add_argument("--accept-best-effort", action="store_true", required=True,
+                         help="accept that observations do not prove detached descendant exit")
+    resolve.add_argument("--reason", required=True)
     prepare = sub.add_parser("prepare")
     prepare.add_argument("attempt_id")
     prepare.add_argument("--evidence", type=Path, required=True)
@@ -847,6 +971,8 @@ def main(argv: list[str] | None = None) -> int:
             result = worker.transport(json.loads(raw))
         elif args.command == "execute":
             result = worker.execute(args.attempt_id)
+        elif args.command == "resolve-interrupted":
+            result = worker.resolve_interrupted(args.attempt_id, accept_best_effort=args.accept_best_effort, reason=args.reason)
         elif args.command == "reconcile":
             result = worker.reconcile()
         elif args.command == "prepare":
