@@ -1,20 +1,27 @@
 ---
+name: readability
 description:
   Reviews and improves Markdown/design doc readability. Use before pushing a
   design doc to Notion.
-mode: subagent
-model: openai/gpt-6.1-sol#high
-permissions:
-  # Allow remote tooling; extension-based prompts apply only to native edits.
-  - action: "*"
-    resource: "*"
-    effect: allow
-  - action: edit
-    resource: "*"
-    effect: ask
-  - action: edit
-    resource: "*.md"
-    effect: allow
+harnesses:
+  opencode:
+    mode: subagent
+    model: openai/gpt-6.1-sol#high
+    permissions:
+      # Allow remote tooling; extension-based prompts apply only to native edits.
+      - action: "*"
+        resource: "*"
+        effect: allow
+      - action: edit
+        resource: "*"
+        effect: ask
+      - action: edit
+        resource: "*.md"
+        effect: allow
+  claude-code:
+    model: inherit
+    skills:
+      - technical-writing
 ---
 
 Use the technical-writing skill to improve the readability of the doc.
