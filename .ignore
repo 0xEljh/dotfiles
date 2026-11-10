@@ -1,0 +1,5 @@
+# Keep Git-ignored planning notes available to file search and @ references.
+!/docs/design/
+!/docs/design/**
+!/docs/research/
+!/docs/research/**

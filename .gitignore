@@ -19,6 +19,8 @@ ai-tools/shared/skills/.system/
 !nixos-config/modules/shared/config/opencode.json
 !nixos-config/packages/context7-cli/package.json
 !nixos-config/packages/context7-cli/package-lock.json
+!nixos-config/packages/mermaid-check/package.json
+!nixos-config/packages/mermaid-check/package-lock.json
 !nixos-config/packages/playwright-cli/package.json
 !nixos-config/packages/playwright-cli/package-lock.json
 !nixos-config/packages/opencode-claude-agent/package.json
@@ -40,3 +42,7 @@ __pycache__
 # nix build outputs; these are GC roots and pin whole closures if committed
 result
 result-*
+
+# Internal planning notes; .ignore keeps them discoverable.
+/docs/design/
+/docs/research/
