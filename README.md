@@ -69,9 +69,8 @@ All host outputs use OpenCode V2. Package and service pins live in
 [`ai-tools.nix`](nixos-config/modules/shared/ai-tools.nix) and
 [`t3-serve.nix`](nixos-config/modules/shared/t3-serve.nix).
 
-- Pair [https://app.t3.codes](https://app.t3.codes) with sleeper-service or WSL using [the pairing runbook](docs/runbooks/t3-pairing.md).
 - OpenCode's direct interface is available at the same host's HTTPS port `8779`. `OPENCODE_SERVER_PASSWORD` is mandatory for this endpoint.
-- T3 stays Tailnet-only until each host is linked interactively. Linking enables an authenticated public T3 Connect tunnel for that host; it does not expose direct OpenCode. Do not use Funnel or the public nginx proxy for either backend. See [Enroll a T3 host in Connect](docs/runbooks/t3-connect.md).
+- T3 stays Tailnet-only until each host is linked interactively. Linking enables an authenticated public T3 Connect tunnel for that host; it does not expose direct OpenCode. Do not use Funnel or the public nginx proxy for either backend.
 
 One-time per host after first build:
 
