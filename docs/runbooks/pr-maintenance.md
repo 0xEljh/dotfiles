@@ -250,12 +250,83 @@ process group, and unknown or published candidate outcomes.
 7. Restore the previously active timers. Confirm the next eligible workflow can
    start. Do not resume or re-enroll merged or out-of-scope work.
 
+### Recover an inspected setup failure without a session
+
+The worker's private status includes `execution_phase`. Pure local setup rejection
+is terminal. In acknowledged best-effort mode, a positively identified PR-lifecycle
+or SHA rejection before checkout is also terminal when read-only setup completed
+normally. This assumes trusted setup tools do not intentionally detach work.
+Timeouts, failed tools, checkout effects, and interrupted prompts remain held.
+The one-way execution marker never permits an automatic prompt retry.
+
+For a historical held attempt with no recorded session, inspect its original unit
+journal, retained checkout, artifacts, and host processes. Follow the same timer
+freeze and ledger-backup steps above. If you accept the missing session observations
+as well as detached-process uncertainty, add `--accept-sessionless`:
+
+```sh
+~/.local/share/pr-maintenance/nix/worker/bin/pr-worker \
+  --config /etc/pr-maintenance/worker.json resolve-interrupted ATTEMPT_ID \
+  --accept-best-effort --accept-sessionless \
+  --reason 'Inspected setup failure and host processes; accept missing session observations'
+```
+
+This option requires absent sessions, prompt evidence, candidates, verification
+evidence, and post-setup execution phases. Retained execution artifacts also refuse
+the command. A feedback snapshot alone is not execution evidence. Stopped-unit,
+recorded process-group, ownership-lock, and evidence-change checks still apply.
+The command never starts a prompt, retries a stage, or publishes. Its audit records
+`accepted_sessionless: true`, `session_observations: unavailable`, and
+`execution_phase: legacy_unknown` when the old record has no phase. These are
+accepted uncertainty, not proof of non-execution. Normal recovery still requires
+all recorded sessions to be observed quiet and owned by the attempt.
+
+### Recover an unpublished candidate after its PR branch was deleted
+
+Normal recovery refuses a missing head branch. If you have inspected a closed PR
+whose branch was deleted, add `--accept-deleted-branch` to the normal
+`resolve-interrupted --accept-best-effort --reason ...` command. The separate
+acknowledgement does not relax session ownership or quiet checks.
+
+The worker requires the original PR identity and refs, a final PR head equal to
+the attempt's input, and a successful lookup confirming the original branch is
+absent. It fetches GitHub's retained PR head and the current base into separate
+local recovery refs. Both must match fresh API evidence, and the candidate must
+be unreachable from either. Closed PR `base.sha` is historical, so the worker
+reads the live base ref separately. A second lookup must still find no head branch.
+Failures, moved heads, reachable candidates, and unknown publication stay held.
+
+The audit records `accepted_deleted_branch: true` and the observed publication
+evidence. These are point-in-time observations of the original PR head and current
+base, not proof that candidate bytes never appeared elsewhere. The command does
+not recreate remote branches, push candidates, change pinned input/base refs, or
+start replacement work. Retain the candidate and reconcile both ledgers normally.
+
 ## Confirm the pilot result
 
-An unchanged checkout can be recorded as `noop` even when the model reports a
-blocker. Inspect the retained `result.json`, verification evidence, and unresolved
-findings before treating a stage as complete. This remains a known result-
-classification defect; health does not establish that historical no-ops succeeded.
+Historical model no-ops can include reported blockers. Inspect their retained
+`result.json`, verification evidence, and unresolved findings before treating them
+as successful. Status marks model completions without explicit outcome evidence
+as `completion_outcome: unverified`; old ledgers and notifications are not rewritten.
+Health does not establish that historical no-ops succeeded.
+
+New model results require `outcome: changed`, `no_change`, or `blocked`. Blocked
+results require structured blockers with a `reason` and `next_action`. Missing,
+malformed, contradictory, or blocked results cannot become no-ops. An explicit
+`no_change` also requires a clean checkout at the original head. Changed candidates
+still require independent verification and review. The no-model Git conflict probe
+can independently establish that no merge is needed.
+
+Later stages continue after a terminal blocked or failed stage. A finished pass
+with such stages is reported as finished with blockers, and status exposes
+`completion_outcome: with_blockers` rather than `success`. Other PRs continue
+independently. A paused `waiting_same_branch` workflow still requires an explicit,
+audited `resume` after the old owner has been reconciled.
+
+New execution snapshots resolve the current base branch through the Git reference
+API. The PR payload's base SHA can be historical even on an open PR. Both coordinator
+and worker use the exact current base ref; failed ref reads never fall back to the
+old PR snapshot. Closed-PR recovery retains its separate historical-head checks.
 
 1. Check both the initial and final private summaries. Confirm no-ops, exact
    verification results, deleted paths, commits, feedback dispositions, and

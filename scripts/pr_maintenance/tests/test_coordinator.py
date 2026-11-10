@@ -66,6 +66,48 @@ def test_feedback_waits_for_initial_terminal_and_due_time(coordinator):
     assert c.claim(100, at=1900)["stage"] == "feedback"
 
 
+def test_completion_with_blockers_is_not_reported_as_success(coordinator):
+    c = coordinator
+    c.enable(500)
+    c.observe(pr(), 1000)
+    for index, state in enumerate(("blocked", "noop", "failed", "noop")):
+        attempt = c.claim(100, at=2000 + index)
+        assert attempt is not None
+        c.accept_status(attempt["attempt_id"], {
+            "state": state, "quiescent": True, "publication_state": "not_published"})
+    assert c.claim(100, at=2005) is None
+    workflow = c.workflow(100)
+    assert workflow["lifecycle_state"] == "completed"
+    assert workflow["completion_outcome"] == "with_blockers"
+    assert next(w for w in c.status()["workflows"] if w["pr_id"] == 100)["completion_outcome"] == "with_blockers"
+
+
+def test_successful_stage_completion_is_reported_separately(coordinator):
+    c = coordinator
+    c.enable(500)
+    c.observe(pr(), 1000)
+    for index in range(4):
+        attempt = c.claim(100, at=2000 + index)
+        c.accept_status(attempt["attempt_id"], {
+            "state": "noop", "quiescent": True, "publication_state": "not_published",
+            "session_id": "ses_verified", "summary": {"outcome": "no_change"}})
+    assert c.claim(100, at=2005) is None
+    assert c.workflow(100)["completion_outcome"] == "success"
+
+
+def test_legacy_model_noops_do_not_acquire_a_new_success_claim(coordinator):
+    c = coordinator
+    c.enable(500)
+    c.observe(pr(), 1000)
+    for index in range(4):
+        attempt = c.claim(100, at=2000 + index)
+        c.accept_status(attempt["attempt_id"], {
+            "state": "noop", "quiescent": True, "publication_state": "not_published",
+            "session_id": "ses_legacy", "summary": {"summary": "A historical stage summary"}})
+    assert c.claim(100, at=2005) is None
+    assert c.workflow(100)["completion_outcome"] == "unverified"
+
+
 def test_unknown_execution_retains_branch_and_attempt(coordinator):
     c = coordinator
     c.enable(500)

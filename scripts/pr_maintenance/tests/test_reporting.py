@@ -246,6 +246,13 @@ def test_unconfirmed_message_id_remains_pending(message_id):
     assert outbox.status()["pending_parts"] == 1
 
 
+def test_legacy_completion_is_reported_as_unverified_not_validated_success():
+    text = render_summary({"repository": "EigenformAI/example", "number": 42,
+                           "completion_outcome": "unverified"},
+                          [{"kind": "cleanup", "state": "noop", "result": {}}], True)
+    assert "unverified" in text.lower()
+
+
 def test_summary_uses_real_links_and_keeps_unpublished_work_and_decisions_explicit():
     workflow = {
         "repository": "EigenformAI/example", "number": 42,
@@ -290,6 +297,32 @@ def test_summary_uses_real_links_and_keeps_unpublished_work_and_decisions_explic
     with pytest.raises(Blocked):
         Outbox(sqlite3.connect(":memory:")).enqueue("unsafe-summary", 42, render_summary(
             workflow, [{"kind": "cleanup", "result": {"error": "ghp_" + "x" * 30}}], False))
+
+
+@pytest.mark.parametrize("final", [False, True])
+@pytest.mark.parametrize("state", ["blocked", "failed"])
+def test_finished_summary_reports_blockers_after_later_stage_success(final, state):
+    text = render_summary({"repository": "EigenformAI/example", "number": 42}, [
+        {"kind": "deep_modules", "state": state},
+        {"kind": "cleanup", "state": "noop"},
+    ], final)
+    assert "finished with blockers" in text.lower()
+    assert "completed successfully" not in text.lower()
+    assert "Cleanup: No changes" in text
+
+
+def test_structured_blocker_shows_reason_and_next_action_not_private_diagnostics():
+    text = render_summary({"repository": "EigenformAI/example", "number": 42}, [{
+        "kind": "cleanup", "state": "blocked", "result": {"summary": {
+            "summary": "No changes needed", "outcome": "blocked", "blockers": [{
+                "reason": "Existing checks unavailable", "next_action": "Prepare pinned dependencies",
+                "logs": "PRIVATE LOG MUST NOT APPEAR",
+            }],
+        }},
+    }], True)
+    assert "Blocker: Existing checks unavailable" in text
+    assert "Next action: Prepare pinned dependencies" in text
+    assert "PRIVATE LOG" not in text
 
 
 def test_summary_condenses_trusted_checks_without_diagnostic_hashes_and_commands():

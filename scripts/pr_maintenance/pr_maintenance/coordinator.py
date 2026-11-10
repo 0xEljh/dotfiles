@@ -110,9 +110,29 @@ class Coordinator:
         result = dict(row)
         result["pr"] = json.loads(result["pr"])
         result["has_attempts"] = self.db.execute("SELECT 1 FROM attempts WHERE pr_id=? LIMIT 1", (pr_id,)).fetchone() is not None
+        result["completion_outcome"] = self._completion_outcome(pr_id, result["lifecycle_state"])
         wait = self.db.execute("SELECT blocker FROM queue_waits WHERE pr_id=?", (pr_id,)).fetchone()
         result["last_queue_blocker"] = json.loads(wait[0]) if wait else None
         return result
+
+    def _completion_outcome(self, pr_id: int, lifecycle_state: str):
+        if lifecycle_state != "completed":
+            return None
+        stages = self.db.execute("""SELECT s.kind,s.state,a.result FROM stages s
+            LEFT JOIN attempts a ON a.id=s.active_attempt_id WHERE s.pr_id=?""", (pr_id,)).fetchall()
+        if len(stages) != len(STAGES) or any(stage["state"] not in {"noop", "pushed"} for stage in stages):
+            return "with_blockers"
+        for stage in stages:
+            result = json.loads(stage["result"] or "{}")
+            # The trusted no-model conflict probe is distinct from historical
+            # model noops, whose old result contract did not prove completion.
+            if stage["kind"] == "conflicts" and stage["state"] == "noop" and not result.get("session_id"):
+                continue
+            summary = result.get("summary")
+            expected = "no_change" if stage["state"] == "noop" else "changed"
+            if not isinstance(summary, dict) or summary.get("outcome") != expected:
+                return "unverified"
+        return "success"
 
     def stages(self, pr_id: int):
         rows = self.db.execute("""SELECT s.*, a.result, a.spec, a.created_at
@@ -471,6 +491,8 @@ class Coordinator:
 
     def status(self):
         workflows = [dict(row) for row in self.db.execute("SELECT pr_id,repository,number,lifecycle_state,paused_reason,eligible_at,feedback_due_at,observed_at FROM workflows")]
+        for workflow in workflows:
+            workflow["completion_outcome"] = self._completion_outcome(workflow["pr_id"], workflow["lifecycle_state"])
         attempts = []
         for row in self.db.execute("SELECT id,pr_id,stage,state,created_at,last_contact,result FROM attempts ORDER BY created_at"):
             value = dict(row)

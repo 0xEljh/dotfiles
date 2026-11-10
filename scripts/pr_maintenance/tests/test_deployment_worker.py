@@ -56,7 +56,8 @@ def test_private_scope_is_rechecked_at_worker_live_boundary(tmp_path):
         for side in ("base", "head"):
             pr[side]["repo"]["private"] = True
         repository = dict(pr["head"]["repo"], default_branch="main")
-        with patch.object(worker, "_github", side_effect=[repository, pr]):
+        current_base = {"ref": "refs/heads/main", "object": {"type": "commit", "sha": spec["base_sha"]}}
+        with patch.object(worker, "_github", side_effect=[repository, pr, current_base]):
             assert worker.live(spec)["id"] == spec["pr_id"]
         for field in ("base", "head"):
             live = specification()["pr"]
@@ -69,6 +70,30 @@ def test_private_scope_is_rechecked_at_worker_live_boundary(tmp_path):
         with patch.object(worker, "_github", side_effect=[dict(repository, private=False), pr]):
             with pytest.raises(Blocked, match="private"):
                 worker.live(spec)
+    finally:
+        worker.close()
+
+
+@pytest.mark.parametrize("private_only", [False, True])
+def test_live_uses_fresh_validated_base_ref_not_stale_pr_sha(tmp_path, private_only):
+    worker = worker_at(tmp_path, private_repositories_only=private_only)
+    try:
+        spec = specification()
+        for side in ("base", "head"):
+            spec["pr"][side]["repo"]["private"] = True
+        spec["pr"]["base"]["ref"] = "release/stable#1"
+        live = copy.deepcopy(spec["pr"])
+        repository = dict(live["head"]["repo"], default_branch="main")
+        expected_ref = "repos/EigenformAI/example/git/ref/heads/release/stable%231"
+        responses = {
+            "repositories/10": repository, "repos/EigenformAI/example/pulls/1": live,
+            expected_ref: {"ref": "refs/heads/release/stable#1", "object": {"type": "commit", "sha": "c" * 40}},
+        }
+        with patch.object(worker, "_github", side_effect=lambda endpoint: responses[endpoint]) as api:
+            current = worker.live(spec)
+        assert current["base"]["sha"] == "c" * 40
+        assert live["base"]["sha"] == spec["base_sha"]
+        assert api.call_args.args == (expected_ref,)
     finally:
         worker.close()
 

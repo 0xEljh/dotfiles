@@ -21,9 +21,10 @@ import sys
 import time
 import uuid
 from pathlib import Path
+from urllib.parse import quote
 
-from .common import Blocked, STAGES, TERMINAL, canonical, check_secrets, database, digest, private_write, transaction
-from .git_ops import GitOps, ref, repository_url, sha, validate_live_pr
+from .common import Blocked, PreflightRejected, STAGES, TERMINAL, canonical, check_secrets, database, digest, private_write, transaction
+from .git_ops import GitOps, current_base_snapshot, ref, repository_url, sha, validate_live_pr
 from .prompts import coding_prompt, load_skills, review_prompt
 from .runner import Runner
 
@@ -34,6 +35,14 @@ class Busy(Blocked):
 
 class GrantRejected(Blocked):
     pass
+
+
+class CodingResultBlocked(Blocked):
+    """A rejected result, not evidence that interrupted execution has stopped."""
+
+    def __init__(self, message: str, summary: dict | None = None):
+        super().__init__(message)
+        self.summary = summary
 
 
 class Worker:
@@ -96,19 +105,37 @@ class Worker:
     def _update(self, attempt: str, **changes) -> dict:
         with transaction(self.db):
             _, data = self._row(attempt)
-            data.update(changes, updated_at=time.time())
-            if data["state"] in TERMINAL and (not data["quiescent"] or data["publication_state"] in ("unknown", "push_in_flight")):
-                raise Blocked("terminal outcome requires execution quiescence and known publication")
-            self.db.execute("UPDATE worker_attempts SET data=? WHERE id=?", (canonical(data), attempt))
-            if data["state"] in TERMINAL and data["state"] != "published_with_concern":
-                self.db.execute("DELETE FROM worker_branches WHERE attempt_id=?", (attempt,))
+            data.update(changes)
+            self._store(attempt, data)
         return self.status(attempt)
+
+    def _store(self, attempt: str, data: dict) -> None:
+        """Write inside the caller's transaction, including any ownership release."""
+        if data["state"] in TERMINAL and (not data["quiescent"] or data["publication_state"] in ("unknown", "push_in_flight")):
+            raise Blocked("terminal outcome requires execution quiescence and known publication")
+        data["updated_at"] = time.time()
+        self.db.execute("UPDATE worker_attempts SET data=? WHERE id=?", (canonical(data), attempt))
+        if data["state"] in TERMINAL and data["state"] != "published_with_concern":
+            self.db.execute("DELETE FROM worker_branches WHERE attempt_id=?", (attempt,))
+
+    def _launch(self, spec: dict, phase: str, **changes) -> None:
+        # The transaction orders cancellation against intent, not against the
+        # remote server. A lost response after intent still requires inspection.
+        attempt = spec["attempt_id"]
+        with transaction(self.db):
+            _, data = self._row(attempt)
+            epoch = data.get("execution_epoch", spec["authorization_epoch"])
+            if (data["state"] != "running" or data["authorization_epoch"] != epoch
+                    or data.get("execution_interrupted")):
+                raise Blocked("execution cancelled or authorization revoked before launch; work retained")
+            data.update(changes, execution_phase=phase, quiescent=False)
+            self._store(attempt, data)
 
     def status(self, attempt: str) -> dict:
         spec, data = self._row(attempt)
         keys = ("attempt_id", "state", "publication_state", "candidate_sha", "session_id", "review_session_id",
                 "skill_hashes", "verification", "error", "quiescent", "authorization_epoch", "summary", "started_at", "updated_at",
-                "incident_acknowledged", "retryable_reason", "execution_assurance", "operator_recovery")
+                "incident_acknowledged", "retryable_reason", "execution_assurance", "execution_phase", "operator_recovery")
         result = {key: data[key] for key in keys if key in data}
         result["spec_hash"] = digest(spec)
         result["worker_host"] = socket.gethostname()
@@ -279,7 +306,56 @@ class Worker:
         sessions = self._active_sessions(data)
         return bool(sessions) and all(self.runner.quiescent(session, self.checkout(spec)) for session in sessions)
 
-    def resolve_interrupted(self, attempt: str, *, accept_best_effort: bool = False, reason: str = "") -> dict:
+    def _check_sessionless_recovery(self, attempt: str, data: dict) -> None:
+        absent = ("session_id", "review_session_id", "candidate_sha", "prompt_hash", "manifest", "manifest_hash",
+                  "manifest_history", "selected_verification", "verification", "review_sha256")
+        if (any(data.get(key) is not None for key in absent)
+                or data.get("execution_phase") not in (None, "preflight")):
+            raise Blocked("sessionless recovery requires absent session, prompt, candidate and execution evidence; ownership retained")
+        artifacts = self.root / "attempts" / self.identity(attempt)
+        if artifacts.exists() and any(path.name != "feedback.json" for path in artifacts.iterdir()):
+            raise Blocked("sessionless recovery found retained execution artifacts; ownership retained")
+
+    def _closed_pr_nonpublication(self, spec: dict, data: dict, git: GitOps) -> dict:
+        head_repository, base_repository = (spec["pr"][side]["repo"] for side in ("head", "base"))
+        if (head_repository["id"] != base_repository["id"]
+                or repository_url(head_repository) != repository_url(base_repository)):
+            raise Blocked("closed PR recovery requires the same head and base repository; ownership retained")
+        pr = self._github("repos/" + spec["pr"]["base"]["repo"]["full_name"] + "/pulls/" + str(spec["pr"]["number"]))
+        try:
+            if (type(pr["id"]) is not int or pr["id"] != spec["pr_id"]
+                    or type(pr["number"]) is not int or pr["number"] != spec["pr"]["number"]
+                    or pr["state"] != "closed" or type(pr["merged"]) is not bool
+                    or sha(pr["head"]["sha"]) != spec["input_head_sha"]):
+                raise Blocked("closed PR identity or final head does not match the original input")
+            for side in ("head", "base"):
+                expected, observed = spec["pr"][side], pr[side]
+                if not isinstance(observed, dict) or not isinstance(observed.get("repo"), dict):
+                    raise Blocked("closed PR repository evidence is unavailable; ownership retained")
+                repository_url(observed["repo"])
+                if (type(observed["repo"]["id"]) is not int or observed["repo"]["id"] != expected["repo"]["id"]
+                        or observed["repo"]["full_name"] != expected["repo"]["full_name"]
+                        or observed["repo"]["owner"]["id"] != expected["repo"]["owner"]["id"]
+                        or observed["ref"] != expected["ref"]):
+                    raise Blocked("closed PR repository or ref identity changed; ownership retained")
+            # Closed PR base.sha is historical. Query the live base ref rather
+            # than mistaking that old snapshot for today's branch tip.
+            base_ref = "refs/heads/" + pr["base"]["ref"]
+            current_base = self._github("repos/" + spec["pr"]["base"]["repo"]["full_name"]
+                                        + "/git/ref/heads/" + quote(pr["base"]["ref"], safe="/"))
+            if current_base["ref"] != base_ref or current_base["object"]["type"] != "commit":
+                raise Blocked("current base ref evidence is invalid; ownership retained")
+            base_head = sha(current_base["object"]["sha"])
+            merge_commit = sha(pr["merge_commit_sha"]) if pr.get("merge_commit_sha") is not None else None
+        except (KeyError, TypeError, ValueError) as error:
+            raise Blocked("closed PR evidence is incomplete; ownership retained") from error
+        self.free_space()
+        evidence = git.closed_pr_nonpublication(pr["number"], pr["head"]["ref"], pr["base"]["ref"],
+                                               spec["input_head_sha"], base_head, data["candidate_sha"])
+        return dict(evidence, pr_id=pr["id"], merged=pr["merged"], merge_commit_sha=merge_commit)
+
+    def resolve_interrupted(self, attempt: str, *, accept_best_effort: bool = False,
+                            accept_sessionless: bool = False, accept_deleted_branch: bool = False, reason: str = "") -> dict:
         """Locally accept inspected observations, never proof of detached descendant exit."""
         if accept_best_effort is not True:
             raise Blocked("local recovery requires explicit --accept-best-effort")
@@ -302,6 +378,11 @@ class Worker:
             if data["state"] in TERMINAL and data.get("operator_recovery"):
                 return self.status(attempt)
             eligible(data)
+            sessionless = not self._active_sessions(data)
+            if sessionless:
+                if accept_sessionless is not True:
+                    raise Blocked("no recorded sessions; inspect setup and explicitly --accept-sessionless uncertainty")
+                self._check_sessionless_recovery(attempt, data)
             unit = self._stopped_unit_evidence(attempt)
             pgid = data.get("local_pgid")
             if pgid is not None:
@@ -315,7 +396,7 @@ class Worker:
                 else:
                     raise Blocked("verification process group still exists; ownership retained")
             try:
-                if not self._sessions_quiet(spec, data):
+                if not sessionless and not self._sessions_quiet(spec, data):
                     raise Blocked("recorded sessions are not all observed quiet; ownership retained")
                 for session_id in self._active_sessions(data):
                     session_id = self.runner.session_id(session_id)
@@ -345,7 +426,14 @@ class Worker:
                     repository_evidence["repository_id"] = repository["id"]
                     if isinstance(repository.get("full_name"), str):
                         repository_evidence["repository_full_name"] = repository["full_name"]
-                    publication = self.git(spec).publication(spec["pr"]["head"]["ref"], spec["input_head_sha"], data["candidate_sha"])
+                    git = self.git(spec)
+                    try:
+                        publication = git.publication(spec["pr"]["head"]["ref"], spec["input_head_sha"], data["candidate_sha"])
+                    except Blocked:
+                        if accept_deleted_branch is not True:
+                            raise
+                        repository_evidence["publication_evidence"] = self._closed_pr_nonpublication(spec, data, git)
+                        publication = "unpublished"
                 except (Blocked, OSError, subprocess.SubprocessError) as error:
                     raise Blocked("candidate repository identity/nonpublication could not be confirmed; ownership retained") from error
                 if publication != "unpublished":
@@ -354,18 +442,26 @@ class Worker:
                 _, current = self._row(attempt)
                 eligible(current)
                 observed_keys = ("started", "execution_assurance", "publication_state", "candidate_sha",
-                                 "session_id", "review_session_id", "local_pgid")
+                                 "session_id", "review_session_id", "local_pgid", "execution_phase", "execution_interrupted",
+                                 "prompt_hash", "manifest", "manifest_hash", "manifest_history", "selected_verification",
+                                 "verification", "review_sha256")
                 if any(current.get(key) != data.get(key) for key in observed_keys):
                     raise Blocked("attempt evidence changed during recovery; inspect and retry")
+                if sessionless:
+                    self._check_sessionless_recovery(attempt, current)
                 owner = self.db.execute("SELECT attempt_id FROM worker_branches WHERE branch=?", (self.branch(spec),)).fetchone()
                 if owner is None or owner["attempt_id"] != attempt:
                     raise Blocked("attempt does not own its recorded branch; reconcile ledgers")
                 now = time.time()
                 current.update(state="blocked", quiescent=True, publication_state="unpublished", authorization=None,
                                authorization_epoch=current["authorization_epoch"] + 1, execution_interrupted=True, updated_at=now,
-                               operator_recovery={"at": now, "reason": reason.strip(), "prior_state": current["state"],
-                                                  "assurance": "best_effort", "accepted_best_effort": True, "unit": unit,
-                                                  **repository_evidence},
+                                operator_recovery={"at": now, "reason": reason.strip(), "prior_state": current["state"],
+                                                   "assurance": "best_effort", "accepted_best_effort": True, "unit": unit,
+                                                   "accepted_sessionless": sessionless,
+                                                   "accepted_deleted_branch": "publication_evidence" in repository_evidence,
+                                                   "execution_phase": current.get("execution_phase") or "legacy_unknown",
+                                                   "session_observations": "unavailable" if sessionless else "owned_and_quiet",
+                                                   **repository_evidence},
                                error="manual best-effort recovery: operator accepted best-effort observations, not proof of detached descendant exit; no publication; retained work requires a fresh attempt")
                 self.db.execute("UPDATE worker_attempts SET data=? WHERE id=?", (canonical(current), attempt))
                 self.db.execute("DELETE FROM worker_branches WHERE attempt_id=?", (attempt,))
@@ -478,7 +574,8 @@ class Worker:
         if self.config.get("private_repositories_only") and (repo.get("private") is not True or any(
                 live[side]["repo"].get("private") is not True for side in ("base", "head"))):
             raise Blocked("private repository scope changed; publication and execution blocked")
-        return live
+        current_base = self._github("repos/" + repository + "/git/ref/heads/" + quote(live["base"]["ref"], safe="/"))
+        return current_base_snapshot(live, current_base)
 
     def git(self, spec: dict) -> GitOps:
         return GitOps(self.checkout(spec), repository_url(spec["pr"]["head"]["repo"]))
@@ -500,9 +597,19 @@ class Worker:
         # Persist a caller-chosen ID before the API request. A lost create response
         # cannot leave an undiscoverable session or authorize a second session.
         session = "ses_" + str(uuid.uuid4())
-        self._update(spec["attempt_id"], **{key: session}, quiescent=False)
+        self._launch(spec, "coding_session" if key == "session_id" else "review_session", **{key: session})
         return self.runner.create_session(self.checkout(spec), title, agent, model, session,
                                           {"attempt_id": spec["attempt_id"], "spec_hash": digest(spec)})
+
+    def _run_session(self, spec: dict, session: str, model: str, agent: str, prompt: str,
+                     events: Path, timeout: float, phase: str) -> None:
+        self._launch(spec, phase)
+        self.runner.run(self.checkout(spec), session, model, agent, prompt, events, timeout)
+        _, data = self._row(spec["attempt_id"])
+        if (data["state"] == "cancel_requested" or data.get("execution_interrupted")
+                or data["authorization_epoch"] != data.get("execution_epoch", spec["authorization_epoch"])):
+            self.runner.interrupt(session, self.checkout(spec))
+            raise Blocked("cancellation requested during invocation; inspect retained session")
 
     def _prompt_spec(self, spec: dict) -> dict:
         prepared = dict(spec)
@@ -594,8 +701,8 @@ class Worker:
         attempt = spec["attempt_id"]
         # Persist before spawning: a crash between Popen and recording the PID
         # must not leave a ledger that claims verification descendants are quiet.
-        self._update(attempt, quiescent=False)
         for index, command in enumerate(profile):
+            self._launch(spec, "verification")
             log = self.artifacts(attempt) / f"verification-{index}.log"
             with log.open("wb") as output:
                 os.chmod(log, 0o600)
@@ -623,44 +730,90 @@ class Worker:
                 raise Blocked("trusted verification failed; inspect private log")
         return {"candidate_sha": candidate, "commands": outcomes}
 
-    def _finish_coding(self, spec: dict) -> dict:
+    def _complete_coding(self, spec: dict, observed: dict, state: str, *, summary: dict | None = None,
+                         error: str | None = None) -> dict:
+        """Finalize only the just-completed coding phase, never arbitrary failures."""
         attempt = spec["attempt_id"]
-        _, data = self._row(attempt)
-        git = self.git(spec)
+        with transaction(self.db):
+            _, current = self._row(attempt)
+            evidence = ("session_id", "review_session_id", "candidate_sha", "local_pgid", "execution_phase", "execution_epoch")
+            if (current["state"] != "running" or current.get("execution_interrupted")
+                    or current["authorization_epoch"] != current.get("execution_epoch", spec["authorization_epoch"])
+                    or current.get("quiescent") is not True or observed.get("quiescent") is not True
+                    or current.get("local_pgid") or current.get("execution_phase") != "coding"
+                    or current["publication_state"] not in ("not_started", "unpublished", "candidate_recorded")
+                    or any(current.get(key) != observed.get(key) for key in evidence)):
+                raise Blocked("coding completion evidence changed or authorization revoked; work retained")
+            current.update(state=state, quiescent=True, publication_state="unpublished", error=error)
+            if summary is not None:
+                current["summary"] = summary
+            self._store(attempt, current)
+        return self.status(attempt)
+
+    def _coding_result(self, spec: dict, data: dict) -> tuple[dict, dict]:
+        attempt = spec["attempt_id"]
         result_path = self.artifacts(attempt) / "result.json"
-        result = json.loads(result_path.read_text()) if result_path.exists() else {}
+        try:
+            result = json.loads(result_path.read_text())
+        except FileNotFoundError:
+            raise CodingResultBlocked("missing private result.json; write an explicit outcome and retry with a fresh attempt") from None
+        except (ValueError, UnicodeError):
+            raise CodingResultBlocked("private result.json must contain valid JSON; inspect retained evidence") from None
+        except OSError:
+            raise CodingResultBlocked("private result.json could not be read; inspect retained evidence") from None
         if not isinstance(result, dict):
-            raise Blocked("private result must be a JSON object")
+            raise CodingResultBlocked("private result must be a JSON object with an explicit outcome")
         try:
             check_secrets(canonical(result))
         except Blocked:
-            raise Blocked(f"Credential-shaped text in private result file: {result_path}. "
-                          "Inspect that generated file; this is not a confirmed credential leak.") from None
+            raise CodingResultBlocked(f"Credential-shaped text in private result file: {result_path}. "
+                                      "Inspect that generated file; this is not a confirmed credential leak.") from None
+        outcome = result.get("outcome")
+        if not isinstance(outcome, str) or outcome not in ("changed", "no_change", "blocked"):
+            raise CodingResultBlocked("private result requires outcome changed, no_change, or blocked; inspect retained evidence")
+        if not isinstance(result.get("summary", ""), str):
+            raise CodingResultBlocked("private result summary must be text")
+        blockers = result.get("blockers", [])
+        if (not isinstance(blockers, list) or any(not isinstance(item, dict) or any(
+                not isinstance(item.get(key), str) or not item[key].strip() for key in ("reason", "next_action")
+        ) for item in blockers)):
+            raise CodingResultBlocked("private result blockers require structured reason and next_action text")
+        if blockers and outcome != "blocked":
+            raise CodingResultBlocked("nonempty result blockers require outcome blocked; inspect retained evidence")
+        if outcome == "blocked" and not blockers:
+            raise CodingResultBlocked("outcome blocked requires nonempty structured blockers with reason and next_action")
         dispositions = result.get("feedback_dispositions", [])
         if spec["stage"] == "feedback":
             snapshot = self._prompt_spec(spec)["feedback"]
             ids = {item["id"] for surface in ("conversation", "reviews", "inline") for item in snapshot.get(surface, [])}
-            allowed = {"fixed", "already addressed", "not applicable", "needs decision"}
+            allowed = ("fixed", "already addressed", "not applicable", "needs decision")
             if (not isinstance(dispositions, list) or any(not isinstance(item, dict) or item.get("disposition") not in allowed
-                    or not isinstance(item.get("reason"), str) or not item["reason"].strip() for item in dispositions)
+                    or not isinstance(item.get("reason"), str) or not item["reason"].strip()
+                    or type(item.get("id")) not in (int, str) for item in dispositions)
                     or not ids <= {item.get("id") for item in dispositions}):
-                raise Blocked("feedback result needs dispositions and reasons for the immutable snapshot")
-        summary = {"summary": result.get("summary", ""), "feedback_dispositions": dispositions,
+                raise CodingResultBlocked("feedback result needs dispositions and reasons for the immutable snapshot")
+        summary = {"outcome": outcome, "summary": result.get("summary", ""), "feedback_dispositions": dispositions,
+                   "blockers": [{key: item[key] for key in ("reason", "next_action")} for item in blockers],
                    "unresolved_decisions": result.get("unresolved_decisions", []), "result_hash": digest(result),
                    "execution_assurance": data.get("execution_assurance", "strict")}
-        if git.head() == spec["input_head_sha"] and git.clean():
-            if data["state"] == "cancel_requested":
-                state = "inspection_required" if data.get("pause_requested") else "cancelled"
-            else:
-                state = "noop"
-            return self._update(attempt, state=state, quiescent=True, publication_state="unpublished", summary=summary)
+        return result, summary
+
+    def _finish_coding(self, spec: dict) -> dict:
+        attempt = spec["attempt_id"]
+        _, data = self._row(attempt)
+        result, summary = self._coding_result(spec, data)
+        if result["outcome"] == "blocked":
+            raise CodingResultBlocked("coding result declared blocked; no publication; work retained", summary)
+        git = self.git(spec)
+        if result["outcome"] == "no_change":
+            if git.head() != spec["input_head_sha"] or not git.clean():
+                raise CodingResultBlocked("outcome no_change requires a clean original HEAD; work retained", summary)
+            return self._complete_coding(spec, data, "noop", summary=summary)
         if not data.get("candidate_sha"):
-            raise Blocked("interrupted edits or missing candidate helper; work retained, not delivered")
+            raise CodingResultBlocked("outcome changed requires a recorded candidate helper; work retained, not delivered", summary)
         paths = self._check_scope(spec, data, git)
         if not paths and spec["stage"] != "conflicts":
             raise Blocked("candidate has no content changes; empty commit publication forbidden")
-        if not result_path.exists():
-            raise Blocked("missing private result evidence")
         verification = self._verify(spec, data["candidate_sha"])
         self._check_scope(spec, data, git)
         prompt = review_prompt(spec, data["candidate_sha"], data["manifest_hash"], data["manifest"],
@@ -668,7 +821,8 @@ class Worker:
         private_write(self.artifacts(attempt) / "review-prompt.txt", prompt)
         review = self._create_session(spec, "review_session_id", f"PR {spec['pr_id']} · read-only review · {attempt}", spec["review_agent"], spec["review_model"])
         events = self.artifacts(attempt) / "review-events.jsonl"
-        self.runner.run(git.path, review, spec["review_model"], spec["review_agent"], prompt, events, spec.get("limits", {}).get("review_seconds", 900))
+        self._run_session(spec, review, spec["review_model"], spec["review_agent"], prompt, events,
+                          spec.get("limits", {}).get("review_seconds", 900), "review")
         _, current = self._row(attempt)
         if not self._sessions_quiet(spec, current):
             raise Blocked("review or descendants not proved stopped; inspection required")
@@ -853,89 +1007,126 @@ class Worker:
             return self.reconcile_attempt(attempt)
         try:
             with self.lock("pr-" + str(spec["pr_id"])), self.lock("branch-" + digest(self.branch(spec))), self.lock("attempt-" + self.identity(attempt)):
-                spec, data = self._row(attempt)
-                if data["state"] in TERMINAL or data["state"] == "cancel_requested":
-                    return self.status(attempt)
-                if not self.config.get("execution_enabled") or not self.config.get("rollout_acknowledged"):
-                    raise Blocked("onboarding: execution and shared-account rollout acknowledgement are required")
-                if data.get("execution_assurance", "strict") != self.config.get("quiescence_mode", "strict"):
-                    raise Blocked("execution assurance changed for an accepted attempt; inspect before continuing")
-                if data["state"] == "ready_to_publish":
-                    if not data.get("authorization"):
-                        return self.status(attempt)
-                    return self._publish(spec)
-                # CAS the one-way marker against cancellation and a competing
-                # invocation that started since this invocation's initial read.
-                with transaction(self.db):
-                    _, current = self._row(attempt)
-                    if current["state"] != "accepted" or current.get("started"):
-                        return self.status(attempt)
-                    current.update(started=True, started_at=time.time(), state="running", quiescent=False)
-                    self.db.execute("UPDATE worker_attempts SET data=? WHERE id=?", (canonical(current), attempt))
-                self.free_space()
-                self.runner.check_contract(self.root)
-                live = self.live(spec)
-                if live["head"]["sha"] != spec["input_head_sha"]:
-                    raise Blocked("head advanced before execution")
-                if live["base"]["sha"] != spec["base_sha"]:
-                    if spec["stage"] == "conflicts":
-                        self._update(attempt, retryable_reason="base_advanced")
-                    raise Blocked("base advanced before execution")
-                skills, skill_text = load_skills(spec["stage"], Path(self.config["skills_dir"]))
-                self._update(attempt, skill_hashes=skills, runner_version=self.config["runner_version"])
-                git = self.git(spec)
-                # Private numeric parents; never derive filesystem names from refs.
-                for parent in (git.path.parent.parent.parent, git.path.parent.parent, git.path.parent):
-                    parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-                    os.chmod(parent, 0o700)
-                git.prepare(spec["pr"]["head"]["ref"], spec["input_head_sha"], spec["pr"]["base"]["ref"], spec["base_sha"])
-                if spec["stage"] == "conflicts" and not git.begin_conflict_merge(spec["input_head_sha"], spec["base_sha"]):
-                    return self._update(attempt, state="noop", quiescent=True, publication_state="unpublished")
-                self.runner.check_available(git.path, [spec["model"], spec["review_model"]], [spec["agent"], spec["review_agent"]])
-                # Triple-dot captures the full PR contribution, not base-only changes.
-                merge_base = git.run("merge-base", spec["base_sha"], spec["input_head_sha"]).stdout.decode().strip()
-                prompt = coding_prompt(self._prompt_spec(spec), git.diff(merge_base, spec["input_head_sha"]), skill_text, self.artifacts(attempt), self.helper())
-                private_write(self.artifacts(attempt) / "prompt.txt", prompt)
-                self._update(attempt, prompt_hash=digest(prompt))
-                session = self._create_session(spec, "session_id", f"{spec['pr']['base']['repo']['full_name']} #{spec['pr']['number']} · {spec['stage']} · {attempt}", spec["agent"], spec["model"])
-                self.runner.run(git.path, session, spec["model"], spec["agent"], prompt, self.artifacts(attempt) / "events.jsonl", spec.get("limits", {}).get("stage_seconds", 2700))
-                _, current = self._row(attempt)
-                if not self._sessions_quiet(spec, current):
-                    raise Blocked("session or descendants not proved stopped; inspection required")
-                if current["state"] == "cancel_requested":
-                    if current.get("pause_requested"):
-                        return self._update(attempt, state="inspection_required", publication_state="unpublished", quiescent=True,
-                                            error="paused interrupted stage; preserve work for inspection")
-                    return self._update(attempt, state="cancelled", publication_state="unpublished", quiescent=True)
-                self._update(attempt, quiescent=True)
-                return self._finish_coding(spec)
+                return self._execute_owned(attempt)
         except Busy:
             return self.status(attempt)
+
+    def _execute_owned(self, attempt: str) -> dict:
+        spec, data = self._row(attempt)
+        if data["state"] in TERMINAL or data["state"] == "cancel_requested":
+            return self.status(attempt)
+        local_only = not data.get("started") and data["state"] == "accepted"
+        try:
+            if not self.config.get("execution_enabled") or not self.config.get("rollout_acknowledged"):
+                raise Blocked("onboarding: execution and shared-account rollout acknowledgement are required")
+            if data.get("execution_assurance", "strict") != self.config.get("quiescence_mode", "strict"):
+                raise Blocked("execution assurance changed for an accepted attempt; inspect before continuing")
+            if data["state"] == "ready_to_publish":
+                if not data.get("authorization"):
+                    return self.status(attempt)
+                return self._publish(spec)
+            self.runner.check_configuration()
+            self.free_space()
+            # Keep the one-way marker before all external tools. Failed local
+            # checks above cannot have launched a prompt or process.
+            with transaction(self.db):
+                _, current = self._row(attempt)
+                if current["state"] != "accepted" or current.get("started"):
+                    return self.status(attempt)
+                current.update(started=True, started_at=time.time(), state="running", quiescent=False,
+                               execution_phase="preflight", execution_epoch=current["authorization_epoch"])
+                self._store(attempt, current)
+            local_only = False
+            self.runner.check_contract(self.root)
+            live = self.live(spec)
+            if live["head"]["sha"] != spec["input_head_sha"]:
+                raise PreflightRejected("head advanced before execution")
+            if live["base"]["sha"] != spec["base_sha"]:
+                raise PreflightRejected("base advanced before execution")
+            skills, skill_text = load_skills(spec["stage"], Path(self.config["skills_dir"]))
+            self._update(attempt, skill_hashes=skills, runner_version=self.config["runner_version"])
+            git = self.git(spec)
+            # Private numeric parents; never derive filesystem names from refs.
+            for parent in (git.path.parent.parent.parent, git.path.parent.parent, git.path.parent):
+                parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                os.chmod(parent, 0o700)
+            git.prepare(spec["pr"]["head"]["ref"], spec["input_head_sha"], spec["pr"]["base"]["ref"], spec["base_sha"],
+                        before_checkout=lambda: self._launch(spec, "checkout"))
+            if spec["stage"] == "conflicts":
+                self._launch(spec, "merge")
+                if not git.begin_conflict_merge(spec["input_head_sha"], spec["base_sha"]):
+                    with transaction(self.db):
+                        _, current = self._row(attempt)
+                        if current["state"] != "running" or current.get("execution_interrupted"):
+                            raise Blocked("cancellation requested during merge preparation; work retained")
+                        current.update(state="noop", quiescent=True, publication_state="unpublished")
+                        self._store(attempt, current)
+                    return self.status(attempt)
+            self.runner.check_available(git.path, [spec["model"], spec["review_model"]], [spec["agent"], spec["review_agent"]])
+            # Triple-dot captures the full PR contribution, not base-only changes.
+            merge_base = git.run("merge-base", spec["base_sha"], spec["input_head_sha"]).stdout.decode().strip()
+            prompt = coding_prompt(self._prompt_spec(spec), git.diff(merge_base, spec["input_head_sha"]), skill_text, self.artifacts(attempt), self.helper())
+            private_write(self.artifacts(attempt) / "prompt.txt", prompt)
+            self._update(attempt, prompt_hash=digest(prompt))
+            session = self._create_session(spec, "session_id", f"{spec['pr']['base']['repo']['full_name']} #{spec['pr']['number']} · {spec['stage']} · {attempt}", spec["agent"], spec["model"])
+            self._run_session(spec, session, spec["model"], spec["agent"], prompt, self.artifacts(attempt) / "events.jsonl",
+                              spec.get("limits", {}).get("stage_seconds", 2700), "coding")
+            _, current = self._row(attempt)
+            if not self._sessions_quiet(spec, current):
+                raise Blocked("session or descendants not proved stopped; inspection required")
+            self._update(attempt, quiescent=True)
+            _, completed = self._row(attempt)
+            try:
+                return self._finish_coding(spec)
+            except CodingResultBlocked as error:
+                return self._complete_coding(spec, completed, "blocked", summary=error.summary, error=str(error))
         except (Blocked, OSError, ValueError, subprocess.SubprocessError) as error:
+            # Called while all execution locks are still held. Cancellation uses
+            # SQLite revocation, so the final outcome also re-reads in a transaction.
+            return self._execution_failed(spec, error, local_only=local_only)
+
+    def _execution_failed(self, spec: dict, error: Exception, *, local_only: bool) -> dict:
+        attempt = spec["attempt_id"]
+        _, observed = self._row(attempt)
+        if observed["publication_state"] in ("unknown", "push_in_flight"):
+            return self.status(attempt)
+        if isinstance(error, subprocess.TimeoutExpired):
+            for session in self._active_sessions(observed):
+                try:
+                    self.runner.interrupt(session, self.checkout(spec))
+                except (Blocked, OSError, subprocess.TimeoutExpired):
+                    pass
+        clean_preflight = (isinstance(error, PreflightRejected) and observed.get("execution_phase") == "preflight"
+                           and self.config.get("quiescence_mode") == "best_effort"
+                           and self.config.get("best_effort_acknowledged") is True
+                           and not self._active_sessions(observed) and not observed.get("candidate_sha"))
+        quiet = ((local_only and not observed.get("started")) or clean_preflight
+                 or self._interrupted_quiet(spec, observed, require_host_proof=True))
+        with transaction(self.db):
             _, current = self._row(attempt)
             if current["publication_state"] in ("unknown", "push_in_flight"):
                 return self.status(attempt)
-            if isinstance(error, subprocess.TimeoutExpired):
-                for session in self._active_sessions(current):
-                    try:
-                        self.runner.interrupt(session, self.checkout(spec))
-                    except (Blocked, OSError, subprocess.TimeoutExpired):
-                        pass
-            quiet = self._interrupted_quiet(spec, current, require_host_proof=True)
+            if current["state"] in TERMINAL:
+                return self.status(attempt)
+            if any(current.get(key) != observed.get(key) for key in (
+                    "session_id", "review_session_id", "candidate_sha", "local_pgid", "execution_phase")):
+                quiet = False
             state = "blocked" if quiet else "inspection_required"
             if isinstance(error, GrantRejected) and current["state"] == "ready_to_publish":
-                return self._update(attempt, state="ready_to_publish", quiescent=True, authorization=None, error=str(error))
-            if current["state"] == "cancel_requested":
-                state = "cancelled" if quiet else "cancel_requested"
-                if current.get("pause_requested"):
-                    state = "inspection_required" if quiet else "cancel_requested"
-            if isinstance(error, subprocess.TimeoutExpired) and not quiet:
-                state = "deadline_exceeded"
-            # Exception strings from tooling can contain secrets; only our own
-            # content-free Blocked messages are reportable.
-            reason = str(error) if isinstance(error, Blocked) else "worker tool failure; inspect private owned artifacts"
-            return self._update(attempt, state=state, quiescent=quiet, publication_state="unpublished", error=reason,
-                                execution_interrupted=True)
+                current.update(quiescent=True, authorization=None, error=str(error))
+            else:
+                if current["state"] == "cancel_requested":
+                    state = "cancelled" if quiet and not current.get("pause_requested") else "cancel_requested"
+                    if quiet and current.get("pause_requested"):
+                        state = "inspection_required"
+                elif isinstance(error, subprocess.TimeoutExpired) and not quiet:
+                    state = "deadline_exceeded"
+                # Only our own content-free Blocked messages are reportable.
+                reason = str(error) if isinstance(error, Blocked) else "worker tool failure; inspect private owned artifacts"
+                current.update(state=state, quiescent=quiet, publication_state="unpublished", error=reason,
+                               execution_interrupted=not quiet or bool(current.get("execution_interrupted")))
+            self._store(attempt, current)
+        return self.status(attempt)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -952,6 +1143,10 @@ def main(argv: list[str] | None = None) -> int:
     resolve.add_argument("--accept-best-effort", action="store_true", required=True,
                          help="accept that observations do not prove detached descendant exit")
     resolve.add_argument("--reason", required=True)
+    resolve.add_argument("--accept-sessionless", action="store_true",
+                         help="also accept missing session observations for inspected setup failures without execution evidence")
+    resolve.add_argument("--accept-deleted-branch", action="store_true",
+                         help="also accept checked closed-PR head and base observations when the original head branch is deleted")
     prepare = sub.add_parser("prepare")
     prepare.add_argument("attempt_id")
     prepare.add_argument("--evidence", type=Path, required=True)
@@ -972,7 +1167,9 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "execute":
             result = worker.execute(args.attempt_id)
         elif args.command == "resolve-interrupted":
-            result = worker.resolve_interrupted(args.attempt_id, accept_best_effort=args.accept_best_effort, reason=args.reason)
+            result = worker.resolve_interrupted(args.attempt_id, accept_best_effort=args.accept_best_effort,
+                                                accept_sessionless=args.accept_sessionless,
+                                                accept_deleted_branch=args.accept_deleted_branch, reason=args.reason)
         elif args.command == "reconcile":
             result = worker.reconcile()
         elif args.command == "prepare":

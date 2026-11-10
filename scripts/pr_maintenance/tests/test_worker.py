@@ -129,7 +129,9 @@ class WorkerTests(unittest.TestCase):
             worker.authorize(self.spec["attempt_id"], {"authorization_epoch": 1})
 
     def test_execution_failure_without_host_descendant_proof_keeps_ownership(self):
-        self.config.update(execution_enabled=True, rollout_acknowledged=True, min_free_bytes=0)
+        self.config.update(execution_enabled=True, rollout_acknowledged=True, min_free_bytes=0,
+                           runner_version="test", opencode_server="http://localhost:1234",
+                           runner_contract_verified=True, runner_quiescence_argv=["/trusted/probe"])
         worker = Worker(self.config)
         self.addCleanup(worker.close)
         with patch.object(worker, "_schedule"):
@@ -282,7 +284,9 @@ class WorkerPublicationTests(Repository):
         self.worker.record_manifest(self.spec["attempt_id"], evidence)
         self.commit = self.candidate()
         self.worker.record_candidate(self.spec["attempt_id"])
-        (self.worker.artifacts(self.spec["attempt_id"]) / "result.json").write_text(json.dumps({"summary": "maintained topic", "changed_paths": ["topic.txt"]}))
+        (self.worker.artifacts(self.spec["attempt_id"]) / "result.json").write_text(json.dumps({
+            "outcome": "changed", "blockers": [], "summary": "maintained topic", "changed_paths": ["topic.txt"],
+        }))
 
     def approve(self):
         def review_run(cwd, session, model, agent, prompt, events, timeout):
@@ -396,7 +400,9 @@ class ExecutionStressTests(Repository):
     def test_jitter_independent_prs_overlap_despite_held_owner_without_duplicate_prompts(self):
         config = {"state_dir": str(self.root / "state"), "checkout_root": str(self.root / "checkouts"),
                   "skills_dir": str(self.root / "skills"), "execution_enabled": True, "rollout_acknowledged": True,
-                  "runner_version": "test", "config_file": "/fixed/config.json", "worker_executable": "/fixed/bin/pr-worker", "min_free_bytes": 0}
+                  "runner_version": "test", "opencode_server": "http://localhost:1234", "runner_contract_verified": True,
+                  "runner_quiescence_argv": ["/trusted/probe"], "config_file": "/fixed/config.json",
+                  "worker_executable": "/fixed/bin/pr-worker", "min_free_bytes": 0}
         skill = self.root / "skills" / "cleanup-basic"
         skill.mkdir(parents=True)
         (skill / "SKILL.md").write_text("Keep scope narrow.")
@@ -439,6 +445,10 @@ class ExecutionStressTests(Repository):
                 state["sessions"].append(session)
             overlap.wait(timeout=10)
             time.sleep(random.uniform(.015, .05))
+            attempt = Path(cwd).name
+            (Path(config["state_dir"]) / "attempts" / attempt / "result.json").write_text(json.dumps({
+                "outcome": "no_change", "blockers": [], "summary": "No PR-related cleanup needed",
+            }))
             with mutex:
                 state["active"] -= 1
         def execute(spec):

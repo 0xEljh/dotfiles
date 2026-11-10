@@ -349,6 +349,10 @@ def render_summary(workflow: dict, stages: list[dict], final: bool) -> str:
     url = (workflow.get("url") or workflow.get("html_url") or _mapping(workflow.get("pr")).get("html_url")
            or f"https://github.com/{repository}/pull/{number}")
     lines = [f"{'Final' if final else 'Initial'} maintenance summary: {repository} #{number}", str(url)]
+    if any(stage.get("state") in ("blocked", "failed") for stage in stages):
+        lines.extend(["", "Maintenance finished with blockers." if final else "Initial stages finished with blockers."])
+    elif final and workflow.get("completion_outcome") == "unverified":
+        lines.extend(["", "Historical model-stage outcomes are unverified; completion does not establish successful maintenance."])
     if workflow.get("lifecycle_state") in {"cancelled", "cancel_requested"}:
         lines.extend(["", brief(workflow.get("paused_reason") or "Maintenance cancelled")])
         if final and not workflow.get("has_attempts", any(s.get("active_attempt_id") or _mapping(s.get("result")) for s in stages)):
@@ -370,6 +374,12 @@ def render_summary(workflow: dict, stages: list[dict], final: bool) -> str:
         lines.extend(["", f"{stage_title(kind)}: {state_title(state)}"])
         if state == "published_with_concern":
             lines.append("Changes were published; incident requires acknowledgement.")
+        for blocker in _items(data.get("blockers")):
+            if isinstance(blocker, dict):
+                if blocker.get("reason"):
+                    lines.append(f"Blocker: {brief(blocker['reason'])}")
+                if blocker.get("next_action"):
+                    lines.append(f"Next action: {brief(blocker['next_action'])}")
         for decision in _items(data.get("unresolved_decisions")):
             lines.append(f"Decision needed: {brief(decision)}")
         reason = data.get("reason") or data.get("error") or summary.get("summary")

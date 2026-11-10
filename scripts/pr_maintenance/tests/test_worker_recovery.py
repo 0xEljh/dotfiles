@@ -158,6 +158,71 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(self.resolve()["state"], "blocked")
         self.ops.publication.assert_called_once_with("topic", "b" * 40, "c" * 40)
 
+    def sessionless(self):
+        self.worker._update(self.attempt, session_id=None, review_session_id=None, candidate_sha=None,
+                            authorization=None)
+
+    def test_sessionless_recovery_requires_second_opt_in_and_records_missing_observations(self):
+        self.sessionless()
+        with self.assertRaises(Blocked):
+            self.resolve()
+        result = self.resolve(accept_sessionless=True)
+        self.assertEqual(result["state"], "blocked")
+        self.assertTrue(result["quiescent"])
+        audit = result["operator_recovery"]
+        self.assertTrue(audit["accepted_sessionless"])
+        self.assertEqual(audit["execution_phase"], "legacy_unknown")
+        self.assertEqual(audit["session_observations"], "unavailable")
+        self.quiet.assert_not_called()
+        self.ops.publication.assert_not_called()
+        self.prompt.assert_not_called()
+        self.schedule.assert_not_called()
+
+    def test_sessionless_recovery_rejects_prompt_candidate_verification_or_later_phase(self):
+        self.sessionless()
+        _, original = self.worker._row(self.attempt)
+        for changes in ({"candidate_sha": "c" * 40}, {"prompt_hash": "prompt"},
+                        {"verification": {}}, {"manifest": {}}, {"execution_phase": "coding"},
+                        {"execution_phase": "checkout"}, {"session_id": ""}):
+            with self.subTest(changes=changes):
+                self.worker._update(self.attempt, **changes)
+                with self.assertRaises(Blocked):
+                    self.resolve(accept_sessionless=True)
+                self.worker.db.execute("UPDATE worker_attempts SET data=? WHERE id=?", (json.dumps(original), self.attempt))
+                self.assert_held()
+
+    def test_sessionless_recovery_rejects_artifacts_even_without_ledger_prompt_marker(self):
+        self.sessionless()
+        for name in ("prompt.txt", "prompt.txt.tmp", "events.jsonl", "verification-0.log", "manifest.json"):
+            with self.subTest(name=name):
+                artifact = self.worker.artifacts(self.attempt) / name
+                artifact.write_text("retained evidence")
+                with self.assertRaises(Blocked):
+                    self.resolve(accept_sessionless=True)
+                artifact.unlink()
+                self.assert_held()
+
+    def test_sessionless_recovery_retains_unit_and_process_group_guards(self):
+        self.sessionless()
+        self.unit_check.side_effect = Blocked("active unit")
+        with self.assertRaises(Blocked):
+            self.resolve(accept_sessionless=True)
+        self.unit_check.side_effect = None
+        self.worker._update(self.attempt, local_pgid=987654)
+        with patch("pr_maintenance.worker.os.killpg", return_value=None), self.assertRaises(Blocked):
+            self.resolve(accept_sessionless=True)
+        self.assert_held()
+
+    def test_sessionless_recovery_rechecks_prompt_evidence_before_commit(self):
+        self.sessionless()
+        def unit(attempt):
+            self.worker._update(attempt, prompt_hash="late evidence")
+            return self.unit
+        self.unit_check.side_effect = unit
+        with self.assertRaises(Blocked):
+            self.resolve(accept_sessionless=True)
+        self.assert_held()
+
     def test_remote_result_other_than_unpublished_cannot_release_ownership(self):
         for outcome in ("already_published", "unknown", None, Blocked("head advanced"),
                         OSError("network unavailable"), subprocess.TimeoutExpired("git", 30)):
@@ -282,8 +347,17 @@ class RecoveryTests(unittest.TestCase):
              patch.object(self.worker, "resolve_interrupted", return_value={"state": "blocked"}, create=True) as resolve, \
              contextlib.redirect_stdout(io.StringIO()) as output:
             self.assertEqual(main(argv + ["--accept-best-effort", "--reason", "inspected"]), 0)
-            resolve.assert_called_once_with(self.attempt, accept_best_effort=True, reason="inspected")
+            resolve.assert_called_once_with(self.attempt, accept_best_effort=True, accept_sessionless=False,
+                                            accept_deleted_branch=False, reason="inspected")
             self.assertEqual(json.loads(output.getvalue()), {"state": "blocked"})
+            resolve.reset_mock()
+            self.assertEqual(main(argv + ["--accept-best-effort", "--accept-sessionless", "--reason", "inspected"]), 0)
+            resolve.assert_called_once_with(self.attempt, accept_best_effort=True, accept_sessionless=True,
+                                            accept_deleted_branch=False, reason="inspected")
+            resolve.reset_mock()
+            self.assertEqual(main(argv + ["--accept-best-effort", "--accept-deleted-branch", "--reason", "inspected"]), 0)
+            resolve.assert_called_once_with(self.attempt, accept_best_effort=True, accept_sessionless=False,
+                                            accept_deleted_branch=True, reason="inspected")
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             main(argv + ["--reason", "inspected"])
 

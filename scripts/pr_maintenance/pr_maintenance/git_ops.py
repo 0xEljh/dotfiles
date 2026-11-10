@@ -4,9 +4,11 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import time
+from collections.abc import Callable
 from pathlib import Path
 
-from .common import Blocked
+from .common import Blocked, PreflightRejected
 
 
 def sha(value: str) -> str:
@@ -33,13 +35,26 @@ def repository_url(repo: dict) -> str:
     return expected
 
 
+def current_base_snapshot(pr: dict, evidence: dict) -> dict:
+    """Derive an execution snapshot from the exact live base ref, not PR history."""
+    try:
+        if (not isinstance(evidence, dict) or not isinstance(evidence.get("object"), dict)
+                or evidence.get("ref") != "refs/heads/" + pr["base"]["ref"]
+                or evidence["object"].get("type") != "commit"):
+            raise Blocked("live base-ref response does not identify the expected commit ref")
+        observed = sha(evidence["object"]["sha"])
+        return dict(pr, base=dict(pr["base"], sha=observed))
+    except (KeyError, TypeError, ValueError) as error:
+        raise Blocked("live base-ref response is incomplete; no execution snapshot accepted") from error
+
+
 def validate_live_pr(expected: dict, live: dict, repository: dict,
                      author_id: int = 34589654, organization_id: int = 97932676) -> None:
     try:
         if (live["id"] != expected["id"] or live["state"] != "open" or live.get("draft", True)
                 or live.get("merged", False) or live["user"]["id"] != author_id
                 or live["base"]["repo"]["owner"]["id"] != organization_id):
-            raise Blocked("PR lifecycle, author, or organization no longer eligible")
+            raise PreflightRejected("PR lifecycle, author, or organization no longer eligible")
         for side in ("head", "base"):
             if (live[side]["repo"]["id"] != expected[side]["repo"]["id"]
                     or live[side]["repo"]["full_name"] != expected[side]["repo"]["full_name"]
@@ -84,7 +99,8 @@ class GitOps:
         self.run("fetch", "--no-tags", "--", "origin", "+" + ref(branch) + ":" + target)
         return sha(self.run("rev-parse", "--verify", target).stdout.decode().strip())
 
-    def prepare(self, head_ref: str, head_sha: str, base_ref: str, base_sha: str) -> None:
+    def prepare(self, head_ref: str, head_sha: str, base_ref: str, base_sha: str,
+                *, before_checkout: Callable[[], None] | None = None) -> None:
         sha(head_sha)
         sha(base_sha)
         # Existing directories are retained, never reset, cleaned, or reused.
@@ -92,9 +108,11 @@ class GitOps:
         self.run("init", "--quiet")
         self.run("remote", "add", "origin", self.remote)
         if self.fetch(head_ref, "input") != head_sha:
-            raise Blocked("head advanced before checkout preparation")
+            raise PreflightRejected("head advanced before checkout preparation")
         if self.fetch(base_ref, "base") != base_sha:
-            raise Blocked("base advanced before checkout preparation")
+            raise PreflightRejected("base advanced before checkout preparation")
+        if before_checkout is not None:
+            before_checkout()
         self.run("checkout", "--detach", head_sha, "--")
 
     def assert_remote(self) -> None:
@@ -163,6 +181,40 @@ class GitOps:
         if observed != sha(start):
             raise Blocked("head advanced; retain candidate for explicit fresh attempt")
         return "unpublished"
+
+    def closed_pr_nonpublication(self, number: int, head_branch: str, base_branch: str,
+                                 start: str, base_head: str, candidate: str) -> dict:
+        """Observe an unchanged retained PR head and current base, never publish."""
+        if type(number) is not int or number <= 0:
+            raise Blocked("closed PR recovery requires a numeric PR number")
+        start, base_head, candidate = sha(start), sha(base_head), sha(candidate)
+        head_ref, base_ref = ref(head_branch), ref(base_branch)
+
+        def require_missing_branch():
+            self.assert_remote()
+            # A failed authenticated lookup is not an absent branch. ref() rejects
+            # patterns; any returned record means absence was not established.
+            listing = self.run("ls-remote", "--heads", "--", "origin", head_ref)
+            if listing.stdout.strip():
+                raise Blocked("head branch exists or was recreated; ownership retained")
+
+        require_missing_branch()
+        prefix = "refs/pr-maintenance/recovery/" + str(number)
+        self.run("fetch", "--no-tags", "--", "origin", "+refs/pull/" + str(number) + "/head:" + prefix + "/head")
+        observed_head = sha(self.run("rev-parse", "--verify", prefix + "/head").stdout.decode().strip())
+        if observed_head != start:
+            raise Blocked("retained PR head changed; candidate publication remains unresolved")
+        self.run("fetch", "--no-tags", "--", "origin", "+" + base_ref + ":" + prefix + "/base")
+        observed_base = sha(self.run("rev-parse", "--verify", prefix + "/base").stdout.decode().strip())
+        if observed_base != base_head:
+            raise Blocked("base changed during closed PR recovery; inspect and retry")
+        if self.ancestor(candidate, observed_head) or self.ancestor(candidate, observed_base):
+            raise Blocked("candidate is reachable from retained PR head or base; ownership retained")
+        refs_observed_at = time.time()
+        require_missing_branch()
+        return {"source": "closed_pr_head", "pr_number": number, "head_branch_missing": True,
+                "head_sha": observed_head, "base_sha": observed_base,
+                "refs_observed_at": refs_observed_at, "branch_absence_observed_at": time.time()}
 
     def publish(self, branch: str, start: str, candidate: str, *, prechecked: bool = False) -> str:
         sha(candidate)

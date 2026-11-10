@@ -18,6 +18,10 @@ class Blocked(RuntimeError):
     """An operator decision is needed. The retained work must not be discarded."""
 
 
+class PreflightRejected(Blocked):
+    """Successful read-only setup found ineligible work, not a failed tool call."""
+
+
 def canonical(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
 

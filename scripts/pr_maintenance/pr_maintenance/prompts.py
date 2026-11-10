@@ -90,15 +90,21 @@ the initial manifest. Explain why those checks cover this stage.
 Missing adequate checks after dependency preparation requires an onboarding escalation.
 The worker independently runs these commands and a separate read-only review. Your
 assertions of passing checks or approval are not publication evidence.
-Write {artifacts / 'result.json'} containing summary, changed_paths, deleted_paths,
+Write {artifacts / 'result.json'} as a JSON object with a required outcome field:
+"changed", "no_change", or "blocked". Never report blocked work as no_change.
+Include blockers as a list of objects with nonblank reason and next_action fields.
+Use outcome blocked with a nonempty blockers list whenever dependencies, checks,
+intent, or a decision prevent completion, even if no files changed. Nonempty blockers
+require outcome blocked. For completed work use an empty blockers list.
+Also include summary, changed_paths, deleted_paths,
 verification notes, red-green evidence when appropriate, and feedback_dispositions
 with id, url, disposition and reason for every snapshot item (including non-actionable
 context as not applicable). Keep summary to at most 240 characters for a phone notification:
 state the outcome, then any blocker and next action. Put blockers first when checks
 cannot run. Do not repeat stage labels, inspection inventories, IDs, hashes, or paths
 in summary. Put full rationale and setup/verification evidence in separate result fields.
-For a genuine no-op leave the checkout clean at the original
-head and stop after writing the result; no empty commit. For a change, stage intended
+For a genuine no-op use outcome no_change and leave the checkout clean at the original
+head and stop after writing the result; no empty commit. For a change use outcome changed, stage intended
 paths literally and commit them (a merge commit for conflicts).
 Invoke {canonical(helper + ['publish', spec['attempt_id']])} to record the candidate;
 it DOES NOT push. Then stop. The worker obtains a fresh coordinator grant separately.

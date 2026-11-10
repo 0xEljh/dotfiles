@@ -62,15 +62,23 @@ class Runner:
                 and isinstance(version, str) and bool(version.strip())
                 and isinstance(self.server, str) and bool(self.server.strip()))
 
-    def check_contract(self, cwd: Path) -> None:
+    def check_configuration(self) -> None:
+        """Validate local settings without invoking a runner or server."""
         mode = self.config.get("quiescence_mode", "strict")
         if mode not in ("strict", "best_effort"):
             raise Blocked("onboarding: unknown quiescence mode")
         if mode == "best_effort" and not self._best_effort_configured():
             raise Blocked("onboarding: best_effort_acknowledged must be true with pinned runner_version and nonempty server")
         if mode == "strict" and (not self.config.get("runner_contract_verified") or not self.config.get("runner_version")
-                                 or not self.server or not self.config.get("runner_quiescence_argv")):
+                                  or not self.server or not self.config.get("runner_quiescence_argv")):
             raise Blocked("onboarding: pinned runner/session/descendant cancellation contract is not proved")
+        if mode == "strict":
+            probe = self.config["runner_quiescence_argv"]
+            if not isinstance(probe, list) or not probe or not all(isinstance(item, str) for item in probe):
+                raise Blocked("onboarding: invalid trusted quiescence probe")
+
+    def check_contract(self, cwd: Path) -> None:
+        self.check_configuration()
         version = subprocess.run([self.binary, "--version"], cwd=cwd, capture_output=True, timeout=15)
         if version.returncode or version.stdout.decode().strip() != self.config["runner_version"]:
             raise Blocked("onboarding: installed runner does not match pinned runner_version")
@@ -81,10 +89,6 @@ class Runner:
         help_text = help_result.stdout.decode()
         if help_result.returncode or any(flag not in help_text for flag in ("--session", "--server", "--model", "--agent", "--format")):
             raise Blocked("onboarding: pinned runner flags are unavailable")
-        if mode == "strict":
-            probe = self.config["runner_quiescence_argv"]
-            if not isinstance(probe, list) or not probe or not all(isinstance(item, str) for item in probe):
-                raise Blocked("onboarding: invalid trusted quiescence probe")
 
     @staticmethod
     def session_id(value: str) -> str:

@@ -19,11 +19,12 @@ import time
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
+from urllib.parse import parse_qs, quote, urlencode, urljoin, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
-from .common import canonical, check_secrets
+from .common import Blocked, canonical, check_secrets
 from .config import DEFAULTS, validate_github
+from .git_ops import current_base_snapshot
 
 
 API_ORIGIN = "https://api.github.com"
@@ -494,9 +495,24 @@ class GitHub:
                 yield self._identity(item)
 
     def get_pr(self, owner_repo: str, number: int) -> dict:
+        """Read PR metadata, resolving the execution base for an open ready PR."""
         repo = self._repo(owner_repo)
         number = _positive_id(number, "PR number")
-        return self._identity(self.get(f"/repos/{repo}/pulls/{number}"))
+        result = self._identity(self.get(f"/repos/{repo}/pulls/{number}"))
+        if result.get("state") != "open" or result.get("draft") is True:
+            return result
+        try:
+            base = result["base"]
+            if (result.get("draft") is not False or not isinstance(base, dict)
+                    or not isinstance(base.get("repo"), dict)
+                    or not isinstance(base["repo"].get("full_name"), str)
+                    or base["repo"].get("full_name", "").casefold() != repo.casefold()
+                    or not isinstance(base.get("ref"), str) or not base["ref"]):
+                raise GitHubError("GitHub PR base identity is incomplete or outside the requested repository")
+            evidence = self.get(f"/repos/{repo}/git/ref/heads/" + quote(base["ref"], safe="/"))
+            return current_base_snapshot(result, evidence)
+        except (KeyError, TypeError, ValueError, Blocked) as error:
+            raise GitHubError("GitHub current base-ref snapshot is unavailable or invalid") from error
 
     def open_prs(self, owner_repo: str):
         repo = self._repo(owner_repo)
