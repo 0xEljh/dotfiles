@@ -64,7 +64,8 @@ src/
 └── transport/      # sends API requests
 ```
 
-- Show component interaction, control flow, or data flow with Mermaid:
+- Show component interaction, control flow, or data flow with Mermaid: Use
+  `mermaid-check pr-body.md` to validate Mermaid code fences before publishing.
 
 ```mermaid
 sequenceDiagram

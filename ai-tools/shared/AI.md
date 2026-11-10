@@ -49,6 +49,13 @@ All documentation and comments should strive to be self-contained:
 - In most cases, there should not be references made to other local directories
   and repos. If it can't be found publicly, it probably shouldn't be a
   reference. Strive instead to be sufficiently descriptive.
+- Before publishing Mermaid diagrams, run `mermaid-check FILE.mmd` or
+  `mermaid-check DOCUMENT.md`. The default checks full Mermaid rendering.
+  Use `mermaid-check --mode syntax` for fast syntax-only feedback, not as proof
+  of rendering. Use `--mode pele` when Pele is the intended renderer; a Pele pass
+  does not certify Mermaid compatibility. Pipe raw text on stdin, or add
+  `--markdown` for fenced Markdown on stdin. Dependencies are installed centrally;
+  do not install npm packages in each project. Report which mode passed.
 
 ## Testing Discretion
 

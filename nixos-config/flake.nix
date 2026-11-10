@@ -161,6 +161,7 @@
       formatter = forDevShellSystems (system: nixpkgs.legacyPackages.${system}.nixfmt-tree);
 
       packages = forDevShellSystems (system: {
+        mermaid-check = nixpkgs.legacyPackages.${system}.callPackage ./packages/mermaid-check { };
         opencode-v2 = nixpkgs.legacyPackages.${system}.callPackage ./packages/opencode-v2 { };
         ai-agent-sync = nixpkgs.legacyPackages.${system}.callPackage ./packages/ai-agent-sync { };
       });

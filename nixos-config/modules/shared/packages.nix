@@ -2,6 +2,7 @@
 
 let
   context7Cli = pkgs.callPackage ../../packages/context7-cli { };
+  mermaidCheck = pkgs.callPackage ../../packages/mermaid-check { };
   fffPackages = fff.packages.${pkgs.stdenv.hostPlatform.system};
   playwrightCli = pkgs.callPackage ../../packages/playwright-cli { };
 in
@@ -55,6 +56,7 @@ with pkgs; [
   llm-agents.claude-code
   llm-agents.codex
   context7Cli
+  mermaidCheck
   playwrightCli
 
   # C tools

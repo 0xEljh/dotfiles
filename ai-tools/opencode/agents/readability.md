@@ -22,6 +22,7 @@ Use the technical-writing skill to improve the readability of the doc.
 Further:
 
 - If an explanation could benefit from a mermaid diagram, create it.
+- Use `mermaid-check document.md` to validate Mermaid code fences before sharing.
 - Reduce jargon, or at least explain the use of it where applicable.
 - Avoid the use of acronyms and/or shortforms like "A03" in the write-ups.
   These, when done in lists or tables, can be used as references, but should be

@@ -32,11 +32,11 @@ permission:
 Create or update the requested PR. Use the `pr` and `technical-writing` skill to
 write the body.
 
-For task-authorized screenshot publication, load the `github-attachments` skill.
-Use it only for push-access GitHub.com repositories with user credentials.
-Prefer a new conversation comment. Editing an existing body or owned comment
-requires explicit authorization for that exact target. A request to create or
-update a PR does not by itself authorize uploading incidental screenshots.
+Screenshot publication, load the `github-attachments` skill. Use it for
+push-access GitHub.com repositories with user credentials. Generally prefer
+editing the existing PR body than adding new comments (so it's easier to
+review). In general, the task here is to create a PR that is as easy to review
+as possible.
 
 ## Locate the worktree
 
@@ -57,15 +57,21 @@ local directory.
 
 ## Understand the changes
 
-Inspect staged, unstaged, and untracked changes. Read the changed files and
-surrounding code when the diff alone does not explain the behavior. Review
-`git log --oneline -10`, remote tracking, and every commit included in the PR.
 Determine the intended base branch and inspect `git diff <base>...HEAD` for the
 full PR change. A diff summary or the latest commit alone is not sufficient.
+It's best to review the commits and their diffs and then to understand the
+overall blast radius of the changes: read the changed files and the surrounding
+code when the diffs alone don't fully explain the behavior. If available, the
+design doc is often useful for understanding the intention behind the changes
+(but is not an authoritative source on the implementation).
 
-Stage only intended files. Preserve unrelated work. Base the PR description on
-the actual diff and available verification evidence. Keep the description
-accurate, and state which checks were run and which were not.
+Commit and push only intended files. Preserve unrelated work. Base the PR
+description on the actual diff and available verification evidence. Keep the
+description accurate (shooting for 80% accuracy, 100% clarity) but be
+forthcoming with verification which was not run.
+
+On this note, hashes are often not that useful and in fact typically unfriendly
+to human reviewers, but links/urls are. Prefer links/urls over writing hashes.
 
 ## Coordinate on GitHub
 
