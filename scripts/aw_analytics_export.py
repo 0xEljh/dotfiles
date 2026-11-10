@@ -612,13 +612,11 @@ Examples:
     )
     args = parser.parse_args()
 
-    # Determine output path
     if args.output:
         output_path = Path(args.output)
     else:
         output_path = DEFAULT_OUTPUT_DIR / "aw_analytics.json"
 
-    # Ensure output directory exists
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     print(f"ActivityWatch Analytics Export")
@@ -627,15 +625,12 @@ Examples:
     print(f"Output: {output_path}")
     print()
 
-    # Generate reports
     reports = generate_all_reports(lookback_days=args.days)
 
-    # Write JSON
     indent = 2 if args.pretty else None
     with open(output_path, "w") as f:
         json.dump(reports, f, indent=indent)
 
-    # Summary
     print()
     print(f"Generated reports:")
     print(f"  Daily:   {len(reports['daily'])} reports")

@@ -3,24 +3,16 @@
 with pkgs;
 let shared-packages = import ../shared/packages.nix { inherit pkgs fff; }; in
 shared-packages ++ [
-  # ============================================================================
-  # WSL-SPECIFIC PACKAGES
-  # ============================================================================
-
-  # Core development tools
   gnumake
   cmake
   home-manager
 
-  # Development tools
   direnv
 
-  # Text and terminal utilities
   tree
   unixtools.ifconfig
   unixtools.netstat
 
-  # File and system utilities
   inotify-tools  # inotifywait, inotifywatch - For file system events
   sqlite
   xdg-utils

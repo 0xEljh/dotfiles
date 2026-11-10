@@ -101,8 +101,3 @@ MERMAID_CHECK_BROWSER=/path/to/chromium npm run benchmark
 Without a browser environment variable, the test runner explicitly skips browser
 tests. Linux Nix builds run all tests with their packaged Chromium. macOS browser
 execution must be verified separately.
-
-The benchmark runs five fresh CLI processes per mode for one diagram and twelve
-mixed flowchart, sequence, class, state, ER, and Gantt diagrams. It reports median
-wall time with warm filesystem caches, including imports and browser startup.
-No installation time is included.

@@ -129,7 +129,6 @@ def get_aw_data(target_date=None):
             selected_bucket_ids.append(bucket_id)
 
     for bucket_id in selected_bucket_ids:
-        # Structure: { "bucket_id": [event1, event2...] }
         target_data[bucket_id] = fetch_events(bucket_id)
 
     if any(target_data.values()):
@@ -179,7 +178,6 @@ def sync_to_sleeper_service(data, target_date=None):
 
     print(f"Pushing {filename} to {SLEEPER_SERVICE_ALIAS}...")
 
-    # Using the SSH alias directly
     cmd = [
         "rsync",
         "-az",
@@ -190,7 +188,7 @@ def sync_to_sleeper_service(data, target_date=None):
     try:
         subprocess.run(cmd, check=True)
         print("Sync success.")
-        subprocess.run(["rm", local_path])  # Cleanup
+        subprocess.run(["rm", local_path])
         return True
     except subprocess.CalledProcessError as e:
         print(f"Sync failed. Check SSH connection to '{SLEEPER_SERVICE_ALIAS}'.")

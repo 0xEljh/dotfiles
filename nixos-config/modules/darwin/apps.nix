@@ -16,7 +16,6 @@
     };
   in
     lib.mkForce ''
-      # Set up applications.
       echo "setting up /Applications/Nix Apps..." >&2
 
       rm -rf /Applications/Nix\ Apps

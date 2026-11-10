@@ -67,20 +67,6 @@ on the parent session if you later install an export manually.
 ## Inspect a Codex export
 
 After sync, open `~/.local/share/ai-tools/agents/codex/shared-reviewer.toml`.
-The export is standalone TOML:
-
-```toml
-description = "Reviews supplied changes."
-name = "shared-reviewer"
-developer_instructions = """
-Review the supplied changes.
-Report actionable defects.
-"""
-```
-
-The serializer preserves prompt line breaks, indentation, quotes, and
-backslashes. It escapes TOML delimiters rather than rewriting the prompt.
-Edits, renames, and deletions in shared sources update the exported files.
 Treat the generated export directory as managed output, not as an authoring
 directory. Export does not make the agent available to Codex automatically.
 

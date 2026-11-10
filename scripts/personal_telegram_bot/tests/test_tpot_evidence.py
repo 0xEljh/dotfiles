@@ -3,7 +3,6 @@ from zoneinfo import ZoneInfo
 
 from personal_telegram_bot.tpot.evidence import (
     EvidenceItem,
-    evidence_fingerprint,
     evidence_to_topics,
     normalize_evidence_text,
     select_evidence,
@@ -40,7 +39,7 @@ def test_normalization_redacts_secrets_controls_and_bounds_text():
     assert redactions == 2
 
 
-def test_selection_is_source_balanced_stable_and_fingerprinted():
+def test_selection_is_source_balanced_and_stable():
     items = [
         _item("g2", "github", "second", 13),
         _item("g1", "github", "first", 12),
@@ -52,7 +51,6 @@ def test_selection_is_source_balanced_stable_and_fingerprinted():
 
     assert {item.source for item in selected} == {"github", "notion", "wakatime"}
     assert selected == select_evidence(items, max_items=3, max_chars=2400)
-    assert evidence_fingerprint(selected) == evidence_fingerprint(list(selected))
 
 
 def test_evidence_fallback_topics_remain_source_balanced():

@@ -129,7 +129,6 @@ local function auto_activate_local_python(bufnr)
 end
 
 return {
-  -- Treesitter: ensure common parsers are installed
   {
     "nvim-treesitter/nvim-treesitter",
     opts = function(_, opts)
@@ -161,12 +160,10 @@ return {
     end,
   },
 
-  -- LSP: configure language servers
   {
     "neovim/nvim-lspconfig",
     opts = {
       servers = {
-        -- Python
         ty = ty_lsp_server_config(),
         ruff = {
           root_dir = function(bufnr, on_dir)
@@ -184,26 +181,16 @@ return {
             end
           end,
         },
-        -- TypeScript/JavaScript
         ts_ls = {},
-        -- Go
         gopls = {},
-        -- Rust
         rust_analyzer = {},
-        -- Lua
         lua_ls = {},
-        -- Bash
         bashls = {},
-        -- Docker
         dockerls = {},
-        -- YAML
         yamlls = {},
-        -- JSON
         jsonls = {},
-        -- CSS/HTML
         cssls = {},
         html = {},
-        -- Tailwind
         tailwindcss = {},
       },
     },
@@ -233,7 +220,6 @@ return {
     end,
   },
 
-  -- Mason: ensure tools are installed
   {
     "mason-org/mason.nvim",
     opts = function(_, opts)

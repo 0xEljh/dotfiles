@@ -640,12 +640,10 @@ def compute_daily_summary(hourly_stats: dict) -> dict:
 
 
 def make_cell(text: str) -> list:
-    """Create a table cell with rich text."""
     return [{"type": "text", "text": {"content": text}}]
 
 
 def make_table_row(cells: list) -> dict:
-    """Create a table_row block."""
     return {
         "object": "block",
         "type": "table_row",
@@ -663,7 +661,6 @@ def format_tools_with_total(
     if total_mins == 0:
         return "-"
 
-    # Sort by time descending
     sorted_tools = sorted(tools.items(), key=lambda x: -x[1])[:max_items]
     parts = []
     for tool, seconds in sorted_tools:
@@ -680,13 +677,9 @@ def format_tools_with_total(
 def build_notion_blocks(hourly_stats: dict) -> list:
     """Build Notion blocks wrapped in a single parent toggle."""
 
-    # Compute daily summary
     summary = compute_daily_summary(hourly_stats)
 
-    # Build table rows for hourly data
-    # Columns: Hour | Active | Dev Tools | Planning | Top Apps | Top Sites
     table_rows = [
-        # Header row
         make_table_row(
             ["Hour", "Active", "Dev Tools", "Planning", "Top Apps", "Top Sites"]
         )
@@ -992,19 +985,15 @@ Examples:
     print(f"Journal timezone: {TARGET_TZ}")
     print(f"Current time: {datetime.now(TARGET_TZ).strftime('%Y-%m-%d %H:%M:%S %Z')}")
 
-    # Determine which dates to sync
     dates_to_sync = determine_dates_to_sync(args)
 
-    # Connect to Notion once
     notion = Client(auth=NOTION_API_KEY)
 
-    # Sync each date
     results = []
     for journal_date in dates_to_sync:
         success = sync_date(journal_date, notion)
         results.append((journal_date, success))
 
-    # Summary
     print(f"\n{'=' * 50}")
     print("Sync complete:")
     for d, success in results:

@@ -8,7 +8,6 @@
       allowBroken = false;
       allowInsecure = false;
       allowUnsupportedSystem = false;
-      # Allow only specific unfree packages (security: explicit rather than blanket permission)
       allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) [
         "opencode-claude-agent"
         "unrar"
@@ -16,7 +15,6 @@
     };
 
     overlays =
-      # Apply each overlay found in the /overlays directory
       let path = ../../overlays; in with builtins;
       (map (n: import (path + ("/" + n)))
           (filter (n: match ".*\\.nix" n != null ||

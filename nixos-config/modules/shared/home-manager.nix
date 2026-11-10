@@ -16,7 +16,6 @@
     flake = "${config.home.homeDirectory}/dotfiles/nixos-config";
   };
 
-  # Shared shell configuration
   zsh = {
     enable = true;
     autocd = false;
@@ -41,20 +40,16 @@
         . /nix/var/nix/profiles/default/etc/profile.d/nix.sh
       fi
 
-      # Define variables for directories
       export PATH=$HOME/.pnpm-packages/bin:$HOME/.pnpm-packages:$PATH
       export PATH=$HOME/.npm-packages/bin:$HOME/bin:$PATH
       export PATH=$HOME/.local/share/bin:$PATH
 
-      # Remove history data we don't want to see
       export HISTIGNORE="pwd:ls:cd"
 
-      # vim, later neovim as editor
       export ALTERNATE_EDITOR=""
       export EDITOR="vim"
       export VISUAL="vim"
 
-      # nix shortcuts
       shell() {
           nix-shell '<nixpkgs>' -A "$1"
       }
@@ -85,10 +80,8 @@
         fi
       }
 
-      # Use difftastic, syntax-aware diffing
       alias diff=difft
 
-      # replace other aliases
       alias ls="eza --group --icons";
       alias ll="eza -la --group --git --icons";
       alias la="eza -a --group --icons";
@@ -376,7 +369,6 @@
     escapeTime = 10;
     historyLimit = 50000;
     extraConfig = ''
-      # Remove Vim mode delays
       set -g focus-events on
 
       # Allow escape sequences to pass through to the outer terminal (tmux 3.2+)
@@ -388,24 +380,16 @@
 
       set -g prefix2 C-b
 
-      # Enable full mouse support
       set -g mouse on
 
-      # -----------------------------------------------------------------------------
-      # Key bindings
-      # -----------------------------------------------------------------------------
-
-      # Unbind default keys
       unbind '"'
       unbind %
 
       bind-key -T prefix C-b send-prefix -2
 
-      # Split panes, vertical or horizontal
       bind-key x split-window -v
       bind-key v split-window -h
 
-      # Move around panes with vim-like bindings (h,j,k,l)
       bind-key -n M-k select-pane -U
       bind-key -n M-h select-pane -L
       bind-key -n M-j select-pane -D
@@ -436,10 +420,6 @@
       set -s user-keys[0] "\x1b[13;2u"
       bind-key -n User0 send-keys Escape "[13;2u"
 
-      # -----------------------------------------------------------------------------
-      # Mouse selection and copy mode improvements
-      # -----------------------------------------------------------------------------
-
       # Keep selection highlighted after copying (don't auto-clear)
       set -g @yank_action 'copy-pipe-no-clear'
 
@@ -465,16 +445,13 @@
   kitty = {
     enable = true;
 
-    ## CORE LOOK & FEEL ------------------------------------------------------
     font = {
       name = "MesloLGS NF";
       size = lib.mkDefault 14;      # bump on Hi-DPI if needed
     };
 
-    # Catppuccin Mocha (already present in kitty-themes)
     themeFile = "Catppuccin-Mocha";
 
-    ## GENERAL SETTINGS ------------------------------------------------------
     settings = {
       confirm_os_window_close = 0;
       enable_audio_bell       = "no";
@@ -489,12 +466,9 @@
       # This helps ActivityWatch detect tools like opencode, nvim, etc.
       shell_integration       = "enabled";  # enables title reporting from shell
 
-      # Allow tmux/remote apps to set kitty window/tab titles via OSC escape sequences
-      # This enables tmux window titles to propagate to kitty tabs
       allow_hyperlinks        = "yes";
       allow_cloning           = "ask";
 
-      ## aesthetics
       background_opacity      = "0.80";
       background_blur         = 40;        # macOS only
       hide_window_decorations = "titlebar-and-corners";
@@ -503,7 +477,6 @@
       inactive_border_color   = "#1e1e2e"; # i.e. background for mocha
       active_border_color     = "#cba6f7";  # Mauve accent
 
-      ## tab bar
       tab_bar_edge            = "top";
       tab_bar_min_tabs        = 2;
       tab_title_template      = "{index}:{title}";
@@ -511,9 +484,7 @@
       active_tab_background   = "#a6e3a1";
     };
 
-    ## KEYBINDINGS -----------------------------------------------------------
     keybindings = {
-      # new windows / tabs
       "cmd+shift+enter" = "new_os_window_with_cwd";
       "cmd+shift+t"     = "new_tab_with_cwd";
 
@@ -523,7 +494,6 @@
       "alt+k"           = "neighbor up";
       "alt+j"           = "neighbor down";
 
-      # tab cycling
       "cmd+]"           = "next_tab";
       "cmd+["           = "previous_tab";
 

@@ -20,7 +20,6 @@ let
       user.name = "0xEljh";
       user.email = "elijah@0xeljh.com";
       credential.helper = "${pkgs.gh}/bin/gh auth git-credential";
-      # Force HTTPS instead of SSH
       url."https://github.com/".insteadOf = "git@github.com:";
     };
   };
@@ -69,33 +68,20 @@ in
     file = shared-files;
     stateVersion = "24.11";
 
-    # ============================================================================
-    # DOTFILES SYMLINK AUTOMATION
-    # ============================================================================
-    # This activation script creates symlinks for configs managed outside of Nix
-    # (e.g., nvim config that you want to edit directly without rebuilding)
-    #
-    # Assumes dotfiles are cloned to ~/dotfiles
-    # Adjust DOTFILES_DIR if your setup differs
-
     activation.linkDotfiles = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       DOTFILES_DIR="$HOME/dotfiles"
 
-      # Helper function to create symlink (removes existing if present)
       link_config() {
         local src="$1"
         local dest="$2"
 
         if [ -e "$src" ]; then
-          # Remove existing file/symlink/directory at destination
           if [ -e "$dest" ] || [ -L "$dest" ]; then
             rm -rf "$dest"
           fi
 
-          # Ensure parent directory exists
           mkdir -p "$(dirname "$dest")"
 
-          # Create symlink
           ln -sf "$src" "$dest"
           echo "Linked: $src -> $dest"
         else
@@ -103,14 +89,9 @@ in
         fi
       }
 
-      # Link nvim config
       link_config "$DOTFILES_DIR/nvim" "$HOME/.config/nvim"
     '';
   };
-
-  # ============================================================================
-  # PROGRAMS - Inherit shared config with WSL-specific overrides
-  # ============================================================================
 
   # Inherit shared programs - neovim config is managed separately via symlink
   programs = lib.recursiveUpdate shared-programs {
@@ -142,7 +123,6 @@ in
     };
     zsh = {
       initContent = shared-programs.zsh.initContent + ''
-        # WSL-specific Nix-LD and GPU library paths
         export NIX_LD_LIBRARY_PATH="/run/current-system/sw/share/nix-ld/lib"
         export NIX_LD="/run/current-system/sw/share/nix-ld/lib/ld.so"
         export TRITON_LIBCUDA_PATH="/usr/lib/wsl/lib"

@@ -16,26 +16,17 @@ in
     (import ./services/pr-maintenance.nix { inherit user; })
   ];
 
-  # ============================================================================
-  # WSL-SPECIFIC CONFIGURATION
-  # ============================================================================
-
   wsl = {
     enable = true;
     defaultUser = user;
 
-    # Enable binfmt handler for running Windows .exe files from WSL
     interop.register = true;
 
-    # WSLg - enables GUI application support via Wayland
     wslConf = {
       automount.root = "/mnt";
       interop.appendWindowsPath = true;  # Access Windows executables
       network.generateHosts = true;
     };
-
-    # Start a Docker daemon in WSL (optional, can also use Docker Desktop)
-    # docker-desktop.enable = false;
   };
 
 
@@ -61,15 +52,10 @@ in
     '';
   };
 
-  # ============================================================================
-  # PROGRAMS
-  # ============================================================================
-
   programs = {
     gnupg.agent.enable = true;
     zsh.enable = true;
 
-    # Neovim - available immediately as an editor
     neovim = {
       enable = true;
       defaultEditor = true;
@@ -77,10 +63,6 @@ in
       vimAlias = true;
     };
   };
-
-  # ============================================================================
-  # SERVICES
-  # ============================================================================
 
   services = {
     prMaintenanceWorker = {
@@ -101,7 +83,6 @@ in
       };
     };
 
-    # SSH for remote access (useful for VS Code Remote, etc.)
     openssh = {
       enable = true;
       settings = {
@@ -110,17 +91,12 @@ in
       };
     };
 
-    # Tailscale for secure networking and SSH access
     tailscale = {
       enable = true;
       extraSetFlags = [ "--operator=${user}" ];
     };
 
   };
-
-  # ============================================================================
-  # NETWORKING / FIREWALL
-  # ============================================================================
 
   # NixOS-WSL writes this through to /etc/wsl.conf, and the tailnet machine
   # name follows it (node was never renamed in the admin console). Takes
@@ -135,10 +111,6 @@ in
     # Tailscale's own UDP port for direct connections
     allowedUDPPorts = [ 41641 ];
   };
-
-  # ============================================================================
-  # VIRTUALISATION
-  # ============================================================================
 
   virtualisation = {
     docker = {
@@ -178,10 +150,6 @@ in
     };
   };
 
-  # ============================================================================
-  # NVIDIA CONTAINER TOOLKIT (for GPU passthrough in Docker)
-  # ============================================================================
-
   hardware.nvidia-container-toolkit = {
     enable = true;
     mount-nvidia-executables = false;
@@ -189,7 +157,6 @@ in
     suppressNvidiaDriverAssertion = true;
   };
 
-  # Generate CDI spec for GPU passthrough in containers
   systemd.services.nvidia-cdi-generator = {
     description = "Generate NVIDIA CDI spec for container GPU access";
     wantedBy = [ "docker.service" ];
@@ -198,10 +165,6 @@ in
       ExecStart = "${pkgs.nvidia-docker}/bin/nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml --nvidia-ctk-path=${pkgs.nvidia-container-toolkit}/bin/nvidia-ctk";
     };
   };
-
-  # ============================================================================
-  # USER CONFIGURATION
-  # ============================================================================
 
   users.users.${user} = {
     isNormalUser = true;
@@ -213,10 +176,6 @@ in
     shell = pkgs.zsh;
     openssh.authorizedKeys.keys = sshKeys;
   };
-
-  # ============================================================================
-  # SECURITY
-  # ============================================================================
 
   security.sudo = {
     enable = true;
@@ -231,25 +190,15 @@ in
     }];
   };
 
-  # ============================================================================
-  # SYSTEM PACKAGES
-  # ============================================================================
-
   environment.systemPackages = with pkgs; [
-    # Core utilities
     git
     inetutils
     curl
     wget
 
-    # Editor
     neovim
 
   ];
-
-  # ============================================================================
-  # FONTS
-  # ============================================================================
 
   fonts.packages = with pkgs; [
     dejavu_fonts
@@ -257,10 +206,6 @@ in
     noto-fonts-color-emoji
     meslo-lgs-nf
   ];
-
-  # ============================================================================
-  # ENVIRONMENT VARIABLES
-  # ============================================================================
 
   environment.sessionVariables = {
     EDITOR = "nvim";
@@ -270,9 +215,6 @@ in
     SSL_CERT_FILE = "/etc/ssl/certs/ca-bundle.crt";
   };
 
-  # ============================================================================
   # STATE VERSION - DO NOT CHANGE
-  # ============================================================================
-
   system.stateVersion = "24.11";
 }

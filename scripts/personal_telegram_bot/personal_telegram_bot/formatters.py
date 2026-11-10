@@ -15,7 +15,6 @@ MAX_JOURNAL_CHARS = 900
 
 
 def _task_link(task: Task) -> str:
-    """Task title as a Telegram-HTML link to its Notion page (plain if no URL)."""
     title = html.escape(task.title, quote=False)  # text content: only & < > need escaping
     if task.url:
         return f'<a href="{html.escape(task.url, quote=True)}">{title}</a>'
@@ -220,13 +219,10 @@ def _minutes(seconds: float) -> str:
     return f"{round(seconds / 60)}m"
 
 
-# Per-classification glyph for the hourly report header.
 CLASSIFICATION_EMOJI = {"Deep Work": "🛠", "Shallow Work": "✍️"}
 
 
 def format_hour_report(report) -> str:
-    """Hourly activity report (Telegram HTML): a bold classified header + the top
-    tools that earned it."""
     emoji = CLASSIFICATION_EMOJI.get(report.classification, "🕐")
     header = f"{emoji} <b>{_hour_label(report.hour)} · {html.escape(report.classification)}</b>"
     tools = " · ".join(

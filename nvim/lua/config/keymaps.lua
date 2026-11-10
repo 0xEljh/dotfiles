@@ -1,10 +1,8 @@
--- Swap j/k for up/down
 vim.keymap.set({ "n", "v", "o" }, "j", "k", { desc = "Up" })
 vim.keymap.set({ "n", "v", "o" }, "k", "j", { desc = "Down" })
 vim.keymap.set({ "n", "v", "o" }, "gj", "gk", { desc = "Up (wrapped line)" })
 vim.keymap.set({ "n", "v", "o" }, "gk", "gj", { desc = "Down (wrapped line)" })
 
--- Use fff.nvim for file and content search.
 vim.keymap.del("n", "<leader>ff")
 vim.keymap.del("n", "<leader>fF")
 
