@@ -34,6 +34,18 @@ let
     forceSSL = true;
     globalRedirect = canonicalHost;
   };
+
+  adventureHost = {
+    enableACME = true;
+    forceSSL = true;
+    root = "/srv/www/adventure/current";
+    locations."/" = {
+      tryFiles = "$uri $uri/ =404";
+      extraConfig = ''
+        add_header Cache-Control "no-cache";
+      '';
+    };
+  };
 in
 {
   services.nginx = {
@@ -83,6 +95,9 @@ in
 
       "0xeljh.com" = mkProxyHost 3005;
       "www.0xeljh.com" = mkRedirectHost "0xeljh.com";
+
+      "adventure.0xeljh.com" = adventureHost;
+      "adventure.lurkoor.com" = adventureHost;
 
       "teathegathering.com" = mkProxyHost 3006;
       "www.teathegathering.com" = mkRedirectHost "teathegathering.com";
