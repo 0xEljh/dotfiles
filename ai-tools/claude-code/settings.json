@@ -5,13 +5,33 @@
     ],
     "defaultMode": "auto"
   },
-  "model": "claude-fable-5[1m]",
+  "model": "opus[1m]",
   "enabledPlugins": {
     "pyright-lsp@claude-plugins-official": true
   },
-  "effortLevel": "high",
+  "effortLevel": "xhigh",
+  "modelSettings": {
+    "claude-fable-5-1": {
+      "effortLevel": "high"
+    },
+    "claude-opus-5-5": {
+      "effortLevel": "xhigh"
+    }
+  },
   "tui": "fullscreen",
   "skipDangerousModePermissionPrompt": true,
   "agentPushNotifEnabled": true,
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "autoMode": {
+    "environment": [
+      "$defaults",
+      "Source control: Repositories and worktrees the user selects for work, their configured Git remotes, and task-relevant local dependencies are trusted working scope. Discover this scope from the current workspace, the user's request, and existing local configuration; no repository or organization name allowlist is required.",
+      "Custom tooling: Custom CLIs, wrappers, scripts, shell functions, aliases, and Nix flake apps defined by the user's dotfiles are trusted user-managed tooling, wherever the dotfiles are installed. Establish provenance from their definitions or user-managed installation, not a command name or presence on PATH alone.",
+      "Configured integrations: Existing user-configured accounts and destinations for these tools are trusted for task-related work requested by the user or standing instructions, including document and file sharing. Authentication alone does not authorize a new destination or unrelated publication."
+    ],
+    "allow": [
+      "$defaults",
+      "Custom tooling: Routine task-related use of any custom CLI, wrapper, script, shell function, alias, or Nix flake app defined by the user's dotfiles is allowed, including task-scoped reads and writes and configured publishing workflows. Trust the user-managed definition or installation, not the command name or PATH alone. This is not blanket authorization for unrelated destructive operations, arbitrary commands forwarded through a wrapper, or disclosure of credentials and unrelated private data."
+    ]
+  }
 }
