@@ -169,10 +169,29 @@ class Service:
                                 "Draft readiness recovered by polling\n"
                                 f"Observed: {datetime.fromtimestamp(at, timezone.utc):%Y-%m-%d %H:%M:%S UTC}\n\n"
                                 "The 15-minute delay starts at this observation; the transition may have happened earlier.")
+        discovery = [repo for repo in repositories if self.allowed(repo)]
+        days = c.config.get("recent_interaction_days")
+        if days is not None:
+            try:
+                recent = self.github.recent_interactions(at - days * 86400, at)
+            except GitHubError as error:
+                c.db.execute("INSERT OR REPLACE INTO meta VALUES ('api_deferred_at',?)", (str(at),))
+                self.notice(f"activity-deferred:{int(at // 3600)}", None,
+                            "PR maintenance: recent interaction check delayed\n\n"
+                            "Could not read your GitHub activity feed.\n"
+                            + github_failure_details(error, at)
+                            + "\nImpact: New PR discovery was skipped. Tracked workflows were not cancelled; "
+                            "successfully refreshed PRs can still proceed.")
+                return refreshed
+            discovery = [repo for repo in discovery if repo["id"] in recent]
+        discovery_ids = {repo["id"] for repo in discovery}
         for repository, number in c.pending_refreshes():
             repo = next((repo for repo in repositories if repo["full_name"] == repository and self.allowed(repo)), None)
             if repo is None:
                 c.db.execute("DELETE FROM refreshes WHERE repository=? AND number=?", (repository, number))
+                continue
+            if repo["id"] not in discovery_ids and not c.db.execute(
+                    "SELECT 1 FROM workflows WHERE repository_id=? AND number=?", (repo["id"], number)).fetchone():
                 continue
             live = fetch(repo, number)
             if live is not None and record(live, repo):
@@ -182,9 +201,7 @@ class Service:
             with transaction(c.db):
                 c.db.execute("UPDATE inventories SET inventoried=0")
                 c.db.execute("DELETE FROM meta WHERE key='inventory_required'")
-        for repo in repositories:
-            if not self.allowed(repo):
-                continue
+        for repo in discovery:
             c.db.execute("INSERT INTO inventories(repository_id,repository) VALUES (?,?) ON CONFLICT(repository_id) DO UPDATE SET repository=excluded.repository", (repo["id"], repo["full_name"]))
             inventory = c.db.execute("SELECT * FROM inventories WHERE repository_id=?", (repo["id"],)).fetchone()
             if inventory["inventoried"] and not c.meta("baseline_complete"):
@@ -210,7 +227,7 @@ class Service:
             if valid:
                 c.db.execute("UPDATE inventories SET inventoried=1,cursor=?,last_success=? WHERE repository_id=?", (at, at, repo["id"]))
         if all(c.db.execute("SELECT inventoried FROM inventories WHERE repository_id=?", (repo["id"],)).fetchone()[0]
-               for repo in repositories if self.allowed(repo)):
+               for repo in discovery):
             c.db.execute("INSERT OR IGNORE INTO meta VALUES ('baseline_complete',?)", (str(at),))
         return refreshed
 

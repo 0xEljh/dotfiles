@@ -46,6 +46,27 @@ verifies the authenticated account against `author_id` and constructs only scope
 GET requests. The credential itself can still have write or administration access.
 Neither authentication mode falls back to the other.
 
+Set `recent_interaction_days: 7` to require a recent contribution before discovering
+new PRs in a repository. This optional filter requires personal `gh` authentication.
+It selects repositories with evidence in **both the authenticated account's latest
+300 feed events and the last seven days**. It verifies the event's numeric actor
+against `author_id`. Pushes, issue and PR activity, issue comments, reviews, inline
+review comments, and commit comments count. Views, stars, watching, and another
+account's actions do not. Repository `updated_at` alone is not evidence.
+
+Each poll recomputes the selection without retaining older eligibility. GitHub can
+delay feed events by up to six hours. Authored commits pushed by somebody else may
+not appear, and actions by automation using the configured account do count.
+Normal private-organization and repository allowlist restrictions still apply.
+Set the option to `null` to disable this additional discovery filter.
+
+Tracked workflows continue even after their repository's activity evidence expires.
+Unknown webhook PRs must pass the filter too. Inactive repositories keep their
+discovery cursors for catch-up when they qualify again. If the activity feed cannot
+be read, the poll skips new discovery rather than scanning all repositories.
+Tracked PRs still receive priority refreshes; ordinary GitHub freshness checks and
+backoff can delay their execution independently.
+
 The runner defaults to explicit-URL access. Set `opencode_connection: "managed"`
 to use the usual CLI-managed instance's existing authentication, with
 `opencode_server` pinned to its expected loopback URL. Endpoint movement blocks the

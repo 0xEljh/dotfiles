@@ -29,6 +29,10 @@ from .git_ops import current_base_snapshot
 
 API_ORIGIN = "https://api.github.com"
 READ_PERMISSIONS = {"metadata": "read", "contents": "read", "pull_requests": "read"}
+CONTRIBUTION_EVENTS = frozenset({
+    "PushEvent", "IssuesEvent", "IssueCommentEvent", "PullRequestEvent",
+    "PullRequestReviewEvent", "PullRequestReviewCommentEvent", "CommitCommentEvent",
+})
 
 
 class GitHubError(RuntimeError):
@@ -104,6 +108,7 @@ class GitHub:
         self._token: str | None = None
         self._token_expires_at = 0.0
         self._personal_identity_verified = False
+        self._personal_login: str | None = None
         self._personal_organization_verified = False
         self._private_repositories: dict[str, int] = {}
         self._failures = 0
@@ -317,6 +322,11 @@ class GitHub:
         # GitHub canonicalizes named inventory pagination to the immutable ID.
         return (f"/orgs/{organization}/repos", f"/organizations/{organization_id}/repos")
 
+    def _personal_activity_paths(self) -> tuple[str, str]:
+        # GitHub canonicalizes user-event pagination to the authenticated ID.
+        return (f"/users/{self._personal_login}/events",
+                f"/user/{self.config.get('author_id', DEFAULTS['author_id'])}/events")
+
     def _private_repository(self, item: object, expected_name: str | None = None) -> dict:
         item = self._identity(item)
         owner, name = item.get("owner"), item.get("full_name")
@@ -344,6 +354,13 @@ class GitHub:
         path = parsed.path
         if path == "/user":
             return
+        if (self.config.get("recent_interaction_days") is not None
+                and self._personal_identity_verified and self._personal_login is not None
+                and path in self._personal_activity_paths()):
+            query = parse_qs(parsed.query, keep_blank_values=True)
+            if (query.get("per_page") == ["100"] and query.get("page", ["1"]) in (["1"], ["2"], ["3"])
+                    and set(query) <= {"per_page", "page"}):
+                return
         private_mode = self._private_organization_mode()
         organization = self.config.get("organization", DEFAULTS["organization"])
         if private_mode and path == f"/orgs/{organization}":
@@ -392,6 +409,9 @@ class GitHub:
                 user, _ = self._send(API_ORIGIN + "/user", token=self._token)
                 if self._identity(user)["id"] != self.config.get("author_id", DEFAULTS["author_id"]):
                     raise GitHubError("GitHub authenticated account does not match configured author_id")
+                login = user.get("login")
+                if isinstance(login, str) and re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?", login):
+                    self._personal_login = login
                 self._personal_identity_verified = True
             return self._token
 
@@ -493,6 +513,45 @@ class GitHub:
                     continue
             else:
                 yield self._identity(item)
+
+    def recent_interactions(self, since: float, until: float) -> set[int]:
+        """Contributions in both the latest 300 account events and the time window.
+
+        Feed timestamps need not be ordered. Eligibility is recomputed each poll,
+        without retaining evidence that has fallen outside the feed's boundary.
+        """
+        if self.auth != "gh" or self.config.get("recent_interaction_days") is None:
+            raise GitHubError("recent interactions require an enabled personal account activity filter")
+        if any(type(value) not in (int, float) or not math.isfinite(value) for value in (since, until)) or since > until:
+            raise ValueError("activity window must contain finite ordered Unix timestamps")
+        self._personal_token()
+        if self._personal_login is None:
+            raise GitHubError("GitHub authenticated account lacks a valid activity-feed login")
+        paths = self._personal_activity_paths()
+        url = self._url(paths[0], {"per_page": 100})
+        repositories, seen = set(), set()
+        for _ in range(3):
+            if urlsplit(url).path not in paths or url in seen:
+                raise GitHubError("GitHub activity pagination changed endpoint or repeated a cursor")
+            seen.add(url)
+            events, headers = self._get(url)
+            if not isinstance(events, list) or len(events) > 100:
+                raise GitHubError("GitHub activity page is invalid or exceeds 100 events")
+            for event in events:
+                if not isinstance(event, dict):
+                    raise GitHubError("GitHub activity event is malformed")
+                actor = event.get("actor")
+                if (not isinstance(event.get("type"), str) or event["type"] not in CONTRIBUTION_EVENTS or not isinstance(actor, dict)
+                        or type(actor.get("id")) is not int
+                        or actor["id"] != self.config.get("author_id", DEFAULTS["author_id"])):
+                    continue
+                repository = self._identity(event.get("repo"))
+                if since <= _timestamp(event.get("created_at")) <= until:
+                    repositories.add(repository["id"])
+            url = self._next_link(headers.get("link", ""), url)
+            if url is None:
+                break
+        return repositories
 
     def get_pr(self, owner_repo: str, number: int) -> dict:
         """Read PR metadata, resolving the execution base for an open ready PR."""

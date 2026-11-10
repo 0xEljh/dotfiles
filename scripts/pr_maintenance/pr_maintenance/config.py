@@ -36,6 +36,7 @@ DEFAULTS = {
     "allow_pr_ids": [],
     "organization_wide": False,
     "private_repositories_only": False,
+    "recent_interaction_days": None,
     "execution_enabled": False,
     "rollout_acknowledged": False,
     "models": {},
@@ -48,6 +49,12 @@ def validate_github(config: dict) -> None:
     """Validate authentication and scope even when execution is disabled."""
     if config.get("github_auth", "app") not in ("app", "gh"):
         raise ValueError("github_auth must be app or gh; authentication never falls back")
+    days = config.get("recent_interaction_days")
+    if days is not None:
+        if type(days) not in (int, float) or not math.isfinite(days) or days <= 0:
+            raise ValueError("recent_interaction_days must be finite and positive, or null to disable")
+        if config.get("github_auth", "app") != "gh":
+            raise Blocked("recent_interaction_days requires personal gh authentication for private account events")
     for field in ("organization_id", "author_id"):
         value = config.get(field, DEFAULTS[field])
         if type(value) is not int or value <= 0:

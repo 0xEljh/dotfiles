@@ -142,6 +142,7 @@ in
       organization = "EigenformAI";
       organization_id = 97932676;
       author_id = 34589654;
+      recent_interaction_days = 7;
       models = lib.genAttrs [ "deep_modules" "cleanup" "feedback" "conflicts" "review" ] (_: "openai/gpt-6.1-sol");
       agents = {
         deep_modules = "build";

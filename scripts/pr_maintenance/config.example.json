@@ -2,6 +2,7 @@
   "organization_id": 97932676,
   "organization": "EigenformAI",
   "author_id": 34589654,
+  "recent_interaction_days": null,
   "database": "/var/lib/pr-maintenance/coordinator.sqlite3",
   "execution_enabled": false,
   "rollout_acknowledged": false,
