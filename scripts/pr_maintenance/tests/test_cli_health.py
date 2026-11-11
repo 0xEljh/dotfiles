@@ -76,12 +76,13 @@ def test_live_worker_outage_is_not_healthy_and_notice_is_safe_hourly(ledger, mon
         assert result["healthy"] is False
         assert result["live"] is True
         assert result["ready"] is False
-        assert set(result["issue_codes"]) == {"worker_transport_failures", "recovery_hold", "cancel_requested"}
+        assert set(result["issue_codes"]) == {"worker_transport_failures", "recovery_hold"}
         assert result["worker"]["transport_failures"] == 106
         assert result["worker"]["retry_at"] == at + 900
         assert result["worker"]["last_contact"] == at - 86400
         assert result["worker"]["contact_age"] == 86400
-        assert result["held_attempts"] == 8
+        assert result["held_attempts"] == 0
+        assert result["pending_cancellations"] == 8
         assert result["recovery_hold"] is True
         assert "private" not in json.dumps(result)
         assert all("ghp_" not in text and "raw reason" not in text for text in delivered)
@@ -91,7 +92,7 @@ def test_live_worker_outage_is_not_healthy_and_notice_is_safe_hourly(ledger, mon
     assert "no replacement" in reports[0][0].lower()
 
 
-@pytest.mark.parametrize("state", ["inspection_required", "deadline_exceeded", "publication_unknown", "cancel_requested"])
+@pytest.mark.parametrize("state", ["inspection_required", "deadline_exceeded", "publication_unknown"])
 def test_unresolved_attempt_states_degrade_readiness(ledger, monkeypatch, capsys, state):
     config_path, coordinator, _, _ = ledger
     add_attempt(coordinator, state)
@@ -103,18 +104,101 @@ def test_unresolved_attempt_states_degrade_readiness(ledger, monkeypatch, capsys
     assert result["held_attempts"] == 1
 
 
-@pytest.mark.parametrize("hold", ["deadline_exceeded", "cancel_requested"])
-def test_coordinator_side_hold_is_not_hidden_by_running_worker_state(ledger, monkeypatch, capsys, hold):
+def test_coordinator_side_hold_is_not_hidden_by_running_worker_state(ledger, monkeypatch, capsys):
     config_path, coordinator, _, _ = ledger
     add_attempt(coordinator)
-    if hold == "deadline_exceeded":
-        coordinator.db.execute("UPDATE stages SET state=? WHERE active_attempt_id IS NOT NULL", (hold,))
-    else:
-        coordinator.db.execute("UPDATE workflows SET lifecycle_state=?", (hold,))
+    coordinator.db.execute("UPDATE stages SET state='deadline_exceeded' WHERE active_attempt_id IS NOT NULL")
     code, result, _ = health(config_path, monkeypatch, capsys)
     assert code == 1
-    assert result["issue_codes"] == [hold]
+    assert result["issue_codes"] == ["deadline_exceeded"]
     assert result["held_attempts"] == 1
+
+
+@pytest.mark.parametrize("source", ["worker", "stage", "merged", "closed", "operator", "all"])
+def test_pending_cancellation_is_informational_without_releasing_ownership(ledger, monkeypatch, capsys, source):
+    config_path, coordinator, outbox, _ = ledger
+    add_attempt(coordinator, "cancel_requested" if source in {"worker", "all"} else "running")
+    if source == "stage":
+        coordinator.db.execute("UPDATE stages SET state='cancel_requested' WHERE active_attempt_id IS NOT NULL")
+    elif source in {"merged", "closed", "all"}:
+        closed = pr(ref="feature-100", number=100)
+        closed.update(state="closed", merged=source != "closed")
+        coordinator.observe(closed)
+    elif source == "operator":
+        coordinator.control("cancel", 100, reason="Human takes over")
+    before = coordinator.status()
+    stages = list(coordinator.db.execute("SELECT * FROM stages"))
+
+    code, result, delivered = health(config_path, monkeypatch, capsys)
+
+    assert code == 0
+    assert result["healthy"] is True and result["live"] is True and result["ready"] is True
+    assert result["issue_codes"] == [] and result["attempt_issues"] == {}
+    assert result["held_attempts"] == 0 and result["pending_cancellations"] == 1
+    assert delivered == [] and outbox.status()["pending_reports"] == 0
+    assert coordinator.db.execute("SELECT COUNT(*) FROM reports").fetchone()[0] == 0
+    assert coordinator.status() == before
+    assert list(coordinator.db.execute("SELECT * FROM stages")) == stages
+    assert "private" not in json.dumps(result) and "ghp_" not in json.dumps(result)
+
+
+def test_terminal_attempt_is_not_a_pending_cancellation(ledger, monkeypatch, capsys):
+    config_path, coordinator, _, _ = ledger
+    attempt = add_attempt(coordinator)
+    coordinator.accept_status(attempt, {"state": "cancelled", "quiescent": True, "publication_state": "not_published"})
+    coordinator.db.execute("UPDATE workflows SET lifecycle_state='cancel_requested'")
+    code, result, _ = health(config_path, monkeypatch, capsys)
+    assert code == 0 and result["pending_cancellations"] == 0
+
+
+@pytest.mark.parametrize("failure", ["inspection_required", "deadline_exceeded", "publication_unknown"])
+def test_pending_cancellation_does_not_hide_independent_attempt_failure(ledger, monkeypatch, capsys, failure):
+    config_path, coordinator, _, _ = ledger
+    add_attempt(coordinator, failure)
+    coordinator.control("cancel", 100, reason="Human takes over")
+    code, result, delivered = health(config_path, monkeypatch, capsys)
+    assert code == 1 and result["healthy"] is False and result["ready"] is False
+    assert result["issue_codes"] == [failure]
+    assert result["attempt_issues"] == {failure: 1}
+    assert result["held_attempts"] == 1 and result["pending_cancellations"] == 1
+    assert delivered
+
+
+def test_deadline_failure_survives_worker_cancellation_acknowledgement(ledger, monkeypatch, capsys):
+    config_path, coordinator, _, _ = ledger
+    finished = add_attempt(coordinator)
+    coordinator.accept_status(finished, {"state": "noop", "quiescent": True, "publication_state": "not_published"})
+    attempt = coordinator.claim(100)["attempt_id"]
+    coordinator.accept_status(attempt, {"state": "running", "quiescent": False, "publication_state": "not_published"})
+    # Match the deadline pause recorded by a tick, then its next worker collection.
+    coordinator.db.execute("UPDATE workflows SET lifecycle_state='paused',paused_reason='deadline_exceeded; inspection required'")
+    coordinator.db.execute("UPDATE stages SET state='deadline_exceeded' WHERE active_attempt_id=?", (attempt,))
+    coordinator.accept_status(attempt, {"state": "cancel_requested", "quiescent": False, "publication_state": "not_published"})
+    code, result, _ = health(config_path, monkeypatch, capsys)
+    assert code == 1 and result["ready"] is False
+    assert result["issue_codes"] == ["deadline_exceeded"]
+    assert result["attempt_issues"] == {"deadline_exceeded": 1}
+    assert result["held_attempts"] == 1 and result["pending_cancellations"] == 1
+
+
+@pytest.mark.parametrize("publication", ["unknown", "push_in_flight"])
+def test_cancellation_does_not_hide_uncertain_publication(ledger, monkeypatch, capsys, publication):
+    config_path, coordinator, _, _ = ledger
+    attempt = add_attempt(coordinator, "cancel_requested")
+    coordinator.accept_status(attempt, {"state": "cancel_requested", "quiescent": False, "publication_state": publication})
+    code, result, _ = health(config_path, monkeypatch, capsys)
+    assert code == 1 and result["healthy"] is False
+    assert result["issue_codes"] == ["publication_unknown"]
+    assert result["attempt_issues"] == {"publication_unknown": 1}
+    assert result["held_attempts"] == 1 and result["pending_cancellations"] == 1
+
+
+def test_ordinary_publication_in_flight_is_not_a_cancellation_failure(ledger, monkeypatch, capsys):
+    config_path, coordinator, _, _ = ledger
+    attempt = add_attempt(coordinator)
+    coordinator.accept_status(attempt, {"state": "running", "quiescent": False, "publication_state": "push_in_flight"})
+    code, result, _ = health(config_path, monkeypatch, capsys)
+    assert code == 0 and result["pending_cancellations"] == 0
 
 
 @pytest.mark.parametrize("execution_enabled", [False, True])

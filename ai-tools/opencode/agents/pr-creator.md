@@ -4,7 +4,7 @@ description:
   Use when asked to commit, push, open, or update a PR and check linked changes.
 mode: subagent
 model: openai/gpt-6.1-sol
-variant: medium
+variant: high
 permission:
   "*": deny
   read: allow
@@ -32,9 +32,9 @@ permission:
 Create or update the requested PR. Use the `pr` and `technical-writing` skill to
 write the body.
 
-Screenshot publication, load the `github-attachments` skill. Use it for
-push-access GitHub.com repositories with user credentials. Generally prefer
-editing the existing PR body than adding new comments (so it's easier to
+For screenshot/video/asset publication, load the `github-attachments` skill. Use
+it for push-access GitHub.com repositories with user credentials. Generally
+prefer editing the existing PR body than adding new comments (so it's easier to
 review). In general, the task here is to create a PR that is as easy to review
 as possible.
 

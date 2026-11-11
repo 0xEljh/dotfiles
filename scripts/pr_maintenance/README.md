@@ -119,10 +119,21 @@ mode.
 ## Inspect and control workflows
 
 `health` reports tick liveness separately from operational readiness. Worker
-transport failures, retained execution holds, a recovery hold, stale ticks, and
-stale pending reports make `healthy` false. Normal running work does not. Health
-does not wait behind the coordinator's operator lock; private report delivery has
-its own nonblocking lock.
+transport failures, inspection holds, exceeded deadlines, unknown publication,
+rejected publication authorization, a recovery hold, stale ticks, and stale pending
+reports make `healthy` false. Normal running work and pending cancellations do not.
+`pending_cancellations` counts nonterminal attempts with cancellation requested by
+the worker, active stage, or workflow. It counts each attempt once. Cancellation
+alone does not appear in `issue_codes`, `attempt_issues`, or `held_attempts`, cause
+a nonzero exit, or create a degraded-health notification. Independent failures still
+apply, including an unknown or in-flight publication during cancellation.
+A deadline-triggered pause still reports `deadline_exceeded` after the worker
+acknowledges cancellation.
+
+A healthy cancellation check does not confirm that execution stopped, release
+ownership, or authorize replacement work. Cancellation keeps its existing
+reconciliation and inspection requirements. Health does not wait behind the
+coordinator's operator lock. Private report delivery has its own nonblocking lock.
 
 Transport failures and unexpected coordinator exceptions retain owner-only JSON
 diagnostics beside the coordinator database. Journal entries name the safe

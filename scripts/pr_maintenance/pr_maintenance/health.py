@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 from collections import Counter
 
 from .common import TERMINAL
 
 
-HELD_STATES = frozenset({"inspection_required", "deadline_exceeded", "publication_unknown", "cancel_requested"})
+HELD_STATES = frozenset({"inspection_required", "deadline_exceeded", "publication_unknown"})
 
 
 def snapshot(coordinator, reports: dict, *, at: float) -> dict:
@@ -13,6 +14,7 @@ def snapshot(coordinator, reports: dict, *, at: float) -> dict:
 
     A recent tick is not proof of worker contact. Ordinary active work and an
     intentionally disabled worker do not themselves indicate an operational issue.
+    Pending cancellation is informational and does not establish quiescence.
     Only allowlisted codes and aggregate counts leave the private ledger here.
     """
     config = coordinator.config
@@ -26,15 +28,25 @@ def snapshot(coordinator, reports: dict, *, at: float) -> dict:
     recovery_hold = bool(coordinator.meta("recovery_hold"))
     counts = Counter()
     held = 0
+    pending_cancellations = 0
     for row in coordinator.db.execute("""
-        SELECT a.state, s.state AS stage_state, w.lifecycle_state
+        SELECT a.state, a.result, s.state AS stage_state, w.lifecycle_state, w.paused_reason
         FROM attempts a
         LEFT JOIN stages s ON s.active_attempt_id=a.id AND s.pr_id=a.pr_id AND s.kind=a.stage
         JOIN workflows w ON w.pr_id=a.pr_id
     """):
         issues = {row["state"], row["stage_state"]} & HELD_STATES
-        if row["lifecycle_state"] == "cancel_requested" and row["state"] not in TERMINAL:
-            issues.add("cancel_requested")
+        # Worker cancellation acknowledgements replace the stage's deadline state.
+        if (row["state"] not in TERMINAL and row["lifecycle_state"] == "paused"
+                and row["paused_reason"] == "deadline_exceeded; inspection required"):
+            issues.add("deadline_exceeded")
+        if row["state"] not in TERMINAL and "cancel_requested" in (
+            row["state"], row["stage_state"], row["lifecycle_state"]
+        ):
+            pending_cancellations += 1
+            # Cancellation can replace the worker state without resolving a push.
+            if json.loads(row["result"]).get("publication_state") in {"unknown", "push_in_flight"}:
+                issues.add("publication_unknown")
         if issues:
             held += 1
             counts.update(issues)
@@ -69,6 +81,7 @@ def snapshot(coordinator, reports: dict, *, at: float) -> dict:
         },
         "held_attempts": held,
         "attempt_issues": dict(sorted(counts.items())),
+        "pending_cancellations": pending_cancellations,
         "recovery_hold": recovery_hold,
         "reports": reports,
     }

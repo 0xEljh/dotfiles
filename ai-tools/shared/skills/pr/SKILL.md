@@ -140,6 +140,8 @@ function expandSkill(command: string): string {
 
 ### Evidence
 
+For screenshot uploads, load `github-attachments` before asking the user to upload manually.
+
 Don't spam. The fact that all tests pass is expected. The approach taken to
 write the code is internal. Do not cite internal documentation or notes. Those
 aren't necessary to a reviewer and not only do they likely not have access but

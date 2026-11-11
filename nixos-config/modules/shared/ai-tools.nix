@@ -34,6 +34,16 @@ in
 
   config = {
     home = {
+      # Use a Nix-packaged browser on Linux; project configs can override it.
+      file.".playwright/cli.config.json" = lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
+        text = builtins.toJSON {
+          browser = {
+            browserName = "chromium";
+            launchOptions.executablePath = "${pkgs.chromium}/bin/chromium";
+          };
+        };
+      };
+
       packages = [
         (pkgs.callPackage ../../packages/opencode-buffered { opencode = opencodePackage; })
       ];
@@ -138,9 +148,11 @@ in
           fi
         fi
 
-        if ! "$PLAYWRIGHT_CLI" install-browser chromium; then
-          echo "Warning: Failed to install the browser revision pinned by Playwright CLI"
-        fi
+        ${lib.optionalString (!pkgs.stdenv.hostPlatform.isLinux) ''
+          if ! "$PLAYWRIGHT_CLI" install-browser chromium; then
+            echo "Warning: Failed to install the browser revision pinned by Playwright CLI"
+          fi
+        ''}
 
         # OpenCode
         link_config ${lib.escapeShellArg (toString opencodeConfig)} "$HOME/.config/opencode/opencode.json"

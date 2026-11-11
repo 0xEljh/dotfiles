@@ -27,6 +27,21 @@ research or other notes), call the `readability` agent on it.
 
 ## Implementation Review
 
+Before static implementation review, run independent consumer-level acceptance:
+
+- `acceptance-contract`: black-box checks of the supplied acceptance criteria.
+- `acceptance-redteam`: source-informed attempts to break the intended guarantees.
+- `acceptance-user`: black-box task completion without prescribed steps. Add it
+  for multi-step workflows, onboarding, and integrations, or when requested.
+
+Use the contract verifier and adversary by default for the behavior changes
+listed below. Give black-box agents requirements, public docs, and a runnable
+target, not source, diffs, implementer explanations, or other agents' reports.
+Give the task-based user a goal rather than an acceptance script. Keep reports
+independent until completion, include them in the static-review packet, and
+rerun acceptance against the final target after fixes. Prefer isolated or
+disposable environments and complete teardown and cleanup.
+
 After implementation and verification, run
 `implementation-reviewer`/`implementation-reviewer-heavy`.
 
