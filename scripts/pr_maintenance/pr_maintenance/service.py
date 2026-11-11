@@ -322,6 +322,45 @@ class Service:
         text = render_summary(workflow, stages, final) + execution_assurance(stages)
         self.notice(key, workflow["pr_id"], text)
 
+    def authorize_publication(self, attempt: dict, live: dict):
+        from .diagnostics import retain_diagnostic
+
+        c, attempt_id = self.c, attempt["id"]
+        marker = "publication_rejected:" + attempt_id
+        try:
+            status = self.worker.request("status", attempt_id)
+            if (not isinstance(status, dict) or status.get("attempt_id") != attempt_id
+                    or status.get("spec_hash") != attempt["spec_hash"]):
+                raise Blocked("worker status identity or specification hash mismatch")
+            if (not isinstance(status.get("state"), str) or not isinstance(status.get("publication_state"), str)
+                    or type(status.get("quiescent")) is not bool):
+                raise Blocked("worker publication status is malformed")
+            if (status["state"] == "ready_to_publish"
+                    and (status["publication_state"] != "ready_to_publish" or not status["quiescent"])):
+                raise Blocked("worker publication status is not a quiescent ready candidate")
+            if (status.get("state") == "ready_to_publish"
+                    and status.get("candidate_sha") != attempt["result"].get("candidate_sha")):
+                raise Blocked("worker publication candidate changed during authorization")
+            c.accept_status(attempt_id, status)
+            if status["state"] != "ready_to_publish":
+                c.db.execute("DELETE FROM meta WHERE key=?", (marker,))
+                return
+            # Use this fresh response, not tick-start collection or coordinator time.
+            grant = c.authorize(attempt_id, live, worker_time=status.get("worker_time"))
+            if grant:
+                c.accept_status(attempt_id, self.worker.request("authorize-publish", attempt_id, authorization=grant))
+                c.db.execute("DELETE FROM meta WHERE key=?", (marker,))
+        except Blocked as error:
+            reference = retain_diagnostic(c.path, "publication_authorization", attempt_id=attempt_id,
+                                          exception=str(error))
+            c.db.execute("INSERT OR REPLACE INTO meta VALUES (?,?)", (marker, str(reference or "unavailable")))
+            workflow = c.workflow(attempt["pr_id"])
+            self.notice(marker, attempt["pr_id"],
+                        f"PR maintenance: {workflow['repository']} #{workflow['number']}\n"
+                        f"{workflow['pr']['html_url']}\n\n"
+                        "Publication authorization deferred. The retained candidate was not replaced.\n"
+                        "A later poll will retry the handshake. If this repeats, inspect private coordinator diagnostics.")
+
     def tick(self):
         c, at = self.c, self.now()
         c.enable(at)
@@ -406,9 +445,7 @@ class Service:
                 if state == "ready_to_publish" and attempt["pr_id"] in refreshed:
                     live = self.github.get_pr(workflow["repository"], workflow["number"])
                     c.observe(live, self.now())
-                    grant = c.authorize(row[0], live, self.now())
-                    if grant:
-                        c.accept_status(row[0], self.worker.request("authorize-publish", row[0], authorization=grant))
+                    self.authorize_publication(attempt, live)
             for row in c.db.execute("SELECT pr_id FROM stages WHERE kind='conflicts' AND state='blocked'").fetchall():
                 workflow = c.workflow(row[0])
                 stage = c.stages(row[0])[-1]

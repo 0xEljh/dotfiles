@@ -279,9 +279,13 @@ class Worker:
                 or authorization.get("head_ref") != spec["pr"]["head"]["ref"]):
             raise GrantRejected("publication grant is not bound to this exact candidate and branch")
         expires = authorization.get("expires_at", 0)
-        if not isinstance(expires, (float, int)) or not math.isfinite(expires) or expires <= time.time():
+        now = time.time()
+        maximum = self.config.get("authorization_max_seconds", 60)
+        if type(maximum) not in (int, float) or not math.isfinite(maximum) or maximum <= 0:
+            raise GrantRejected("authorization_max_seconds must be a finite positive number")
+        if type(expires) not in (float, int) or not math.isfinite(expires) or expires <= now:
             raise GrantRejected("publication authorization expired")
-        if expires - time.time() > self.config.get("authorization_max_seconds", 60):
+        if expires - now > maximum:
             raise GrantRejected("publication authorization exceeds configured short lifetime")
 
     def authorize(self, attempt: str, authorization: dict) -> dict:
@@ -521,7 +525,8 @@ class Worker:
                 raise Blocked("transport/spec attempt identity mismatch")
             return self.submit(spec, request.get("spec_hash"), request.get("feedback"))
         if operation in ("status", "collect"):
-            return self.status(attempt)
+            status = self.status(attempt)
+            return dict(status, worker_time=time.time()) if operation == "status" else status
         if operation == "authorize-publish":
             authorization = request.get("authorization", {})
             if not isinstance(authorization, dict):

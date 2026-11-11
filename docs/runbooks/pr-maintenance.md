@@ -201,6 +201,13 @@ For a publication incident, `resume` also queues a fresh-epoch acknowledgement t
 the worker. Confirm delivery in `status`; a local resume alone does not release
 the worker's branch claim. The incident remains recorded after acknowledgement.
 
+Publication expiry uses a fresh timestamp from the worker's exact attempt status,
+not the coordinator's clock. Before deploying, confirm that coordinator
+`publish_ttl` does not exceed worker `authorization_max_seconds` (both default to
+60 seconds). Transport and scheduling consume this window. An expired grant
+requires a fresh handshake for the retained candidate, not another coding attempt
+or a larger lifetime to compensate for clock skew.
+
 The worker never switches or cleans a developer checkout. Do not delete failed
 attempt directories to release ownership. No automatic retry is safe while an
 earlier attempt might still edit or publish.
@@ -455,8 +462,11 @@ Historical generic warnings remain immutable and do not acquire retained files.
    Never rerun coding or fall back to a PR comment because Telegram failed.
 
 The independent health timer distinguishes completed ticks from operational
-degradation. Worker transport failures, held attempts, recovery holds, stale ticks,
-and stale pending reports produce an unhealthy result. A normal running attempt
+degradation. Worker transport failures, held attempts, recovery holds, rejected
+publication authorization, stale ticks, and stale pending reports produce an
+unhealthy result. `publication_rejected` means an active candidate's handshake
+failed; inspect its private diagnostic. Other PRs and reports continue, and a
+successful handshake clears that warning. A normal running attempt
 does not. Health does not wait for the tick's operator lock. Release the operator
 lock before network delivery. A separate nonblocking delivery lock prevents
 overlapping senders without holding up coordination.

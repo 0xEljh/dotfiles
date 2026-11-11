@@ -206,16 +206,16 @@ def test_grants_bind_epoch_candidate_and_live_identity(coordinator):
     status = {"state": "ready_to_publish", "quiescent": True,
               "publication_state": "ready_to_publish", "candidate_sha": "c" * 40}
     c.accept_status(attempt["attempt_id"], status)
-    grant = c.authorize(attempt["attempt_id"], pr(), at=2000)
+    grant = c.authorize(attempt["attempt_id"], pr(), worker_time=2000)
     assert grant["expires_at"] == 2060
     assert grant["input_head_sha"] == "a" * 40
     c.control("pause", 100, reason="inspect candidate")
-    assert c.authorize(attempt["attempt_id"], pr(), at=2001) is None
+    assert c.authorize(attempt["attempt_id"], pr(), worker_time=2001) is None
     c.control("resume", 100, reason="continue")
-    assert c.authorize(attempt["attempt_id"], pr(), at=2002)["authorization_epoch"] > grant["authorization_epoch"]
+    assert c.authorize(attempt["attempt_id"], pr(), worker_time=2002)["authorization_epoch"] > grant["authorization_epoch"]
     moved = pr()
     moved["head"]["sha"] = "d" * 40
-    assert c.authorize(attempt["attempt_id"], moved, at=2003) is None
+    assert c.authorize(attempt["attempt_id"], moved, worker_time=2003) is None
 
 
 def test_incident_holds_same_branch_but_not_other_branches(coordinator):
@@ -265,7 +265,7 @@ def test_retarget_and_author_change_revoke_publication(coordinator):
     retargeted["base"]["ref"] = "release"
     c.observe(retargeted, 2100)
     assert c.workflow(100)["lifecycle_state"] == "paused"
-    assert c.authorize(attempt["attempt_id"], retargeted) is None
+    assert c.authorize(attempt["attempt_id"], retargeted, worker_time=2000) is None
     c.observe(pr() | {"user": {"id": 42}}, 2200)
     assert c.workflow(100)["lifecycle_state"] == "cancel_requested"
 
@@ -354,15 +354,15 @@ def test_changed_scope_revokes_existing_attempt_and_publication_grants(coordinat
     attempt = c.claim(100)
     c.accept_status(attempt["attempt_id"], {"state": "ready_to_publish", "quiescent": True,
                     "publication_state": "ready_to_publish", "candidate_sha": "c" * 40})
-    grant = c.authorize(attempt["attempt_id"], pr())
+    grant = c.authorize(attempt["attempt_id"], pr(), worker_time=2000)
     c.config.update(scope)
-    assert c.authorize(attempt["attempt_id"], pr()) is None
+    assert c.authorize(attempt["attempt_id"], pr(), worker_time=2000) is None
     assert c.claim(100) is None
     assert c.workflow(100)["lifecycle_state"] == "paused"
     c.config.update(allow_pr_ids=[100], allow_repository_ids=[77])
     c.control("resume", 100, reason="restore exact pilot enrollment")
     assert c.claim(100)["attempt_id"] == attempt["attempt_id"]
-    assert c.authorize(attempt["attempt_id"], pr())["authorization_epoch"] > grant["authorization_epoch"]
+    assert c.authorize(attempt["attempt_id"], pr(), worker_time=2000)["authorization_epoch"] > grant["authorization_epoch"]
 
 
 def test_baseline_scope_exclusion_requires_permitted_explicit_enrollment(coordinator):
@@ -440,11 +440,11 @@ def test_private_visibility_drift_revokes_grant_pauses_and_never_auto_resumes(co
     attempt = c.claim(100)
     c.accept_status(attempt["attempt_id"], {"state": "ready_to_publish", "quiescent": True,
                     "publication_state": "ready_to_publish", "candidate_sha": "c" * 40})
-    grant = c.authorize(attempt["attempt_id"], value)
+    grant = c.authorize(attempt["attempt_id"], value, worker_time=2000)
     assert grant
     public = pr()
     public["base"]["repo"]["private"] = False
-    assert c.authorize(attempt["attempt_id"], public) is None
+    assert c.authorize(attempt["attempt_id"], public, worker_time=2000) is None
     c.observe(public)
     assert c.workflow(100)["lifecycle_state"] == "paused"
     assert c.claim(100) is None
@@ -454,7 +454,7 @@ def test_private_visibility_drift_revokes_grant_pauses_and_never_auto_resumes(co
     assert c.claim(100) is None
     c.control("resume", 100, reason="private visibility restored and inspected")
     assert c.claim(100)["attempt_id"] == attempt["attempt_id"]
-    assert c.authorize(attempt["attempt_id"], value)["authorization_epoch"] > grant["authorization_epoch"]
+    assert c.authorize(attempt["attempt_id"], value, worker_time=2000)["authorization_epoch"] > grant["authorization_epoch"]
 
 
 def test_private_scope_keeps_startup_baseline_exclusion(coordinator):
@@ -482,7 +482,7 @@ def test_private_scope_requires_private_head_for_claims_controls_and_grants(coor
     c.accept_status(attempt["attempt_id"], {"state": "ready_to_publish", "quiescent": True,
                     "publication_state": "ready_to_publish", "candidate_sha": "c" * 40})
     value["head"]["repo"]["private"] = private
-    assert c.authorize(attempt["attempt_id"], value) is None
+    assert c.authorize(attempt["attempt_id"], value, worker_time=2000) is None
     c.observe(value)
     assert c.workflow(100)["lifecycle_state"] == "paused"
     assert c.claim(100) is None

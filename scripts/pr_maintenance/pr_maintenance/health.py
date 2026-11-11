@@ -43,6 +43,13 @@ def snapshot(coordinator, reports: dict, *, at: float) -> dict:
         operational.append("worker_transport_failures")
     if recovery_hold:
         operational.append("recovery_hold")
+    if coordinator.db.execute("""
+        SELECT 1 FROM meta m JOIN attempts a ON m.key='publication_rejected:' || a.id
+        JOIN stages s ON s.active_attempt_id=a.id
+        JOIN workflows w ON w.pr_id=a.pr_id
+        WHERE a.state='ready_to_publish' AND w.lifecycle_state='active' LIMIT 1
+    """).fetchone():
+        operational.append("publication_rejected")
     operational.extend(sorted(counts))
     report_age = reports["oldest_pending_age"]
     if report_age is not None and report_age > config.get("report_stale_after", 900):

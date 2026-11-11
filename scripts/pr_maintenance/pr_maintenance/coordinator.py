@@ -376,8 +376,9 @@ class Coordinator:
                                     "input_sha": attempt["spec"]["input_head_sha"],
                                     "candidate_sha": status.get("candidate_sha")}))
 
-    def authorize(self, attempt_id: str, live: dict, at: float | None = None):
-        at = self.now() if at is None else at
+    def authorize(self, attempt_id: str, live: dict, *, worker_time: float):
+        if type(worker_time) not in (int, float) or not math.isfinite(worker_time) or worker_time <= 0:
+            raise Blocked("worker time sample must be a finite positive number")
         with transaction(self.db):
             attempt = self.attempt(attempt_id)
             spec, result = attempt["spec"], attempt["result"]
@@ -402,7 +403,7 @@ class Coordinator:
             return {"attempt_id": attempt_id, "candidate_sha": result["candidate_sha"],
                     "input_head_sha": spec["input_head_sha"], "head_repository_id": live["head"]["repo"]["id"],
                     "head_ref": live["head"]["ref"], "authorization_epoch": stage["authorization_epoch"],
-                    "expires_at": at + self.config.get("publish_ttl", 60)}
+                     "expires_at": worker_time + self.config.get("publish_ttl", 60)}
 
     def control(self, action: str, pr_id: int, stage: str | None = None, reason: str = ""):
         if not reason.strip():

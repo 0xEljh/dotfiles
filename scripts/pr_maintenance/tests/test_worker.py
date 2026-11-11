@@ -345,6 +345,18 @@ class WorkerPublicationTests(Repository):
                 self.worker._publish(self.spec)
         self.assertEqual(git(self.origin, "rev-parse", "refs/heads/topic"), self.head)
 
+    def test_grant_expiring_after_acceptance_is_rejected_before_git_push(self):
+        from types import SimpleNamespace
+
+        self.approve()
+        grant = self.grant()
+        self.worker.authorize(self.spec["attempt_id"], grant)
+        with patch("pr_maintenance.worker.time", SimpleNamespace(time=lambda: grant["expires_at"])), \
+             patch.object(self.worker, "live", return_value=self.spec["pr"]):
+            with self.assertRaisesRegex(Blocked, "expired"):
+                self.worker._publish(self.spec)
+        self.assertEqual(git(self.origin, "rev-parse", "refs/heads/topic"), self.head)
+
     def test_altered_verification_artifact_cannot_publish(self):
         self.approve()
         self.worker.authorize(self.spec["attempt_id"], self.grant())
