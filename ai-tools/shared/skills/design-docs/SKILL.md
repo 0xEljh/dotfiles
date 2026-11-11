@@ -46,6 +46,23 @@ At each step, especially steps 1 and 4, ask clarifying questions where needed.
 If relaxing a constraint would lead to a significantly better design, escalate
 that to the user.
 
+### Publish local screenshots
+
+Use local image paths relative to the Markdown file, such as
+`![Settings after the change](./screenshots/settings.png)`. Put each image in its
+own paragraph. `notion-cat` uploads local images by default, including images in
+lists and quotes. Mixed text-and-image paragraphs, headings, table cells, and
+remote image sources fail before publication. Download remote images first, or
+use `--images=alt` for deliberate text-only publication without asset reads.
+
+If asset selection is uncertain, inspect
+`notion-cat --dry-run --suppress-output path/to/report.md` before publishing. Dry-run
+needs no credentials and lists resolved paths, sizes, and upload reuse. Markdown
+is trusted input: absolute paths and symlinks can select files outside its folder.
+Uploads copy the images into Notion with the destination page's permissions.
+Inspect screenshots for sensitive content before publishing. Raw, stdin, and
+mixed code inputs stay literal and do not upload images.
+
 ## Good design
 
 Software engineering is about managing complexity. We always need to decide if
