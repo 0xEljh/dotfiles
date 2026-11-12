@@ -636,45 +636,13 @@ class Worker:
         check_secrets(canonical(snapshot))
         return dict(prepared, feedback=snapshot)
 
-    def record_manifest(self, attempt: str, evidence: Path) -> dict:
-        spec, data = self._row(attempt)
-        if data["state"] != "running":
-            raise Blocked("scope manifest only accepted for the running attempt")
-        if evidence.resolve().parent != self.artifacts(attempt).resolve():
-            raise Blocked("manifest input must be a private attempt artifact")
-        value = json.loads(evidence.read_text())
-        paths = value.get("paths")
-        if not isinstance(paths, dict) or not paths:
-            raise Blocked("path manifest with per-path PR relationship is required")
-        for path, reason in paths.items():
-            if (not isinstance(path, str) or not path or Path(path).is_absolute() or ".." in Path(path).parts
-                    or ".git" in Path(path).parts or "\0" in path or not isinstance(reason, str) or not reason.strip()):
-                raise Blocked("invalid path manifest or missing rationale")
-        check_secrets(canonical(value))
-        selected = data.get("selected_verification")
-        if spec["verification_profile"] is None:
-            proposed = value.get("verification_profile", selected)
-            self._validate_profile(proposed)
-            if selected is not None and proposed != selected:
-                raise Blocked("selected verification cannot change after its pre-edit recording")
-            selected = proposed
-        if not data.get("manifest"):
-            git = self.git(spec)
-            # Conflict stage starts with a trusted prepared merge. Other stages
-            # must record the initial manifest while the original head is clean.
-            if git.head() != spec["input_head_sha"] or (spec["stage"] != "conflicts" and not git.clean()):
-                raise Blocked("initial scope manifest must be recorded before edits")
-        history = data.get("manifest_history", []) + [{"hash": digest(value), "recorded_at": time.time(), "paths": paths}]
-        private_write(self.artifacts(attempt) / "manifest.json", canonical(value))
-        return self._update(attempt, manifest=value, manifest_history=history, manifest_hash=digest(value), selected_verification=selected)
-
     @staticmethod
     def _validate_profile(profile):
         if not isinstance(profile, list) or not profile or any(
             not isinstance(command, list) or not command or any(not isinstance(arg, str) or not arg or "\0" in arg for arg in command)
             for command in profile
         ):
-            raise Blocked("onboarding: select existing verification commands before edits; missing dependencies block execution")
+            raise Blocked("verification requires a nonempty list of command argv arrays")
 
     def _profile(self, spec, data):
         profile = spec["verification_profile"] if spec["verification_profile"] is not None else data.get("selected_verification")
@@ -683,19 +651,42 @@ class Worker:
 
     def record_candidate(self, attempt: str) -> dict:
         spec, data = self._row(attempt)
-        if data["state"] != "running" or not data.get("manifest"):
-            raise Blocked("running attempt with pre-edit manifest required")
+        if data["state"] != "running":
+            raise Blocked("candidate recording requires a running attempt")
         git = self.git(spec)
         candidate = git.head()
-        git.check_candidate(spec["input_head_sha"], candidate, spec["base_sha"] if spec["stage"] == "conflicts" else None)
-        return self._update(attempt, candidate_sha=candidate, publication_state="candidate_recorded")
+        paths = git.check_candidate(spec["input_head_sha"], candidate, spec["base_sha"] if spec["stage"] == "conflicts" else None)
+        selected = spec["verification_profile"]
+        if selected is None:
+            result, _ = self._coding_result(spec, data)
+            selected = result.get("verification_profile")
+        self._validate_profile(selected)
+        manifest = {"paths": paths, "verification_profile": selected}
+        check_secrets(canonical(manifest))
+        # Git reads can outlive coding, cancellation, or even publication. Order
+        # both the artifact and ledger write against those transitions.
+        with transaction(self.db):
+            _, current = self._row(attempt)
+            evidence = ("authorization_epoch", "execution_epoch", "execution_phase", "execution_interrupted",
+                        "session_id", "review_session_id", "local_pgid", "quiescent", "publication_state",
+                        "candidate_sha", "manifest", "manifest_hash", "selected_verification")
+            if (current["state"] != "running" or current.get("execution_interrupted")
+                    or current["authorization_epoch"] != current.get("execution_epoch", spec["authorization_epoch"])
+                    or current["publication_state"] not in ("not_started", "unpublished", "candidate_recorded")
+                    or any(current.get(key) != data.get(key) for key in evidence)):
+                raise Blocked("candidate recording evidence changed or authorization revoked; work retained")
+            private_write(self.artifacts(attempt) / "manifest.json", canonical(manifest))
+            current.update(candidate_sha=candidate, publication_state="candidate_recorded",
+                           manifest=manifest, manifest_hash=digest(manifest), selected_verification=selected)
+            self._store(attempt, current)
+        return self.status(attempt)
 
     def _check_scope(self, spec: dict, data: dict, git: GitOps) -> list[str]:
         if not data.get("manifest"):
-            raise Blocked("missing pre-edit path manifest")
+            raise Blocked("missing candidate manifest")
         paths = git.check_candidate(spec["input_head_sha"], data["candidate_sha"], spec["base_sha"] if spec["stage"] == "conflicts" else None)
-        if not set(paths) <= set(data["manifest"]["paths"]):
-            raise Blocked("candidate paths exceed the recorded scope manifest")
+        if paths != data["manifest"]["paths"]:
+            raise Blocked("candidate paths do not match the recorded manifest")
         return paths
 
     def _verify(self, spec: dict, candidate: str) -> dict:
@@ -1152,9 +1143,6 @@ def main(argv: list[str] | None = None) -> int:
                          help="also accept missing session observations for inspected setup failures without execution evidence")
     resolve.add_argument("--accept-deleted-branch", action="store_true",
                          help="also accept checked closed-PR head and base observations when the original head branch is deleted")
-    prepare = sub.add_parser("prepare")
-    prepare.add_argument("attempt_id")
-    prepare.add_argument("--evidence", type=Path, required=True)
     publish = sub.add_parser("publish")
     publish.add_argument("attempt_id")
     args = parser.parse_args(argv)
@@ -1177,8 +1165,6 @@ def main(argv: list[str] | None = None) -> int:
                                                 accept_deleted_branch=args.accept_deleted_branch, reason=args.reason)
         elif args.command == "reconcile":
             result = worker.reconcile()
-        elif args.command == "prepare":
-            result = worker.record_manifest(args.attempt_id, args.evidence)
         else:
             result = worker.record_candidate(args.attempt_id)
         print(canonical(result))

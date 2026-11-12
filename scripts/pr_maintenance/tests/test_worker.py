@@ -205,27 +205,58 @@ class WorkerTests(unittest.TestCase):
         worker._update(self.spec["attempt_id"], publication_state="push_in_flight", quiescent=False)
         self.assertEqual(worker.status(self.spec["attempt_id"])["publication_state"], "push_in_flight")
 
-    def test_unprofiled_repository_records_selected_checks_before_edits(self):
+    def test_unprofiled_repository_records_candidate_and_checks_after_edits(self):
         worker = Worker(self.config)
         self.addCleanup(worker.close)
         self.spec["verification_profile"] = None
         worker.submit(self.spec)
         worker._update(self.spec["attempt_id"], state="running", started=True)
-        evidence = worker.artifacts(self.spec["attempt_id"]) / "manifest-request.json"
+        result_path = worker.artifacts(self.spec["attempt_id"]) / "result.json"
         command = [sys.executable, "-c", "print('selected repository check')"]
-        evidence.write_text(json.dumps({"paths": {"file.py": "PR caller"}, "verification_profile": [command]}))
+        result_path.write_text(json.dumps({"outcome": "changed", "verification_profile": [command]}))
         ops = Mock()
-        ops.head.return_value = self.spec["input_head_sha"]
-        ops.clean.return_value = True
+        ops.head.return_value = "c" * 40
+        ops.check_candidate.return_value = ["file.py", "requirements-dev.txt"]
         with patch.object(worker, "git", return_value=ops):
-            worker.record_manifest(self.spec["attempt_id"], evidence)
+            worker.record_candidate(self.spec["attempt_id"])
         with patch.object(worker, "checkout", return_value=Path(self.temp.name)):
             result = worker._verify(self.spec, "c" * 40)
         self.assertEqual(result["commands"][0]["argv"], command)
         self.assertEqual(result["commands"][0]["returncode"], 0)
-        evidence.write_text(json.dumps({"paths": {"file.py": "PR caller"}, "verification_profile": [["different-check"]]}))
-        with patch.object(worker, "git", return_value=ops), self.assertRaisesRegex(Blocked, "before edits|cannot change"):
-            worker.record_manifest(self.spec["attempt_id"], evidence)
+
+    def test_candidate_recording_rechecks_revocation_and_execution_evidence(self):
+        changes = {
+            "cancel": {"state": "cancel_requested", "authorization_epoch": 2, "execution_interrupted": True},
+            "revoked_epoch": {"authorization_epoch": 2},
+            "replaced_epoch": {"authorization_epoch": 2, "execution_epoch": 2},
+            "interrupted": {"execution_interrupted": True},
+            "verification_started": {"execution_phase": "verification"},
+            "newer_candidate": {"candidate_sha": "e" * 40},
+        }
+        for name, update in changes.items():
+            with self.subTest(name=name):
+                worker = Worker(dict(self.config, state_dir=str(Path(self.temp.name) / name)))
+                self.addCleanup(worker.close)
+                worker.submit(self.spec)
+                worker._update(self.spec["attempt_id"], state="running", started=True,
+                               execution_epoch=1, execution_phase="coding", candidate_sha="c" * 40)
+                manifest_path = worker.artifacts(self.spec["attempt_id"]) / "manifest.json"
+                manifest_path.write_text('{"paths":["retained.py"]}')
+                retained = {}
+
+                def change_during_query(*args):
+                    worker._update(self.spec["attempt_id"], **update)
+                    retained["data"] = worker._row(self.spec["attempt_id"])[1]
+                    return ["later.py"]
+
+                ops = Mock()
+                ops.head.return_value = "d" * 40
+                ops.check_candidate.side_effect = change_during_query
+                with patch.object(worker, "git", return_value=ops):
+                    with self.assertRaisesRegex(Blocked, "evidence changed|authorization revoked"):
+                        worker.record_candidate(self.spec["attempt_id"])
+                self.assertEqual(worker._row(self.spec["attempt_id"])[1], retained["data"])
+                self.assertEqual(manifest_path.read_text(), '{"paths":["retained.py"]}')
 
     def test_feedback_is_hash_bound_and_kept_out_of_ledger(self):
         worker = Worker(self.config)
@@ -279,14 +310,11 @@ class WorkerPublicationTests(Repository):
         self.checkout_patch = patch.object(self.worker, "checkout", return_value=self.ops.path)
         self.checkout_patch.start()
         self.addCleanup(self.checkout_patch.stop)
-        evidence = self.worker.artifacts(self.spec["attempt_id"]) / "manifest-request.json"
-        evidence.write_text(json.dumps({"paths": {"topic.txt": "PR-related maintenance"}}))
-        self.worker.record_manifest(self.spec["attempt_id"], evidence)
         self.commit = self.candidate()
-        self.worker.record_candidate(self.spec["attempt_id"])
         (self.worker.artifacts(self.spec["attempt_id"]) / "result.json").write_text(json.dumps({
             "outcome": "changed", "blockers": [], "summary": "maintained topic", "changed_paths": ["topic.txt"],
         }))
+        self.worker.record_candidate(self.spec["attempt_id"])
 
     def approve(self):
         def review_run(cwd, session, model, agent, prompt, events, timeout):
@@ -308,6 +336,42 @@ class WorkerPublicationTests(Repository):
         with patch.object(self.worker, "live", return_value=live):
             self.assertEqual(self.worker._publish(self.spec)["state"], "pushed")
         self.assertEqual(git(self.origin, "rev-parse", "refs/heads/topic"), self.commit)
+
+    def test_delayed_candidate_recording_cannot_overwrite_published_evidence(self):
+        helper = Worker(self.config)
+        self.addCleanup(helper.close)
+        helper_git = GitOps(self.ops.path, str(self.origin))
+        check_candidate = helper_git.check_candidate
+        published = {}
+
+        def publish_during_query(*args):
+            paths = check_candidate(*args)
+            (self.ops.path / "extra.txt").write_text("newer candidate\n")
+            git(self.ops.path, "add", ".")
+            git(self.ops.path, "commit", "-m", "newer maintenance")
+            self.commit = self.ops.head()
+            self.worker.record_candidate(self.spec["attempt_id"])
+            self.approve()
+            self.worker.authorize(self.spec["attempt_id"], self.grant())
+            with patch.object(self.worker, "live", return_value=self.spec["pr"]):
+                published["status"] = self.worker._publish(self.spec)
+            published["manifest"] = (self.worker.artifacts(self.spec["attempt_id"]) / "manifest.json").read_bytes()
+            return paths
+
+        rejected = None
+        with self.worker.lock("attempt-" + self.spec["attempt_id"]), \
+             patch.object(helper, "git", return_value=helper_git), \
+             patch.object(helper_git, "check_candidate", side_effect=publish_during_query):
+            try:
+                helper.record_candidate(self.spec["attempt_id"])
+            except Blocked as error:
+                rejected = error
+        status = self.worker.status(self.spec["attempt_id"])
+        self.assertEqual(status["publication_state"], "published")
+        self.assertEqual(status, published["status"])
+        self.assertEqual(status["candidate_sha"], git(self.origin, "rev-parse", "refs/heads/topic"))
+        self.assertEqual((self.worker.artifacts(self.spec["attempt_id"]) / "manifest.json").read_bytes(), published["manifest"])
+        self.assertIsNotNone(rejected)
 
     def test_model_assertions_cannot_replace_failing_trusted_verification(self):
         self.spec["verification_profile"] = [[sys.executable, "-c", "raise SystemExit(7)"]]

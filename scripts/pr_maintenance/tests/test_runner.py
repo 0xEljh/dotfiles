@@ -117,31 +117,55 @@ class BestEffortRunnerTests(unittest.TestCase):
                        "quiescence_mode": "best_effort", "best_effort_acknowledged": True}
         self.runner = Runner(self.config)
         self.active = "/api/session/active"
+        self.session = f"/api/session/{self.session_id}"
         self.inbox = f"/api/session/{self.session_id}/inbox"
         self.children = "/api/session"
         self.shell = "/api/shell"
         self.pty = "/api/pty"
         self.terminal = f"/api/experimental/session/{self.session_id}/terminal"
         self.responses = {
+            self.session: {"data": {"id": self.session_id, "location": {"directory": str(self.cwd)}}},
             self.active: {"data": {}}, self.inbox: {"data": []},
             self.children: {"data": [], "cursor": {"previous": None, "next": None}},
             self.shell: {"location": {"directory": str(self.cwd)}, "data": []},
             self.pty: {"location": {"directory": str(self.cwd)}, "data": []}, self.terminal: {"data": []},
         }
+        self.child_pages = {}
+        self.locations = {self.session_id: self.cwd}
 
     def api(self, method, path, body=None, cwd=None):
         self.assertEqual(method, "get")
         self.assertIsNone(body)
-        self.assertEqual(cwd, self.cwd)
+        self.assertIn(cwd, (self.cwd, *self.locations.values()))
         url = urlsplit(path)
         query = parse_qs(url.query)
         if url.path in (self.shell, self.pty):
-            self.assertEqual(query, {"location[directory]": [str(self.cwd)]})
+            self.assertEqual(query, {"location[directory]": [str(cwd)]})
+            if cwd != self.cwd:
+                return self.responses.get((url.path, cwd), {"location": {"directory": str(cwd)}, "data": []})
         elif url.path == self.children:
-            self.assertEqual(query, {"parentID": [self.session_id], "limit": ["1"]})
+            parent_id = query["parentID"][0]
+            self.assertEqual(query["limit"], ["100"])
+            self.assertEqual(set(query) - {"cursor"}, {"parentID", "limit"})
+            cursor = query.get("cursor", [None])[0]
+            default = self.responses[self.children] if parent_id == self.session_id and cursor is None else {
+                "data": [], "cursor": {"previous": None, "next": None},
+            }
+            return self.child_pages.get((parent_id, cursor), default)
         else:
             self.assertEqual(query, {})
         return self.responses[url.path]
+
+    def add_child(self, session_id="ses_child", parent_id=None, cwd=None):
+        parent_id = parent_id or self.session_id
+        cwd = cwd or self.cwd
+        self.locations[session_id] = cwd
+        self.responses[f"/api/session/{session_id}/inbox"] = {"data": []}
+        self.responses[f"/api/experimental/session/{session_id}/terminal"] = {"data": []}
+        row = {"id": session_id, "parentID": parent_id, "location": {"directory": str(cwd)},
+               "outcome": "succeeded", "time": {"idle": 1}}
+        self.child_pages[(parent_id, None)] = {"data": [row], "cursor": {"next": "after_" + session_id}}
+        return row
 
     def quiet(self):
         with patch.object(self.runner, "api", side_effect=self.api):
@@ -230,6 +254,186 @@ class BestEffortRunnerTests(unittest.TestCase):
     def test_clear_observations_allow_best_effort_completion(self):
         self.assertTrue(self.quiet())
 
+    def test_idle_completed_child_allows_best_effort_completion(self):
+        self.add_child()
+        self.assertTrue(self.quiet())
+
+    def test_moved_root_checks_registered_work_at_its_current_location(self):
+        moved = Path("/moved root checkout")
+        self.responses[self.session]["data"]["location"]["directory"] = str(moved)
+        self.locations[self.session_id] = moved
+        self.assertTrue(self.quiet())
+        for kind, row in ((self.shell, self.shell_row()), (self.pty, self.terminal_row())):
+            with self.subTest(kind=kind), patch.dict(self.responses, {
+                (kind, moved): {"location": {"directory": str(moved)}, "data": [row]},
+            }):
+                self.assertFalse(self.quiet())
+
+    def test_root_location_is_resolved_again_for_the_second_snapshot(self):
+        moved = Path("/later root checkout")
+        metadata_reads = 0
+
+        def move_after_first_snapshot(method, path, body=None, cwd=None):
+            nonlocal metadata_reads
+            if urlsplit(path).path == self.session:
+                metadata_reads += 1
+                if metadata_reads == 2:
+                    self.responses[self.session]["data"]["location"]["directory"] = str(moved)
+                    self.locations[self.session_id] = moved
+                    self.responses[(self.shell, moved)] = {"location": {"directory": str(moved)}, "data": [self.shell_row()]}
+            return self.api(method, path, body, cwd)
+
+        with patch.object(self.runner, "api", side_effect=move_after_first_snapshot):
+            self.assertFalse(self.runner.quiescent(self.session_id, self.cwd))
+        self.assertEqual(metadata_reads, 2)
+
+    def test_moved_root_still_checks_work_in_the_owned_checkout(self):
+        moved = Path("/moved root checkout")
+        self.responses[self.session]["data"]["location"]["directory"] = str(moved)
+        self.locations[self.session_id] = moved
+        self.responses[self.shell]["data"] = [self.shell_row()]
+        self.assertFalse(self.quiet())
+
+    def test_completed_child_must_have_no_actual_activity_or_queued_work(self):
+        self.add_child()
+        for endpoint, busy in ((self.active, {"data": {"ses_child": {"type": "running"}}}),
+                               ("/api/session/ses_child/inbox", {"data": [{"id": "queued_work"}]})):
+            with self.subTest(endpoint=endpoint), patch.dict(self.responses, {endpoint: busy}):
+                self.assertFalse(self.quiet())
+
+    def test_nested_grandchild_is_observed(self):
+        self.add_child()
+        self.add_child("ses_grandchild", "ses_child")
+        self.assertTrue(self.quiet())
+        self.responses["/api/session/ses_grandchild/inbox"]["data"] = [{"id": "queued_work"}]
+        self.assertFalse(self.quiet())
+
+    def test_child_pages_follow_opaque_cursors_through_trailing_empty_page(self):
+        first = self.add_child("ses_first")
+        second = self.add_child("ses_second")
+        cursor = "opaque cursor/+?=&"
+        self.child_pages[(self.session_id, None)] = {"data": [first], "cursor": {"next": cursor}}
+        self.child_pages[(self.session_id, cursor)] = {"data": [second], "cursor": {"next": "last_page"}}
+        self.child_pages[(self.session_id, "last_page")] = {"data": [], "cursor": {"previous": cursor, "next": None}}
+        with patch.object(self.runner, "api", side_effect=self.api) as api:
+            self.assertTrue(self.runner.quiescent(self.session_id, self.cwd))
+        pages = [parse_qs(urlsplit(call.args[1]).query) for call in api.call_args_list
+                 if urlsplit(call.args[1]).path == self.children]
+        root_pages = [page.get("cursor", [None])[0] for page in pages if page["parentID"] == [self.session_id]]
+        self.assertEqual(root_pages, [None, cursor, "last_page"] * 2)
+        self.responses["/api/session/ses_second/inbox"]["data"] = [{"id": "queued_work"}]
+        self.assertFalse(self.quiet())
+
+    def test_child_resources_are_checked_at_its_moved_location(self):
+        moved = Path("/moved child checkout")
+        self.add_child(cwd=moved)
+        with patch.object(self.runner, "api", side_effect=self.api) as api:
+            self.assertTrue(self.runner.quiescent(self.session_id, self.cwd))
+        for kind in (self.shell, self.pty):
+            self.assertTrue(any(urlsplit(call.args[1]).path == kind and call.kwargs["cwd"] == moved
+                                for call in api.call_args_list))
+        for kind, row in ((self.shell, self.shell_row()), (self.pty, self.terminal_row())):
+            with self.subTest(kind=kind), patch.dict(self.responses, {
+                (kind, moved): {"location": {"directory": str(moved)}, "data": [row]},
+            }):
+                self.assertFalse(self.quiet())
+
+    def test_child_session_terminal_must_also_be_exited(self):
+        self.add_child()
+        terminal = "/api/experimental/session/ses_child/terminal"
+        row = self.terminal_row("exited", persistent=True)
+        row["sessionID"] = "ses_child"
+        self.responses[terminal]["data"] = [row]
+        self.assertTrue(self.quiet())
+        row["status"] = "running"
+        self.assertFalse(self.quiet())
+
+    def test_child_resumed_after_both_snapshots_blocks_completion(self):
+        self.add_child()
+        for endpoint, busy in ((self.active, {"data": {"ses_child": {"type": "running"}}}),
+                               ("/api/session/ses_child/inbox", {"data": [{"id": "late_work"}]})):
+            terminal_checks = 0
+
+            def late_work(method, path, body=None, cwd=None):
+                nonlocal terminal_checks
+                response = self.api(method, path, body, cwd)
+                if urlsplit(path).path == "/api/experimental/session/ses_child/terminal":
+                    terminal_checks += 1
+                    if terminal_checks == 2:
+                        self.responses[endpoint] = busy
+                return response
+
+            with self.subTest(endpoint=endpoint), patch.dict(self.responses), \
+                 patch.object(self.runner, "api", side_effect=late_work):
+                self.assertFalse(self.runner.quiescent(self.session_id, self.cwd))
+                self.assertEqual(terminal_checks, 2)
+
+    def test_child_missing_from_second_snapshot_is_still_rechecked(self):
+        self.add_child()
+
+        def hidden_child(method, path, body=None, cwd=None):
+            response = self.api(method, path, body, cwd)
+            if urlsplit(path).path == "/api/experimental/session/ses_child/terminal":
+                self.child_pages[(self.session_id, None)] = {"data": [], "cursor": {}}
+                self.responses["/api/session/ses_child/inbox"]["data"] = [{"id": "late_work"}]
+            return response
+
+        with patch.object(self.runner, "api", side_effect=hidden_child):
+            self.assertFalse(self.runner.quiescent(self.session_id, self.cwd))
+
+    def test_session_cycles_and_repeated_child_pages_block_completion(self):
+        child = self.add_child()
+        cycle = dict(child, id=self.session_id, parentID="ses_child")
+        cases = (
+            {("ses_child", None): {"data": [cycle], "cursor": {"next": "cycle"}}},
+            {(self.session_id, "after_ses_child"): {"data": [child], "cursor": {"next": "new_cursor"}}},
+        )
+        for pages in cases:
+            with self.subTest(pages=pages), patch.dict(self.child_pages, pages):
+                self.assertFalse(self.quiet())
+        second = self.add_child("ses_second", "ses_child")
+        self.child_pages[(self.session_id, "after_ses_child")] = {
+            "data": [dict(second, parentID=self.session_id)], "cursor": {"next": "after_ses_child"},
+        }
+        with patch.object(self.runner, "api", side_effect=self.api) as api:
+            self.assertFalse(self.runner.quiescent(self.session_id, self.cwd))
+        repeated_page_calls = [call for call in api.call_args_list
+                               if parse_qs(urlsplit(call.args[1]).query).get("cursor") == ["after_ses_child"]]
+        self.assertEqual(len(repeated_page_calls), 1)
+
+    def test_nonempty_child_page_requires_continuation_to_the_empty_page(self):
+        child = self.add_child()
+        for cursor in ({}, {"previous": None}, {"next": None}):
+            with self.subTest(cursor=cursor), patch.dict(self.child_pages, {
+                (self.session_id, None): {"data": [child], "cursor": cursor},
+            }):
+                self.assertFalse(self.quiet())
+
+    def test_malformed_child_rows_and_page_envelopes_block_completion(self):
+        child = self.add_child()
+        rows = (None, [], {}, dict(child, id="bad/id"), dict(child, id=None),
+                dict(child, parentID="ses_other"), dict(child, location=None), dict(child, location={}),
+                dict(child, location={"directory": "relative"}), dict(child, location={"directory": 1}),
+                dict(child, location={"directory": "/invalid\0directory"}))
+        for row in rows:
+            with self.subTest(row=row), patch.dict(self.child_pages, {
+                (self.session_id, None): {"data": [row], "cursor": {"next": "next_page"}},
+            }):
+                self.assertFalse(self.quiet())
+        for response in (None, [], {}, {"data": [], "cursor": None}, {"data": [], "cursor": {"next": False}}):
+            with self.subTest(response=response), patch.dict(self.child_pages, {
+                (self.session_id, "after_ses_child"): response,
+            }):
+                self.assertFalse(self.quiet())
+
+    def test_deep_descendants_do_not_depend_on_python_recursion_limit(self):
+        parent_id = self.session_id
+        for index in range(1100):
+            child_id = f"ses_child_{index}"
+            self.add_child(child_id, parent_id)
+            parent_id = child_id
+        self.assertTrue(self.quiet())
+
     def test_null_or_absent_cursor_links_allow_completion(self):
         for cursor in ({}, {"previous": None}, {"next": None}, {"previous": None, "next": None},
                        {"previous": "previous_page", "next": None}):
@@ -246,10 +450,9 @@ class BestEffortRunnerTests(unittest.TestCase):
         with patch.object(self.runner, "api", return_value={"data": {}}):
             self.assertFalse(self.runner.quiescent(self.session_id, self.cwd))
 
-    def test_active_queued_or_child_work_blocks_even_for_completed_children(self):
+    def test_active_or_queued_parent_and_invalid_empty_continuation_block(self):
         cases = ((self.active, {"data": {self.session_id: {"type": "running"}}}),
                  (self.inbox, {"data": [{"id": "queued_work", "type": "user"}]}),
-                 (self.children, {"data": [{"id": "ses_child", "parentID": self.session_id, "time": {"completed": 1}}], "cursor": {}}),
                  (self.children, {"data": [], "cursor": {"next": "next_page"}}))
         for endpoint, response in cases:
             with self.subTest(endpoint=endpoint, response=response), patch.dict(self.responses, {endpoint: response}):
@@ -278,7 +481,7 @@ class BestEffortRunnerTests(unittest.TestCase):
                 with self.subTest(endpoint=endpoint, response=response), patch.dict(self.responses, {endpoint: response}):
                     self.assertFalse(self.quiet())
             missing_data = {key: value for key, value in self.responses[endpoint].items() if key != "data"}
-            wrong_data = [] if endpoint == self.active else {}
+            wrong_data = [] if endpoint in (self.active, self.session) else {}
             for response in (missing_data, dict(self.responses[endpoint], data=wrong_data)):
                 with self.subTest(endpoint=endpoint, response=response), patch.dict(self.responses, {endpoint: response}):
                     self.assertFalse(self.quiet())

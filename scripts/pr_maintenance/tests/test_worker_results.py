@@ -128,9 +128,6 @@ class CodingResultTests(Repository):
 
     def test_blocked_result_retains_recorded_candidate_without_verification_or_publication(self):
         def run(*args):
-            manifest = self.result_path.with_name("manifest-request.json")
-            manifest.write_text(json.dumps({"paths": {"topic.txt": "PR-related maintenance"}}))
-            self.worker.record_manifest(self.attempt, manifest)
             git(self.owned.path, "config", "user.name", "Test")
             git(self.owned.path, "config", "user.email", "test@example.test")
             (self.owned.path / "topic.txt").write_text("retained candidate\n")

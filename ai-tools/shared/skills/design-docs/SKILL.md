@@ -28,40 +28,36 @@ direction wrong, throw it out and redesign.
    - Search relevant code paths and existing patterns.
    - Check external docs and reference implementations where applicable.
    - Launch subagents in parallel for broader coverage.
-3. Define and compare potential approaches:
-   - Provide at least 2 approaches.
-   - Include one minimal viable approach.
-   - Include one ideal architecture approach.
-   - Include a creative/lateral approach when useful.
-   - If possible, dogfood the approach or attempt to flesh out the proposed
-     shape in detail via an independent agent.
+3. Compare credible approaches:
+   - Evaluate alternatives against the actual problem and constraints, including
+     keeping the current design when viable. Do not invent options to meet a
+     quota.
+   - Use concrete examples or sketches to compare the shapes. Use a small
+     prototype when it can resolve uncertainty that affects the choice.
 4. Recommend decisions with explicit trade-offs.
 5. Write the design document to disk.
-6. Push the document to Notion for review via
+6. Run independent design review using the current harness's review workflow.
+   Address each finding with a correction or a reasoned rejection. Complete
+   readability review before publication.
+7. Push the document to Notion for review via
    `notion-cat --suppress-output path/to/doc`
-7. Return a concise summary with the file path, recommended next steps, and flag
+8. Return a concise summary with the file path, recommended next steps, and flag
    any unresolved questions.
 
 At each step, especially steps 1 and 4, ask clarifying questions where needed.
 If relaxing a constraint would lead to a significantly better design, escalate
 that to the user.
 
-### Publish local screenshots
+### Publish local screenshots/diagrams
 
-Use local image paths relative to the Markdown file, such as
-`![Settings after the change](./screenshots/settings.png)`. Put each image in its
-own paragraph. `notion-cat` uploads local images by default, including images in
-lists and quotes. Mixed text-and-image paragraphs, headings, table cells, and
-remote image sources fail before publication. Download remote images first, or
-use `--images=alt` for deliberate text-only publication without asset reads.
+`notion-cat` uploads local images automatically. Use paths relative to the
+Markdown file, e.g. `![Settings](./screenshots/settings.png)`, each in its own
+paragraph. Download remote images first. Images mixed with text or placed in
+headings or table cells fail publication.
 
-If asset selection is uncertain, inspect
-`notion-cat --dry-run --suppress-output path/to/report.md` before publishing. Dry-run
-needs no credentials and lists resolved paths, sizes, and upload reuse. Markdown
-is trusted input: absolute paths and symlinks can select files outside its folder.
-Uploads copy the images into Notion with the destination page's permissions.
-Inspect screenshots for sensitive content before publishing. Raw, stdin, and
-mixed code inputs stay literal and do not upload images.
+If file selection is uncertain, inspect
+`notion-cat --dry-run --suppress-output path/to/doc.md`. Use `--images=alt` for
+text-only publication without asset reads.
 
 ## Good design
 
@@ -88,70 +84,47 @@ run because we are committed to adding X and Y)
 - The design doc ought to include enough context (including motivations/intent)
   to be a standalone document.
 
-## Required Document Structure
+## Document structure
+
+Use this as a starting structure. Merge or omit sections that add no useful
+information. Keep the problem, constraints, recommendation, trade-offs, and
+verification explicit.
 
 ```markdown
 # <Title>
 
-## Problem Statement
+<One-sentence recommendation and the main reason for it.>
 
-## Context
+## Problem and constraints
 
-## Goals
-
-## Non-Goals
+<Problem, intended outcome, binding constraints, and relevant scope exclusions.>
 
 ## Approaches Considered
 
-### APPROACH A: <Name> (Minimal Viable)
+<Compare credible alternatives and their decisive trade-offs. Explain why this
+recommendation wins and what it makes worse. Describe concrete costs, risks, and
+reuse where they affect the choice.>
 
-Summary: <1-2 sentences> Complexity: <S/M/L/XL> Risk: <Low/Med/High> Pros:
+## Proposed design
 
-- <bullet>
-- <bullet>
-  Cons:
-- <bullet>
-- <bullet>
-  Reuses: <existing code/patterns leveraged>
+<Show behavior and structure through a concrete caller or operator example. Add
+types, pseudocode, or a diagram where they resolve ambiguity.>
 
-### APPROACH B: <Name> (Ideal Architecture)
-
-Summary: <1-2 sentences> Complexity: <S/M/L/XL> Risk: <Low/Med/High> Pros:
-
-- <bullet>
-- <bullet>
-  Cons:
-- <bullet>
-- <bullet>
-  Reuses: <existing code/patterns leveraged>
-
-### APPROACH C: <Name> (Optional, Creative/Lateral)
-
-Summary: <1-2 sentences> Complexity: <S/M/L/XL> Risk: <Low/Med/High> Pros:
-
-- <bullet>
-- <bullet>
-  Cons:
-- <bullet>
-- <bullet>
-  Reuses: <existing code/patterns leveraged>
-
-## Decision
-
-## Implementation Plan
-
-## Observability
-
-## Verification Strategy
+## Verification and delivery
 
 <State the warranted verification and why: relevant existing tests, a new
 red-green test, direct execution/observed output, type/lint/build checks, or no
 new test.>
 
-## Open Questions
+<Outline dependencies or phases only when sequencing matters. State observable
+completion criteria.>
 
 ## References
 ```
+
+Add operational detail where relevant: state, invariants, dependencies, partial
+failure, detection, and recovery. Include unresolved questions only when
+present; distinguish decision blockers from questions that can wait.
 
 ## Quality Bar
 
@@ -159,11 +132,11 @@ new test.>
 - Include links to external docs when they influence decisions.
 - Observability of the proposed architecture/features should be considered from
   the onset.
-- Keep unknowns explicit in Open Questions; do not invent certainty.
-- Keep the document reviewable by someone who did not join the live planning
-  session.
+- Keep unresolved questions explicit; do not invent certainty.
+- Keep the document reviewable by someone who did not join planning session.
 - Avoid references to parties such as the user or agents. No authorship either.
-- UML/mermaid diagrams are always welcome if they would improve clarity
+- UML/mermaid diagrams strongly encouraged if they would improve clarity.
+  Consider also the `statechart` skill.
 
 ## Asking Questions + Making recommendations
 
@@ -173,7 +146,3 @@ should be explicitly spelled out. When asking questions, assume minimal context.
 Restate useful pieces of context. Strive for clarity. Help the user to
 understand the concepts and context via visualizations such as pseudo-code or
 architecture flows where appropriate.
-
-If this proceeds smoothly, the `Open Questions` section should not be needed.
-That section is for when we have decisions we could not resolve during planning
-and explicitly want to defer.

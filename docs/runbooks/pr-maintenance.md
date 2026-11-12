@@ -155,8 +155,8 @@ Do not enable unattended execution until you complete these checks.
    known-hosts file. Do not use automatic host-key acceptance.
 4. Select an explicit model and inspected agent definition for each coding stage
    and the internal read-only review. Inspect effective shell, MCP, plugin,
-   credential, and repository-instruction access. Configure trusted verification
-   commands for the pilot repository.
+   credential, and repository-instruction access. Confirm that the stage can
+   select and run the repository's normal checks.
 5. Identify the existing OpenCode server that owns your usual history. Configure
    its explicit URL and authentication on WSL. A direct server and the managed
    service can use different ports and credentials. Do not launch another server.
@@ -189,10 +189,10 @@ different host as part of a local test.
    remote head with the recorded input and candidate. A candidate reachable from
    the remote head is published even if the push acknowledgement was lost.
 5. For missing dependencies or inadequate verification, complete the reported
-   `onboarding:` setup. Coding stages may prepare locked project dependencies,
-   including registry downloads through the repository's pinned package manager.
-   They must not install system tools, fetch setup scripts, change lockfiles, or
-   replace failed checks with an agent exit code.
+   setup as for an ordinary OpenCode task. Maintenance adds no restrictions on
+   dependency preparation or tool use. At handoff, `result.json` supplies the
+   verification commands when none are configured. The worker reruns those checks
+   and reviews the committed candidate before publication.
 6. After execution has stopped and publication is known, resume or explicitly
    retry the selected stage with an audit reason. Retained unpublished work is not
    silently replayed on a different remote head.
@@ -374,7 +374,7 @@ reported checkout, `git remote get-url origin`, and `git rev-parse HEAD` togethe
 Project membership does not share node_modules or other ignored files.
 
 The worker's optional `dependency_sources` JSON setting maps an exact head
-repository full name to an absolute, read-only development checkout hint:
+repository full name to an absolute development checkout hint:
 
 ```json
 {
@@ -384,19 +384,9 @@ repository full name to an absolute, read-only development checkout hint:
 }
 ```
 
-The coding agent may link node_modules only after a fresh byte-for-byte comparison
-of package.json and the selected lockfile. The dependency directory must exist,
-and the destination must be absent and Git-ignored. The agent must not modify the
-source checkout or install through the link. Shared dependencies remain mutable;
-matching manifests do not establish the integrity of every installed file.
-
-If reuse is unavailable or incomplete, the agent can remove only its own link and
-perform one frozen install in the attempt checkout. For the UI repository this is
-`bun install --frozen-lockfile`. A missing package manager, ambiguous lockfile,
-credential requirement, changed lockfile, or failed setup still blocks the stage.
-Setup and verification outcomes belong in the private result.json. These are
-agent instructions, not a filesystem sandbox. Existing attempts are not replayed
-when the setting changes.
+The hint is optional context, not an approved-source requirement. The agent chooses
+setup as for an ordinary OpenCode task. Record the result and verification in the
+private `result.json`. Changing this setting does not replay existing attempts.
 
 New Telegram reports show short stage outcomes, blockers, verification status,
 decisions, and useful PR, published-commit, or review links. Session IDs, attempt

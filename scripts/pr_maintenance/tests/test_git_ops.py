@@ -48,6 +48,41 @@ class Repository(unittest.TestCase):
         return git(self.ops.path, "rev-parse", "HEAD")
 
 
+class WorktreeIntegrityTests(Repository):
+    def test_hidden_edits_are_not_clean_or_a_valid_candidate(self):
+        path = self.ops.path / "topic.txt"
+        index = self.ops.path / ".git" / "index"
+        for flag in ("assume-unchanged", "skip-worktree"):
+            with self.subTest(flag=flag):
+                git(self.ops.path, "update-index", "--" + flag, "topic.txt")
+                original_index = index.read_bytes()
+                try:
+                    self.assertTrue(self.ops.clean())
+                    path.write_text("other\n")
+                    self.assertFalse(self.ops.clean())
+                    with self.assertRaisesRegex(Blocked, "unexplained edits"):
+                        self.ops.check_candidate(self.head, self.head)
+                    self.assertEqual(path.read_text(), "other\n")
+                    self.assertEqual(index.read_bytes(), original_index)
+                finally:
+                    path.write_text("topic\n")
+                    git(self.ops.path, "update-index", "--no-" + flag, "topic.txt")
+
+    def test_staged_edits_are_dirty_even_when_working_contents_match_head(self):
+        path = self.ops.path / "topic.txt"
+        path.write_text("staged\n")
+        git(self.ops.path, "add", "topic.txt")
+        path.write_text("topic\n")
+        self.assertFalse(self.ops.clean())
+
+    def test_git_equivalent_line_endings_remain_clean(self):
+        (self.ops.path / ".gitattributes").write_text("*.txt text eol=crlf\n")
+        git(self.ops.path, "add", ".gitattributes")
+        git(self.ops.path, "commit", "-m", "declare line endings")
+        (self.ops.path / "topic.txt").write_bytes(b"topic\r\n")
+        self.assertTrue(self.ops.clean())
+
+
 class PublicationTests(Repository):
     def test_normal_publication_and_lost_ack_reconcile(self):
         candidate = self.candidate()

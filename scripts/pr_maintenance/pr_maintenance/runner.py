@@ -201,17 +201,8 @@ class Runner:
                         return False
         return True
 
-    def _quiet_snapshot(self, session_id: str, cwd: Path) -> bool:
+    def _quiet_session(self, session_id: str, cwd: Path) -> bool:
         if not self._foreground_idle(session_id, cwd):
-            return False
-        children = self.api("get", "/api/session?" + urlencode({"parentID": session_id, "limit": 1}), cwd=cwd)
-        if not isinstance(children, dict) or not isinstance(children.get("data"), list) or children["data"]:
-            return False
-        cursor = children.get("cursor")
-        if not isinstance(cursor, dict) or cursor.get("next") is not None:
-            return False
-        previous = cursor.get("previous")
-        if previous is not None and (not isinstance(previous, str) or not previous):
             return False
         suffix = "?" + urlencode({"location[directory]": str(cwd)})
         for kind in ("shell", "pty"):
@@ -227,12 +218,71 @@ class Runner:
         terminals = self.api("get", f"/api/experimental/session/{session_id}/terminal", cwd=cwd)
         return isinstance(terminals, dict) and self._exited_terminals(terminals.get("data"), session_id)
 
+    @staticmethod
+    def _session_directory(info: dict) -> Path:
+        location = info.get("location")
+        directory = location.get("directory") if isinstance(location, dict) else None
+        if not isinstance(directory, str) or "\0" in directory or not Path(directory).is_absolute():
+            raise Blocked("runner returned an invalid session location")
+        return Path(directory)
+
+    def _quiet_snapshot(self, session_id: str, cwd: Path, observed: dict[str, Path]) -> bool:
+        root = self.api("get", f"/api/session/{session_id}", cwd=cwd)
+        if (not isinstance(root, dict) or not isinstance(root.get("data"), dict)
+                or root["data"].get("id") != session_id):
+            return False
+        directory = self._session_directory(root["data"])
+        if directory != cwd and not self._quiet_session(session_id, cwd):
+            return False
+        pending = [(session_id, directory)]
+        seen = {session_id}
+        while pending:
+            parent_id, location = pending.pop()
+            observed[parent_id] = location
+            if not self._quiet_session(parent_id, location):
+                return False
+            cursor = None
+            cursors = set()
+            while True:
+                query = {"parentID": parent_id, "limit": 100}
+                if cursor is not None:
+                    query["cursor"] = cursor
+                page = self.api("get", "/api/session?" + urlencode(query), cwd=location)
+                if not isinstance(page, dict) or not isinstance(page.get("data"), list):
+                    return False
+                links = page.get("cursor")
+                if not isinstance(links, dict):
+                    return False
+                for key in ("previous", "next"):
+                    value = links.get(key)
+                    if value is not None and (not isinstance(value, str) or not value):
+                        return False
+                for child in page["data"]:
+                    if not isinstance(child, dict) or child.get("parentID") != parent_id:
+                        return False
+                    child_id = self.session_id(child.get("id"))
+                    if child_id in seen:
+                        return False
+                    seen.add(child_id)
+                    pending.append((child_id, self._session_directory(child)))
+                cursor = links.get("next")
+                if cursor is None:
+                    # Pinned pagination ends with an empty page, not a short page.
+                    if page["data"]:
+                        return False
+                    break
+                if not page["data"] or cursor in cursors:
+                    return False
+                cursors.add(cursor)
+        return True
+
     def observed_quiet(self, session_id: str, cwd: Path) -> bool:
         """Observe consecutive quiet snapshots, never proof of detached descendant exit."""
         try:
             session_id = self.session_id(session_id)
-            return (self._quiet_snapshot(session_id, cwd) and self._quiet_snapshot(session_id, cwd)
-                    and self._foreground_idle(session_id, cwd))
+            observed = {}
+            return (self._quiet_snapshot(session_id, cwd, observed) and self._quiet_snapshot(session_id, cwd, observed)
+                    and all(self._foreground_idle(seen_id, location) for seen_id, location in observed.items()))
         except (Blocked, OSError, ValueError, TypeError, subprocess.SubprocessError):
             return False
 

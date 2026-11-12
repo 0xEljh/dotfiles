@@ -77,8 +77,15 @@ is accepted only when no model variant was explicitly requested.
 `feedback`, `conflicts`, and `review`. Model names use `provider/model#variant`,
 with the variant optional. No default model or agent is substituted. Trusted
 `verification_profiles` map repository names to lists of argv arrays. Otherwise,
-the stage records selected existing checks in its initial scope manifest before
-edits. The worker runs those checks itself and reviews the exact candidate.
+the stage supplies its selected checks in `result.json` at handoff. The worker
+derives the candidate manifest from the committed diff, runs those checks itself,
+and reviews the exact candidate. No pre-edit file manifest is required.
+
+Maintenance uses the normal OpenCode instructions, permissions, and tools. Setup,
+dependency installation, delegation, and temporary test services follow the same
+judgment as an interactive task. There is no maintenance-specific setup allowlist
+or package-manager recipe. The worker still observes completion and controls its
+own verification, review, and publication steps.
 
 `stage_deadline`, `verification_deadline`, and `review_deadline` configure the
 coding, verification, and review timeouts. The coordinator also enforces the

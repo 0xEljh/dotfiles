@@ -1,5 +1,5 @@
 import copy
-from pathlib import Path
+import json
 
 import pytest
 
@@ -9,20 +9,14 @@ from pr_maintenance.worker import Worker
 from test_worker import specification
 
 
-def test_coding_contract_authorizes_locked_setup_without_changing_developer_checkout(tmp_path):
+def test_coding_prompt_supplies_candidate_handoff_and_optional_dependencies(tmp_path):
     spec = specification()
     spec["dependency_source"] = "/home/developer/prepared-ui"
     prompt = coding_prompt(spec, "diff", "skill", tmp_path, ["/trusted/pr-worker"])
 
-    assert "Dependency preparation is authorized" in prompt
-    assert "bun install --frozen-lockfile" in prompt
-    assert "Registry downloads through that package manager are authorized" in prompt
-    assert "git check-ignore" in prompt
-    assert "compare package.json and the selected lockfile byte-for-byte" in prompt
-    assert "Never install through a dependency symlink" in prompt
-    assert "Do not modify the source checkout" in prompt
-    assert "If the linked dependencies are incomplete" in prompt
-    assert "Record the setup method" in prompt
+    candidate = next(line.split(": ", 1)[1] for line in prompt.splitlines() if line.startswith("Candidate command ("))
+    assert json.loads(candidate) == ["/trusted/pr-worker", "publish", spec["attempt_id"]]
+    assert f"Result file: {tmp_path / 'result.json'}" in prompt
     assert prompt.index("/home/developer/prepared-ui") < prompt.index("PR TITLE AND DESCRIPTION:")
 
 
@@ -53,9 +47,3 @@ def test_invalid_dependency_source_is_an_explicit_configuration_error(tmp_path, 
             worker._prompt_spec(spec)
     finally:
         worker.close()
-
-
-def test_missing_dependency_hint_still_authorizes_frozen_install(tmp_path):
-    prompt = coding_prompt(specification(), "diff", "skill", Path(tmp_path), ["/trusted/pr-worker"])
-    assert "No approved dependency source is configured" in prompt
-    assert "otherwise install into this isolated checkout" in prompt

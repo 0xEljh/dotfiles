@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import tempfile
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -77,11 +78,14 @@ class GitOps:
         self.path = Path(path)
         self.remote = remote
 
-    def run(self, *args: str, check: bool = True, input: bytes | None = None) -> subprocess.CompletedProcess:
+    def run(self, *args: str, check: bool = True, input: bytes | None = None,
+            index_file: Path | None = None) -> subprocess.CompletedProcess:
         # -C alone does not override GIT_DIR/GIT_WORK_TREE/GIT_INDEX_FILE.
         # Helpers may be invoked from an agent shell inside another Git command.
         env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
         env.update(GIT_TERMINAL_PROMPT="0", GIT_OPTIONAL_LOCKS="0")
+        if index_file is not None:
+            env["GIT_INDEX_FILE"] = str(index_file)
         result = subprocess.run(
             ["git", "--no-replace-objects", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
              "-c", "submodule.recurse=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false", "-C", str(self.path), *args],
@@ -125,7 +129,16 @@ class GitOps:
         return sha(self.run("rev-parse", "--verify", "HEAD").stdout.decode().strip())
 
     def clean(self) -> bool:
-        return not self.run("status", "--porcelain=v1", "-z", "--untracked-files=all").stdout
+        status = ("status", "--porcelain=v1", "-z", "--untracked-files=all")
+        if self.run("diff-index", "--cached", "--no-ext-diff", "--no-textconv", "--name-only", "-z", "HEAD", "--").stdout:
+            return False
+        # A fresh index checks tracked contents without trusting skip-worktree,
+        # assume-unchanged, or cached stat data. Leave the real index untouched.
+        with tempfile.TemporaryDirectory(prefix=".verify-index-", dir=self.path.parent) as directory:
+            index = Path(directory) / "index"
+            options = ("-c", "core.sparseCheckout=false", "-c", "core.splitIndex=false", "-c", "core.ignorestat=false")
+            self.run(*options, "read-tree", "--no-sparse-checkout", "HEAD", index_file=index)
+            return not self.run(*options, *status, index_file=index).stdout
 
     def changed_paths(self, start: str, end: str) -> list[str]:
         return [os.fsdecode(value) for value in self.run(
