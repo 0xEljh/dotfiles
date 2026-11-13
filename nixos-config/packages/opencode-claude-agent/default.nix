@@ -10,11 +10,12 @@ buildNpmPackage {
       ./package.json
       ./package-lock.json
       ./tsconfig.json
+      ./vitest.config.ts
       ./src
       ./test
     ];
   };
-  npmDepsHash = "sha256-a8xRjIAqmYrhTyl0Nxkkjc885XRwFK4j5oW77drQXvk=";
+  npmDepsHash = "sha256-3jubBr1ZFhtevycHj3cU7nUWa88iiLhHydegw0H2HUw=";
 
   npmBuildScript = "build";
   nativeBuildInputs = [ makeWrapper ];

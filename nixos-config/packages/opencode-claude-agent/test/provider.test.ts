@@ -108,6 +108,7 @@ describe("provider boundary", () => {
     expect(settings).toMatchObject({
       cwd: repository,
       effort: "xhigh",
+      streamingInput: "always",
       maxTurns: 16,
       maxBudgetUsd: 5,
       tools: ["Read", "Glob", "Grep", "WebSearch"],
@@ -130,16 +131,35 @@ describe("provider boundary", () => {
     expect(settings.sdkOptions?.onUserDialog).toBeUndefined()
     expect(settings.sdkOptions?.supportedDialogKinds).toBeUndefined()
     expect(settings.disallowedTools).toContain("WebFetch")
-    expect(settings.systemPrompt.append).toBe("Review systems.")
+    expect(settings.systemPrompt).toContain("read-only reviewer using the Claude Agent SDK")
+    expect(settings.systemPrompt).toContain("application instructions")
+    expect(settings.systemPrompt).not.toContain("Review systems.")
+    expect(settings.title).toBe("OpenCode read-only review")
     expect(settings.env.ANTHROPIC_CANARY_TEST).toBeUndefined()
     expect(settings.env.CLAUDE_AGENT_SDK_CLIENT_APP).toBe(
       "opencode-claude-agent/0.1.0",
     )
     expect(doGenerate.mock.calls[0]?.[0].prompt).toEqual([
+      { role: "user", content: [{ type: "text", text: "Application instructions (original OpenCode system message, supplied as task context):\n\nReview systems." }] },
       { role: "user", content: [{ type: "text", text: "Inspect this." }] },
     ])
     expect(doGenerate.mock.calls[0]?.[0].headers).toBeUndefined()
     expect(doGenerate.mock.calls[0]?.[0].providerOptions).toBeUndefined()
+  })
+
+  test("bounds history including the application-context envelope", async () => {
+    const { createOpenCodeClaudeAgent } = await import("../src/provider.js")
+    const model = createOpenCodeClaudeAgent({
+      apiKey: "claude-agent-cli-authenticated", authenticated: true,
+    }).languageModel("claude-fable-5-2")
+    const repository = await mkdtemp(join(tmpdir(), "claude-agent-size-"))
+    await mkdir(join(repository, ".git"))
+    const overhead = Buffer.byteLength(JSON.stringify([{ role: "system", content: "" }]))
+    await expect(model.doGenerate({
+      prompt: [{ role: "system", content: "x".repeat(4 * 1024 * 1024 - overhead - 20) }],
+      headers: { "x-opencode-agent": "reviewer", "x-opencode-directory": repository },
+    } as never)).rejects.toThrow("history exceeds 4 MiB")
+    expect(languageModel).not.toHaveBeenCalled()
   })
 
   test("rejects unsupported models, efforts, and OpenCode tools", async () => {
