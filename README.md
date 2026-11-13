@@ -96,9 +96,11 @@ journalctl --user -u t3-serve -u opencode-serve -f
 
 ### 3) `notion-cat`: `cat` to Notion
 
-Simple utility to create a new Notion page and append stdin/files as code blocks.
+Create a new Notion page from Markdown files, or capture stdin/code as literal
+code blocks. Markdown supports native text blocks, local images, and explicit
+HTML artifacts. Each invocation creates a new page; it does not update one.
 
-Required env:
+Required environment variables for publication (not dry-run):
 
 - NOTION_TOKEN
 - NOTION_CAT_DATA_SOURCE_ID (Notion data source ID for the target database)
@@ -109,6 +111,41 @@ Examples:
 - notion-cat README.md
 - rg "TODO" -n . | notion-cat --title "TODO scan"
 - notion-cat --suppress-output README.md  # omit document echo, but print the page URL
+
+Local images use an image-only paragraph, such as
+`![Diagram](./artifacts/diagram.svg)`. To insert an interactive HTML preview among
+native text blocks, put one unquoted local path in a `notion-html` fence:
+
+````markdown
+## Interactive diagram
+
+```notion-html
+./artifacts/diagram.html
+```
+
+The controls explore the selected state.
+````
+
+Spell the `notion-html` marker exactly. Escaped spellings and extra fence
+arguments remain ordinary code blocks.
+
+Relative paths use the Markdown file's directory. HTML fence paths are literal:
+spaces and percent signs are not URL-encoded or decoded. Surrounding whitespace
+is trimmed. `.html` and `.htm` files upload as Notion-hosted HTML embeds. Only the
+referenced file is uploaded; bundle its scripts, styles, and images beforehand
+when it needs to work without external resources. Notion applies its own sandbox,
+so check interactions and layout in the resulting page.
+
+Inspect planned uploads without credentials or API calls:
+`notion-cat --dry-run --suppress-output report.md`. This loads environment files
+but does not validate live workspace limits or render HTML.
+
+Use `--html=literal` to leave artifact fences as code without reading their target
+files. `--images=alt` renders image descriptions without uploading images; it does
+not disable HTML artifacts. Combine both for publication without referenced
+asset reads. Ordinary `html` fences, raw HTML markup, HTML hyperlinks, and
+standalone HTML file arguments remain literal. Use an outer longer Markdown
+fence, as above, to document the syntax without uploading that example.
 
 ---
 

@@ -57,7 +57,27 @@ headings or table cells fail publication.
 
 If file selection is uncertain, inspect
 `notion-cat --dry-run --suppress-output path/to/doc.md`. Use `--images=alt` for
-text-only publication without asset reads.
+image descriptions without image-file reads.
+
+### Publish HTML artifacts
+
+Insert a built local HTML artifact at the intended position in the Markdown:
+
+````markdown
+```notion-html
+./artifacts/diagram.html
+```
+````
+
+Use one unquoted filesystem path, relative to the Markdown file. Spaces and
+percent signs are literal, not URL-encoded. Only that file is uploaded, so prefer
+a built artifact with its dependencies inlined. Notion renders it in a sandbox;
+publication success does not prove that its controls or layout work there.
+
+Inspect asset selection with dry-run. `--html=literal` leaves artifact fences as
+code without reading their target files. `--images=alt` affects only images;
+combine both options for publication without referenced asset reads. To show the
+syntax as documentation, use an outer longer code fence, as above.
 
 ## Good design
 

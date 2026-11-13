@@ -41,7 +41,12 @@ class RecordingClient:
 
     def create_upload(self, **kwargs):
         self.record("create_upload", kwargs)
-        return {"id": "upload-1", "status": "pending", "expiry_time": self.expiry}
+        number = sum(stage == "create_upload" for stage, _ in self.events)
+        return {
+            "id": f"upload-{number}",
+            "status": "pending",
+            "expiry_time": self.expiry,
+        }
 
     def send(self, file_upload_id, file):
         name, stream, mime = file
@@ -162,6 +167,204 @@ class NotionCatTests(unittest.TestCase):
             [p["bytes"] for s, p in self.client.events if s == "send"], [b"a", b"b"]
         )
         self.assertEqual([b["type"] for b in self.appended()], ["image", "image"])
+
+    def test_html_fence_uploads_exact_bytes_as_embed_in_order(self):
+        content = b"<!doctype html><button>Play</button><script>let n = 0;</script>\n"
+        self.asset("viewer.html", content)
+        doc = self.doc("before\n\n```notion-html\n./viewer.html\n```\n\nafter")
+        result, _, err, _ = self.run_cli(doc)
+        self.assertEqual(result, 0, err)
+        self.assertEqual(
+            [stage for stage, _ in self.client.events],
+            ["limit", "create_upload", "send", "page", "append"],
+        )
+        blocks = self.appended()
+        self.assertEqual(
+            [block["type"] for block in blocks], ["paragraph", "embed", "paragraph"]
+        )
+        self.assertEqual(
+            blocks[1]["embed"],
+            {"type": "file_upload", "file_upload": {"id": "upload-1"}},
+        )
+        sent = next(payload for stage, payload in self.client.events if stage == "send")
+        self.assertEqual(sent["bytes"], content)
+        self.assertEqual(sent["mime"], "text/html")
+
+    def test_html_paths_are_literal_and_source_relative(self):
+        name = "viewer 100%20 #?.htm"
+        documents = []
+        for folder in ["a", "b"]:
+            self.asset(f"{folder}/{name}", folder.encode())
+            documents.append(
+                self.doc(f"```notion-html\n{name}\n```", f"{folder}/doc.md")
+            )
+        result, _, err, _ = self.run_cli(*documents)
+        self.assertEqual(result, 0, err)
+        self.assertEqual(
+            [(p["name"], p["bytes"]) for s, p in self.client.events if s == "send"],
+            [(name, b"a"), (name, b"b")],
+        )
+        self.assertEqual(
+            [b["embed"]["file_upload"]["id"] for b in self.appended()],
+            ["upload-1", "upload-2"],
+        )
+
+    def test_html_and_image_modes_are_independent_and_reuse_uploads(self):
+        html = self.asset("viewer.html", b"<button>Play</button>")
+        (self.root / "alias.html").symlink_to(html)
+        self.asset()
+        doc = self.doc(
+            "![shot](shot.png)\n\n```notion-html\nviewer.html\n```\n\n"
+            "```notion-html\nalias.html\n```"
+        )
+        for flags, types, mimes in [
+            ([], ["image", "embed", "embed"], ["image/png", "text/html"]),
+            (["--images=alt"], ["paragraph", "embed", "embed"], ["text/html"]),
+            (["--html=literal"], ["image", "code", "code"], ["image/png"]),
+        ]:
+            with self.subTest(flags=flags):
+                self.client.events.clear()
+                result, _, err, _ = self.run_cli(*flags, doc)
+                self.assertEqual(result, 0, err)
+                blocks = self.appended()
+                self.assertEqual([b["type"] for b in blocks], types)
+                self.assertEqual(
+                    [p["mime"] for s, p in self.client.events if s == "send"], mimes
+                )
+                if "embed" in types:
+                    expected_id = "upload-1" if flags else "upload-2"
+                    self.assertEqual(
+                        [b["embed"]["file_upload"]["id"] for b in blocks[1:]],
+                        [expected_id, expected_id],
+                    )
+
+    def test_html_only_containers_preserve_nested_placement(self):
+        self.asset("viewer.html")
+        for text, container in [
+            ("- ```notion-html\n  viewer.html\n  ```", "bulleted_list_item"),
+            ("> ```notion-html\n> viewer.html\n> ```", "quote"),
+        ]:
+            with self.subTest(container=container):
+                self.client.events.clear()
+                result, _, err, _ = self.run_cli("--images=alt", self.doc(text))
+                self.assertEqual(result, 0, err)
+                appends = [p for s, p in self.client.events if s == "append"]
+                self.assertEqual(
+                    [b["type"] for b in appends[0]["children"]], [container]
+                )
+                self.assertEqual([b["type"] for b in appends[1]["children"]], ["embed"])
+
+    def test_code_and_html_preserve_list_item_order(self):
+        self.asset("viewer.html")
+        doc = self.doc(
+            '- Example\n\n  ```python\n  print("before")\n  ```\n\n'
+            "  ```notion-html\n  viewer.html\n  ```\n\n  after"
+        )
+        result, _, err, _ = self.run_cli(doc)
+        self.assertEqual(result, 0, err)
+        appends = [
+            payload for stage, payload in self.client.events if stage == "append"
+        ]
+        self.assertEqual(
+            [b["type"] for b in appends[0]["children"]], ["bulleted_list_item"]
+        )
+        self.assertEqual(
+            [b["type"] for b in appends[1]["children"]],
+            ["code", "embed", "paragraph"],
+        )
+
+    def test_list_text_overflow_stays_before_html(self):
+        self.asset("viewer.html")
+        doc = self.doc(
+            "- " + "**text** " * 60 + "\n\n  ```notion-html\n  viewer.html\n  ```"
+        )
+        result, _, err, _ = self.run_cli(doc)
+        self.assertEqual(result, 0, err)
+        appends = [
+            payload for stage, payload in self.client.events if stage == "append"
+        ]
+        self.assertEqual(
+            [block["type"] for block in appends[1]["children"]], ["paragraph", "embed"]
+        )
+
+    def test_invalid_html_references_fail_before_client_construction(self):
+        self.asset("not-html.txt")
+        for body in [
+            "",
+            "one.html\ntwo.html",
+            "missing.html",
+            "not-html.txt",
+            "https://example.com/a.html",
+        ]:
+            with self.subTest(body=body):
+                result, _, err, factory = self.run_cli(
+                    self.doc(f"```notion-html\n{body}\n```"), credentials=False
+                )
+                self.assertEqual(result, 2, err)
+                self.assertIn("planning", err)
+                self.assertIn("--html=literal", err)
+                factory.assert_not_called()
+
+    def test_html_literal_and_code_examples_never_upload_missing_files(self):
+        marker = "```notion-html\nmissing.html\n```"
+        for flags, text in [
+            (["--html=literal"], marker),
+            (["--raw"], marker),
+            ([], "````markdown\n" + marker + "\n````"),
+            ([], "```html\n<button>Play</button>\n```"),
+            ([], "```notion-html example\nmissing.html\n```"),
+            ([], "```notion\\-html\nmissing.html\n```"),
+            ([], "```notion&#45;html\nmissing.html\n```"),
+            ([], "[Open viewer](missing.html)\n\n<iframe src='missing.html'></iframe>"),
+        ]:
+            with self.subTest(flags=flags, text=text):
+                self.client.events.clear()
+                result, _, err, _ = self.run_cli(*flags, self.doc(text))
+                self.assertEqual(result, 0, err)
+                self.assertEqual([s for s, _ in self.client.events], ["page", "append"])
+
+    def test_html_unicode_controls_fail_before_client_construction(self):
+        for char in ["\u0080", "\u009b"]:
+            with self.subTest(char=repr(char)):
+                name = f"viewer{char}.html"
+                self.asset(name)
+                result, _, err, factory = self.run_cli(
+                    "--dry-run",
+                    self.doc(f"```notion-html\n{name}\n```"),
+                    credentials=False,
+                )
+                self.assertEqual(result, 2, err)
+                self.assertIn("control character", err)
+                factory.assert_not_called()
+
+    def test_html_dry_run_reports_attachment_type_without_credentials(self):
+        asset = self.asset("viewer.html", b"<p>viewer</p>")
+        doc = self.doc(
+            "```notion-html\nviewer.html\n```\n\n```notion-html\nviewer.html\n```"
+        )
+        result, _, err, factory = self.run_cli("--dry-run", doc, credentials=False)
+        self.assertEqual(result, 0, err)
+        factory.assert_not_called()
+        for expected in [
+            str(asset),
+            "text/html",
+            "type=embed",
+            "action=reuse",
+            "No upload",
+        ]:
+            self.assertIn(expected, err)
+
+    def test_html_send_failure_stops_before_page_and_reports_upload(self):
+        self.asset("viewer.html")
+        self.client.failure = "send"
+        result, _, err, _ = self.run_cli(self.doc("```notion-html\nviewer.html\n```"))
+        self.assertEqual(result, 1, err)
+        self.assertEqual(
+            [s for s, _ in self.client.events], ["limit", "create_upload", "send"]
+        )
+        self.assertIn("binary send", err)
+        self.assertIn("upload-1", err)
+        self.assertNotIn("unsafe remote response", err)
 
     def test_images_keep_container_order_including_first_and_nested(self):
         self.asset()

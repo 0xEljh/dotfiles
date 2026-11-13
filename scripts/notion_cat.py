@@ -20,6 +20,7 @@ import socket
 import stat
 import sys
 import time
+import unicodedata
 from contextlib import ExitStack
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -52,6 +53,7 @@ IMAGE_MIME_TYPES = {
     ".avif": "image/avif",
     ".apng": "image/apng",
 }
+HTML_MIME_TYPES = {".html": "text/html", ".htm": "text/html"}
 
 INLINE_CHILDREN_REQUIRED_TYPES = frozenset({"column", "column_list", "table", "tab"})
 
@@ -569,7 +571,7 @@ def _handle_block_html(token: dict) -> list[dict]:
 
 
 _BLOCK_HANDLERS = {
-    "planned_image": lambda token: [token["block"]],
+    "planned_asset": lambda token: [token["block"]],
     "paragraph": _handle_block_paragraph,
     "heading": _handle_block_heading,
     "block_code": _handle_block_code,
@@ -591,11 +593,6 @@ def _token_to_blocks(token: dict) -> list[dict]:
     if raw:
         return [_make_block("paragraph", [_notion_rich_text(raw)])]
     return []
-
-
-# Block types not allowed as children of list items by the Notion API.
-# Promote these to siblings rather than nesting them.
-_NON_NESTABLE_IN_LIST_ITEM = frozenset({"code", "table"})
 
 
 def _list_item_to_blocks(token: dict, ordered: bool) -> list[dict]:
@@ -622,20 +619,15 @@ def _list_item_to_blocks(token: dict, ordered: bool) -> list[dict]:
     if not inline_rt:
         inline_rt = [_notion_rich_text("")]
 
-    nestable = [
-        b for b in nested_blocks if b.get("type") not in _NON_NESTABLE_IN_LIST_ITEM
-    ]
-    promoted = [b for b in nested_blocks if b.get("type") in _NON_NESTABLE_IN_LIST_ITEM]
-
     block = _make_block(block_type, inline_rt[:MAX_RICH_TEXT_ITEMS])
     overflow_rt = inline_rt[MAX_RICH_TEXT_ITEMS:]
-    if nestable:
-        block[block_type]["children"] = nestable
     overflow_blocks = [
         _make_block("paragraph", overflow_rt[i : i + MAX_RICH_TEXT_ITEMS])
         for i in range(0, len(overflow_rt), MAX_RICH_TEXT_ITEMS)
     ]
-    return [block] + overflow_blocks + promoted
+    if overflow_blocks or nested_blocks:
+        block[block_type]["children"] = overflow_blocks + nested_blocks
+    return [block]
 
 
 @dataclass(frozen=True)
@@ -646,15 +638,15 @@ class MarkdownSource:
 
 
 @dataclass(frozen=True)
-class ImageAsset:
+class LocalAsset:
     path: Path
     mime: str
     size: int
 
 
 @dataclass
-class ImageReference:
-    asset: ImageAsset
+class AssetReference:
+    asset: LocalAsset
     source: str
     placement: str
     block: dict
@@ -663,11 +655,11 @@ class ImageReference:
 @dataclass
 class PublishPlan:
     blocks: list[dict] = field(default_factory=list)
-    assets: dict[Path, ImageAsset] = field(default_factory=dict)
-    references: list[ImageReference] = field(default_factory=list)
+    assets: dict[Path, LocalAsset] = field(default_factory=dict)
+    references: list[AssetReference] = field(default_factory=list)
 
 
-def _local_image(url: str, base_dir: Path) -> ImageAsset:
+def _local_image(url: str, base_dir: Path) -> LocalAsset:
     # Split before decoding: encoded '?' and '#' belong to filenames.
     parsed = urlsplit(url)
     if (
@@ -689,31 +681,45 @@ def _local_image(url: str, base_dir: Path) -> ImageAsset:
         raise ValueError("image path must decode as UTF-8") from None
     if "\0" in decoded:
         raise ValueError("image path contains a NUL character")
-    path = base_dir / decoded
+    return _local_asset(base_dir / decoded, IMAGE_MIME_TYPES, "image")
+
+
+def _local_html(body: str, base_dir: Path) -> LocalAsset:
+    path = body.strip()
+    if not path or len(path.splitlines()) != 1:
+        raise ValueError("notion-html requires one nonempty local path line")
+    if any(unicodedata.category(char) == "Cc" for char in path):
+        raise ValueError("HTML artifact path contains a control character")
+    if re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", path):
+        raise ValueError("HTML artifact source must be a local path, not a URI")
+    return _local_asset(base_dir / path, HTML_MIME_TYPES, "HTML artifact")
+
+
+def _local_asset(path: Path, mime_types: dict[str, str], kind: str) -> LocalAsset:
     try:
         path = path.resolve()
     except RuntimeError as exc:
         # Python 3.11 reports symlink cycles as RuntimeError rather than OSError.
-        raise ValueError(f"cannot resolve image {path}: {exc}") from None
-    mime = IMAGE_MIME_TYPES.get(path.suffix.lower())
+        raise ValueError(f"cannot resolve {kind} {path}: {exc}") from None
+    mime = mime_types.get(path.suffix.lower())
     if mime is None:
-        raise ValueError(f"unsupported image extension: {path.suffix!r} ({path})")
+        raise ValueError(f"unsupported {kind} extension: {path.suffix!r} ({path})")
     if len(path.name.encode("utf-8")) > 900:
         raise ValueError(f"upload basename exceeds 900 UTF-8 bytes: {path}")
     try:
         info = path.stat()
         if not stat.S_ISREG(info.st_mode):
-            raise ValueError(f"image must be a readable regular file: {path}")
+            raise ValueError(f"{kind} must be a readable regular file: {path}")
         # Opening, without consuming bytes, verifies readability during preflight.
         with path.open("rb"):
             pass
     except FileNotFoundError:
-        raise ValueError(f"missing image: {path}") from None
+        raise ValueError(f"missing {kind}: {path}") from None
     if info.st_size > MAX_SINGLE_PART_BYTES:
         raise ValueError(
-            f"image {path}: {info.st_size} bytes exceeds ceiling {MAX_SINGLE_PART_BYTES} bytes (single-part)"
+            f"{kind} {path}: {info.st_size} bytes exceeds ceiling {MAX_SINGLE_PART_BYTES} bytes (single-part)"
         )
-    return ImageAsset(path, mime, info.st_size)
+    return LocalAsset(path, mime, info.st_size)
 
 
 def _image_tokens(token: dict):
@@ -723,9 +729,32 @@ def _image_tokens(token: dict):
         yield from _image_tokens(child)
 
 
-def build_publish_plan(sources: list[MarkdownSource], images: str) -> PublishPlan:
+def _preserve_html_fence_intent(markdown) -> None:
+    def parse_fence(block, match, state):
+        end = block.parse_fenced_code(match, state)
+        if end is not None:
+            # Mistune unescapes fence info. Only the exact source marker opts in.
+            raw_info = match.group("fenced_3") or ""
+            state.tokens[-1]["html_artifact"] = raw_info.strip() == "notion-html"
+        return end
+
+    markdown.block.register("fenced_code", None, parse_fence)
+
+
+def build_publish_plan(
+    sources: list[MarkdownSource], images: str, html: str = "upload"
+) -> PublishPlan:
     plan = PublishPlan()
-    md = mistune.create_markdown(renderer=None, plugins=["strikethrough", "table"])
+    md = mistune.create_markdown(
+        renderer=None, plugins=["strikethrough", "table", _preserve_html_fence_intent]
+    )
+
+    def planned(
+        asset: LocalAsset, block: dict, source: MarkdownSource, placement: str
+    ) -> dict:
+        asset = plan.assets.setdefault(asset.path, asset)
+        plan.references.append(AssetReference(asset, source.label, placement, block))
+        return {"type": "planned_asset", "block": block}
 
     def convert(
         tokens: list[dict], source: MarkdownSource, ancestors: tuple[str, ...] = ()
@@ -733,11 +762,26 @@ def build_publish_plan(sources: list[MarkdownSource], images: str) -> PublishPla
         converted = []
         for token in tokens:
             kind = token.get("type", "")
-            found = list(_image_tokens(token))
+            children = token.get("children", [])
+            if html == "upload" and kind == "block_code" and token.get("html_artifact"):
+                asset = _local_html(token.get("raw", ""), source.base_dir)
+                block = {
+                    "object": "block",
+                    "type": "embed",
+                    "embed": {"type": "file_upload", "file_upload": {}},
+                }
+                converted.append(
+                    planned(asset, block, source, "/".join((*ancestors, kind)))
+                )
+                continue
+            if kind in {"list", "list_item", "block_quote"}:
+                token["children"] = convert(children, source, (*ancestors, kind))
+                converted.append(token)
+                continue
+            found = list(_image_tokens(token)) if images == "upload" else []
             if not found:
                 converted.append(token)
                 continue
-            children = token.get("children", [])
             if kind in {"paragraph", "block_text"}:
                 direct = [child for child in children if child.get("type") == "image"]
                 whitespace_only = all(
@@ -754,7 +798,6 @@ def build_publish_plan(sources: list[MarkdownSource], images: str) -> PublishPla
                     asset = _local_image(
                         image.get("attrs", {}).get("url", ""), source.base_dir
                     )
-                    asset = plan.assets.setdefault(asset.path, asset)
                     caption = chunk_rich_text(
                         _plain_inline_text(image.get("children", []))
                     )
@@ -770,13 +813,7 @@ def build_publish_plan(sources: list[MarkdownSource], images: str) -> PublishPla
                         },
                     }
                     placement = "/".join((*ancestors, kind))
-                    plan.references.append(
-                        ImageReference(asset, source.label, placement, block)
-                    )
-                    converted.append({"type": "planned_image", "block": block})
-            elif kind in {"list", "list_item", "block_quote"}:
-                token["children"] = convert(children, source, (*ancestors, kind))
-                converted.append(token)
+                    converted.append(planned(asset, block, source, placement))
             else:
                 raise ValueError(
                     f"images in {kind} are unsupported; move each image to its own paragraph"
@@ -786,19 +823,19 @@ def build_publish_plan(sources: list[MarkdownSource], images: str) -> PublishPla
     for source in sources:
         try:
             tokens = md(source.text)
-            if images == "upload":
-                tokens = convert(tokens, source)
+            tokens = convert(tokens, source)
             plan.blocks.extend(_ast_to_blocks(tokens))
         except (ValueError, OSError) as exc:
             raise ValueError(
-                f"{source.label}: {exc}. Use --images=alt for text-only publication."
+                f"{source.label}: {exc}. Use --images=alt for image descriptions "
+                "or --html=literal to keep artifact fences as code."
             ) from None
     return plan
 
 
 def report_plan(plan: PublishPlan, sources: list[MarkdownSource]) -> None:
     eprint("dry-run: local validation only. No upload or page creation occurred.")
-    eprint("Workspace limits and server-side image acceptance are unchecked.")
+    eprint("Workspace limits and server-side asset acceptance are unchecked.")
     for source in sources:
         eprint(f"document={source.label}")
     seen: set[Path] = set()
@@ -806,7 +843,7 @@ def report_plan(plan: PublishPlan, sources: list[MarkdownSource]) -> None:
         asset = reference.asset
         action = "reuse" if asset.path in seen else "upload"
         eprint(
-            f"asset: source={reference.source} path={asset.path} mime={asset.mime} bytes={asset.size} placement={reference.placement} action={action}"
+            f"asset: source={reference.source} path={asset.path} mime={asset.mime} bytes={asset.size} placement={reference.placement} type={reference.block['type']} action={action}"
         )
         seen.add(asset.path)
 
@@ -881,7 +918,7 @@ def _upload_response(response: object, stage: str) -> dict:
     return response
 
 
-def _snapshot_images(
+def _snapshot_assets(
     plan: PublishPlan, ceiling: int, cleanup: ExitStack
 ) -> dict[Path, BinaryIO]:
     """Freeze and check all bytes before the first remote mutation.
@@ -898,7 +935,7 @@ def _snapshot_images(
                 info = os.fstat(source.fileno())
                 if not stat.S_ISREG(info.st_mode):
                     raise PublicationError(
-                        f"planning: image must be a regular file: {asset.path}"
+                        f"planning: asset must be a regular file: {asset.path}"
                     )
                 size = info.st_size
                 copied = 0
@@ -913,7 +950,7 @@ def _snapshot_images(
                     snapshot.write(chunk)
                 if size > ceiling:
                     raise PublicationError(
-                        f"planning: image {asset.path}: {size} bytes exceeds ceiling {ceiling} bytes"
+                        f"planning: asset {asset.path}: {size} bytes exceeds ceiling {ceiling} bytes"
                     )
             snapshot.seek(0)
         except OSError as exc:
@@ -924,7 +961,7 @@ def _snapshot_images(
     return snapshots
 
 
-def upload_images(notion: Client, plan: PublishPlan, upload_ids: list[str]) -> None:
+def upload_assets(notion: Client, plan: PublishPlan, upload_ids: list[str]) -> None:
     if not plan.assets:
         return
     try:
@@ -944,13 +981,13 @@ def upload_images(notion: Client, plan: PublishPlan, upload_ids: list[str]) -> N
     for asset in plan.assets.values():
         if asset.size > ceiling:
             raise PublicationError(
-                f"workspace-limit retrieval: image {asset.path}: {asset.size} bytes exceeds ceiling {ceiling} bytes"
+                f"workspace-limit retrieval: asset {asset.path}: {asset.size} bytes exceeds ceiling {ceiling} bytes"
             )
 
     uploaded: dict[Path, str] = {}
     deadlines: list[datetime] = []
     with ExitStack() as cleanup:
-        snapshots = _snapshot_images(plan, ceiling, cleanup)
+        snapshots = _snapshot_assets(plan, ceiling, cleanup)
         for asset in plan.assets.values():
             try:
                 response = notion.file_uploads.create(
@@ -988,7 +1025,9 @@ def upload_images(notion: Client, plan: PublishPlan, upload_ids: list[str]) -> N
             uploaded[asset.path] = upload_id
 
     for reference in plan.references:
-        reference.block["image"]["file_upload"] = {"id": uploaded[reference.asset.path]}
+        reference.block[reference.block["type"]]["file_upload"] = {
+            "id": uploaded[reference.asset.path]
+        }
     if any(deadline <= datetime.now(UTC) for deadline in deadlines):
         raise PublicationError(
             "page creation: an upload attachment deadline has elapsed; no page created"
@@ -1106,7 +1145,10 @@ def append_blocks(notion: Client, page_id: str, blocks: list[dict]) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Create a Notion page from Markdown files or literal stdin/code inputs",
+        description=(
+            "Create a Notion page from Markdown files or literal stdin/code inputs. "
+            "Print the created Notion page URL to stderr on success."
+        ),
     )
     parser.add_argument("files", nargs="*", help="Files to append. Use '-' for stdin")
     parser.add_argument("--title", help="Page title")
@@ -1130,6 +1172,12 @@ def parse_args() -> argparse.Namespace:
         choices=("upload", "alt"),
         default="upload",
         help="Rendered Markdown images: upload local files (default), or descriptions only",
+    )
+    parser.add_argument(
+        "--html",
+        choices=("upload", "literal"),
+        default="upload",
+        help="notion-html fences: upload local HTML (default), or keep literal code without reading assets",
     )
     parser.add_argument("--dry-run", action="store_true", help="Do not call Notion")
     return parser.parse_args()
@@ -1204,7 +1252,7 @@ def main() -> int:
 
     try:
         plan = (
-            build_publish_plan(sources, args.images)
+            build_publish_plan(sources, args.images, args.html)
             if use_markdown
             else PublishPlan(
                 blocks=build_code_blocks(
@@ -1255,7 +1303,7 @@ def main() -> int:
                 logger=_quiet_sdk_logger(),
             )
             clients.append(uploader)
-            upload_images(uploader, plan, upload_ids)
+            upload_assets(uploader, plan, upload_ids)
         stage = "page creation"
         notion = Client(
             auth=token, notion_version=NOTION_VERSION, logger=_quiet_sdk_logger()
