@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, test, vi } from "vitest"
 import type { Plugin } from "@opencode/plugin"
 import type { IntegrationEditor } from "@opencode/plugin/promise/integration"
 import type { ProviderEditor } from "@opencode/plugin/promise/provider"
-import type { SessionModelRequest } from "@opencode/plugin/promise/session"
+import type { ModelHookOptions } from "@opencode/plugin/promise/registration"
+import type { SessionContext, SessionHooks, SessionModelRequest } from "@opencode/plugin/promise/session"
 
 const { checkClaudeLogin } = vi.hoisted(() => ({ checkClaudeLogin: vi.fn() }))
 vi.mock("../src/auth-v2.js", () => ({ checkClaudeLogin }))
@@ -15,7 +16,10 @@ async function setup() {
   const { default: plugin } = await import("../src/plugin-v2.js")
   const { Agent, Model, Provider } = await import("@opencode/plugin")
   let definition: Parameters<ProviderEditor["add"]>[0] | undefined
-  let requestHook: ((input: SessionModelRequest) => Promise<void> | void) | undefined
+  const hooks = new Map<keyof SessionHooks, {
+    callback: (input: never) => Promise<void> | void
+    options?: ModelHookOptions
+  }>()
   const add = vi.fn<ProviderEditor["add"]>(value => { definition = value })
   const method = vi.fn<IntegrationEditor["method"]["update"]>()
   const update = vi.fn<IntegrationEditor["update"]>((_id, change) => change({ id: "claude-agent", name: "claude-agent" }))
@@ -32,9 +36,8 @@ async function setup() {
   const resolve = vi.fn().mockResolvedValue({ type: "key", key: sentinel })
   const status = vi.fn().mockResolvedValue(undefined)
   const get = vi.fn().mockResolvedValue({ agent: "build", location: { directory: "/session/repository" } })
-  const hook = vi.fn(async (name: string, callback: (input: SessionModelRequest) => Promise<void> | void) => {
-    expect(name).toBe("model.request")
-    requestHook = callback
+  const hook = vi.fn(async (name: keyof SessionHooks, callback: (input: never) => Promise<void> | void, options?: ModelHookOptions) => {
+    hooks.set(name, { callback, options })
     return registration
   })
   await plugin.setup({
@@ -48,13 +51,35 @@ async function setup() {
   } as unknown as Plugin.Context)
   const request = (overrides: Partial<SessionModelRequest> = {}): SessionModelRequest => ({
     sessionID: "session-one" as SessionModelRequest["sessionID"],
-    agent: Agent.ID.make("reviewer-max"),
+    agent: Agent.ID.make("reviewer"),
     kind: "primary",
-    model: { providerID: Provider.ID.make("claude-agent"), id: Model.ID.make("claude-fable-5-1") },
+    model: { providerID: Provider.ID.make("claude-agent"), id: Model.ID.make("claude-fable-5-2") },
     headers: { "existing-header": "retained" },
     ...overrides,
   })
-  return { definition: definition!, add, method, update, active, resolve, status, get, hook, request, run: (input = request()) => requestHook!(input), Agent, Model, Provider }
+  const dispatch = async <Name extends "context" | "model.request">(name: Name, input: SessionHooks[Name]) => {
+    const registered = hooks.get(name)
+    if (!registered || (registered.options?.providerID && registered.options.providerID !== input.model.providerID)) return
+    await registered.callback(input as never)
+  }
+  const context = (overrides: Partial<SessionContext> = {}): SessionContext => ({
+    sessionID: "session-one" as SessionContext["sessionID"],
+    agent: Agent.ID.make("reviewer"),
+    model: request().model,
+    system: [{ type: "text", text: "Review this proposal." }],
+    messages: [],
+    options: { temperature: 0.2 },
+    tools: Object.fromEntries(["read", "question", "execute", "mcp_lookup"].map(name => [
+      name, { description: name, input: { type: "object" } },
+    ])),
+    ...overrides,
+  })
+  return {
+    definition: definition!, add, method, update, active, resolve, status, get, hook, request, context,
+    run: (input = request()) => dispatch("model.request", input),
+    runContext: (input = context()) => dispatch("context", input),
+    Agent, Model, Provider,
+  }
 }
 
 describe("v2 reviewer registration and routing", () => {
@@ -68,7 +93,7 @@ describe("v2 reviewer registration and routing", () => {
       id: "claude-agent", integrationID: "claude-agent", activation: "auto",
       package: `aisdk:${new URL("../src/provider-v2.js", import.meta.url).href}`,
     })
-    expect(h.definition.models.map(model => model.id)).toEqual(["claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-1"])
+    expect(h.definition.models.map(model => model.id)).toEqual(["claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-2"])
     for (const model of h.definition.models) {
       expect(Schema.is(h.Model.Info)(model)).toBe(true)
       expect(model).toMatchObject({
@@ -84,9 +109,29 @@ describe("v2 reviewer registration and routing", () => {
         command: [fileURLToPath(new URL("../src/connect-v2", import.meta.url))],
       },
     })
-    expect(h.hook.mock.calls[0]).toHaveLength(2) // No provider filter: wrong-provider requests must reach policy.
+    expect(h.hook.mock.calls.find(([name]) => name === "model.request")).toHaveLength(2) // Wrong-provider requests must reach policy.
     expect(h.active).not.toHaveBeenCalled()
     expect(checkClaudeLogin).not.toHaveBeenCalled()
+  })
+
+  test("removes OpenCode tools from Claude Agent calls without changing the rest of the context", async () => {
+    const h = await setup()
+    const input = h.context()
+    const original = structuredClone(input)
+    const tools = input.tools
+    await h.runContext(input)
+    expect(input).toEqual({ ...original, tools: {} })
+    expect(tools).toEqual(original.tools)
+    await h.runContext(input)
+    expect(input.tools).toEqual({})
+  })
+
+  test.each(["openai", "anthropic"])("preserves OpenCode tools for %s calls", async provider => {
+    const h = await setup()
+    const input = h.context({ model: { providerID: h.Provider.ID.make(provider), id: h.Model.ID.make("other-model") } })
+    const original = structuredClone(input)
+    await h.runContext(input)
+    expect(input).toEqual(original)
   })
 
   test("uses each request's agent/session location, preserves headers, and observes a moved session", async () => {
@@ -95,7 +140,7 @@ describe("v2 reviewer registration and routing", () => {
     await h.run(first)
     expect(h.get).toHaveBeenCalledWith({ sessionID: "session-one" })
     expect(first.headers).toEqual({
-      "existing-header": "retained", "x-opencode-agent": "reviewer-max",
+      "existing-header": "retained", "x-opencode-agent": "reviewer",
       "x-opencode-directory": "/session/repository", "x-opencode-session": "session-one",
     })
     h.get.mockResolvedValue({ agent: "build", location: { directory: "/moved/repository" } })
@@ -131,7 +176,9 @@ describe("v2 reviewer registration and routing", () => {
 
   test("rejects a non-reviewer selecting Claude and leaves unrelated requests alone", async () => {
     const h = await setup()
-    await expect(h.run(h.request({ agent: h.Agent.ID.make("build") }))).rejects.toThrow("not allowed")
+    for (const agent of ["build", "reviewer-independent", "reviewer-architecture", "implementation-reviewer", "implementation-reviewer-heavy", "acceptance-redteam"]) {
+      await expect(h.run(h.request({ agent: h.Agent.ID.make(agent) }))).rejects.toThrow("not allowed")
+    }
     await h.run(h.request({ agent: h.Agent.ID.make("build"), model: { providerID: h.Provider.ID.make("openai"), id: h.Model.ID.make("gpt-5.5") } }))
     expect(h.active).not.toHaveBeenCalled()
   })

@@ -50,6 +50,11 @@ export default Plugin.define({
       })
     })
 
+    // Claude executes its own restricted SDK tools, not OpenCode's tool catalog.
+    await ctx.session.hook("context", context => {
+      context.tools = {}
+    }, { providerID: PROVIDER_ID })
+
     // Unscoped so a reviewer selecting a different provider still hits policy.
     await ctx.session.hook("model.request", async request => {
       if (request.kind === "primary" || request.kind === "generate") {

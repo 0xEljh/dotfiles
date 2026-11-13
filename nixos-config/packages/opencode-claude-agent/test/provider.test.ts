@@ -31,7 +31,7 @@ describe("provider boundary", () => {
     expect(createClaudeCode).not.toHaveBeenCalled()
   })
 
-  test.each(["claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-1"])("streams with a fresh inner model using the selected ID %s", async (selectedModel) => {
+  test.each(["claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-2"])("streams with a fresh inner model using the selected ID %s", async (selectedModel) => {
     const doStream = vi.fn().mockImplementation(async () => ({
       stream: new ReadableStream({ start: (controller) => controller.close() }),
     }))
@@ -49,10 +49,10 @@ describe("provider boundary", () => {
     const options = {
       prompt: [{ role: "system", content: "Review systems." }],
       headers: {
-        "x-opencode-agent": "reviewer-systems-fable",
+        "x-opencode-agent": "reviewer",
         "x-opencode-directory": repository,
       },
-      providerOptions: { "claude-agent": { effort: "high" } },
+      providerOptions: { "claude-agent": { effort: "xhigh" } },
     }
 
     const first = await model.doStream(options as never)
@@ -64,6 +64,7 @@ describe("provider boundary", () => {
     expect(languageModel).toHaveBeenCalledTimes(2)
     for (const [modelId, settings] of languageModel.mock.calls) {
       expect(modelId).toBe(selectedModel)
+      expect(settings.effort).toBe("xhigh")
       expect(settings.settings.switchModelsOnFlag).toBe(false)
       expect(settings.fallbackModel).toBeUndefined()
       expect(settings.sdkOptions?.onUserDialog).toBeUndefined()
@@ -72,7 +73,7 @@ describe("provider boundary", () => {
     expect(createClaudeCode.mock.calls[0]?.[0]).toBeUndefined()
   })
 
-  test.each(["claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-1"])("generates with selected ID %s and fixed, isolated SDK settings", async (selectedModel) => {
+  test.each(["claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-2"])("generates with selected ID %s and fixed, isolated SDK settings", async (selectedModel) => {
     const doGenerate = vi.fn().mockResolvedValue({ text: "review" })
     languageModel.mockImplementation(() => ({ doGenerate }))
     vi.stubEnv("ANTHROPIC_CANARY_TEST", "secret")
@@ -93,7 +94,7 @@ describe("provider boundary", () => {
         { role: "user", content: [{ type: "text", text: "Inspect this." }] },
       ],
       headers: {
-        "x-opencode-agent": "reviewer-systems-fable",
+        "x-opencode-agent": "reviewer",
         "x-opencode-directory": repository,
       },
       providerOptions: { "claude-agent": { effort: "xhigh" } },
@@ -151,7 +152,7 @@ describe("provider boundary", () => {
 
     const repository = await mkdtemp(join(tmpdir(), "claude-agent-reject-"))
     await mkdir(join(repository, ".git"))
-    const model = provider.languageModel("claude-fable-5-1")
+    const model = provider.languageModel("claude-fable-5-2")
     const base = {
       prompt: [{ role: "user", content: "Inspect this." }],
       headers: {

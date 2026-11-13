@@ -7,11 +7,11 @@ export const PROVIDER_ID = "claude-agent"
 export const MODELS = {
   "claude-sonnet-5-5": "Claude Sonnet 5.5 (Agent SDK)",
   "claude-opus-5-5": "Claude Opus 5.5 (Agent SDK)",
-  "claude-fable-5-1": "Claude Fable 5.1 (Agent SDK)",
+  "claude-fable-5-2": "Claude Fable 5.2 (Agent SDK)",
 }
 
 const ALLOWED_AGENT_NAMES = new Set([
-  "reviewer-max",
+  "reviewer",
   "reviewer-systems-fable",
 ])
 
