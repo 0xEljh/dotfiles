@@ -103,7 +103,7 @@ describe("workspace policy", () => {
 describe("request policy", () => {
   test("accepts only the configured Fable reviewers", () => {
     expect(() => assertAllowedAgent("reviewer-systems-fable")).not.toThrow()
-    expect(() => assertAllowedAgent("reviewer-max")).not.toThrow()
+    expect(() => assertAllowedAgent("reviewer")).not.toThrow()
     expect(() => assertAllowedAgent("build")).toThrow("not allowed")
   })
 

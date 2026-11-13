@@ -8,7 +8,7 @@ describe("v2 dynamic AI SDK factory", () => {
     expect(() => module.createClaudeAgentV2({ apiKey: "wrong" })).toThrow("authentication sentinel")
   })
 
-  test.each(["claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-1"])("constructs the existing restricted V3 adapter for %s without querying Claude", async modelID => {
+  test.each(["claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-2"])("constructs the existing restricted V3 adapter for %s without querying Claude", async modelID => {
     const { createClaudeAgentV2 } = await import("../src/provider-v2.js")
     const provider = createClaudeAgentV2({ name: "claude-agent", apiKey: "claude-agent-cli-authenticated" })
     expect(provider.languageModel(modelID)).toMatchObject({
