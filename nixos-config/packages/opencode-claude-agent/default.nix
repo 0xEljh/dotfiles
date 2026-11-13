@@ -10,6 +10,7 @@ buildNpmPackage {
       ./package.json
       ./package-lock.json
       ./tsconfig.json
+      ./vitest.config.ts
       ./src
       ./test
     ];

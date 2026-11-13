@@ -1,5 +1,6 @@
 import { lstat, realpath, stat } from "node:fs/promises"
 import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path"
+import type { LanguageModelV3Prompt } from "@ai-sdk/provider"
 
 export const AUTH_SENTINEL = "claude-agent-cli-authenticated"
 export const CLIENT_APP = "opencode-claude-agent/0.1.0"
@@ -42,11 +43,6 @@ const PROTECTED_NAMES = new Set([
   ".pypirc",
   "credentials",
 ])
-
-type PromptMessage = {
-  role: string
-  content: unknown
-}
 
 export function sanitizeClaudeEnvironment(
   source: NodeJS.ProcessEnv,
@@ -198,40 +194,15 @@ export async function assertSafeGrepPath(
   return canonical
 }
 
-function systemText(content: unknown): string {
-  if (typeof content === "string") return content
-  if (!Array.isArray(content)) return ""
-  return content
-    .flatMap((part) => {
-      if (typeof part === "string") return [part]
-      if (
-        part &&
-        typeof part === "object" &&
-        "type" in part &&
-        part.type === "text" &&
-        "text" in part &&
-        typeof part.text === "string"
-      ) {
-        return [part.text]
-      }
-      return []
-    })
-    .join("\n")
-}
-
-export function splitSystemPrompt<T extends PromptMessage>(prompt: T[]): {
-  systemPrompt: string
-  prompt: T[]
-} {
-  const system: string[] = []
-  const remainder: T[] = []
-  for (const message of prompt) {
-    if (message.role === "system") {
-      const text = systemText(message.content).trim()
-      if (text) system.push(text)
-      continue
-    }
-    remainder.push(message)
-  }
-  return { systemPrompt: system.join("\n\n"), prompt: remainder }
+export function reviewerTaskPrompt(prompt: LanguageModelV3Prompt): LanguageModelV3Prompt {
+  // Preserve chronological instruction updates without elevating host tool
+  // directions into the SDK's system prompt. This intentionally changes priority.
+  return prompt.map((message) => message.role === "system" ? {
+    ...message,
+    role: "user",
+    content: [{
+      type: "text",
+      text: "Application instructions (original OpenCode system message, supplied as task context):\n\n" + message.content,
+    }],
+  } : message)
 }
