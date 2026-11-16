@@ -20,6 +20,7 @@ permission:
   skill:
     "*": deny
     pr: allow
+    statechart: allow
     technical-writing: allow
     github-attachments: allow
   bash: allow
@@ -31,6 +32,9 @@ permission:
 
 Create or update the requested PR. Use the `pr` and `technical-writing` skill to
 write the body.
+
+Prefer the `statechart` skill when state transitions, lifecycle, recovery, or
+bug paths are central to understanding the change.
 
 For screenshot/video/asset publication, load the `github-attachments` skill. Use
 it for push-access GitHub.com repositories with user credentials. Generally

@@ -10,6 +10,10 @@ change or where deep focus on the intent is required. Exercise restraint in the
 proposed change where applicable. This does not mean to skim on exploration or
 to fail to be exhaustive about the surfaces that **should** be covered.
 
+When creating or editing skills, AGENTS.md, CLAUDE.md, or other agent
+instructions, first read [writing-for-agents](../writing-for-agents/SKILL.md)
+and apply its relevant guidance.
+
 Propose changes as diffs in chat. Briefly explain anything that isn't obvious
 from the diff.
 

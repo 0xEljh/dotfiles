@@ -25,6 +25,11 @@ Skip preambles and use concise prose.
 
 Pick the smallest view that makes the key point clear.
 
+- Prefer the `statechart` skill for changes to state transitions, lifecycle,
+  recovery, or bug paths. Use another view when states are not the key point.
+  For inline GitHub Mermaid, follow the skill's GitHub guidance: omit the
+  legend and express important distinctions in words, not colors.
+
 - Show logic or an algorithm as pseudocode:
 
 ```text

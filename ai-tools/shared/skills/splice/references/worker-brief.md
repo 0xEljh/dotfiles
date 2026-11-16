@@ -25,6 +25,12 @@ including helper agents and warranted reviews. Own the outcome, verification, an
 review responses. Normal helpers are authorized; do not recursively launch delivery
 workstreams. Coordinate scope changes with the coordinator.
 
+The coordinator handles clarification and ordinary workflow escalations within
+this brief. Own implementation decisions and resolve helpers' questions where
+possible. Surface remaining questions with context and a recommendation; pass
+answers back to helpers and reuse settled answers. Keep questions needing the
+user separate from questions the coordinator can settle.
+
 Use full words in branch names and summaries. Avoid acronyms, shorthand, and
 invented tracking identifiers.
 

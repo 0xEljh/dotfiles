@@ -153,6 +153,21 @@ show. Obey these rules when you hide steps:
 
 ## Show the chart
 
+### Inline charts on GitHub
+
+GitHub's basic Mermaid rendering does not preserve the custom colors used by
+this skill. For a PR body or comment, adapt a copy of the generated Mermaid:
+
+- Omit the entire `Legend` block and its associated class assignments.
+- State phase names, broken rules, and bug paths in labels or nearby prose
+  wherever their meaning otherwise depends on color.
+- Publish a fenced `mermaid` block rather than requiring a Pele image.
+
+Keep the original generated files unchanged. Validate the adapted PR body or
+comment with `mermaid-check` before publishing.
+
+### Other destinations
+
 Use `mermaid-check chart.mmd` or `mermaid-check doc.md` to validate the Mermaid
 diagram before sharing. Show `chart.mmd` to the user as a `mermaid` code block.
 The chart has a budget of 500 states, counted by TLC on the config as written.

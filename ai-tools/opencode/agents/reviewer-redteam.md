@@ -4,8 +4,7 @@ description:
   operations, and public interfaces. Use selectively for risk. Has no access to
   explore subagents; frontload relevant review context when possible.
 mode: subagent
-model: opencode-go/muse-spark-1.3-contributor
-variant: high
+model: zai-coding-plan/glm-5.3#high
 permission:
   read: allow
   glob: allow

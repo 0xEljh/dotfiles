@@ -46,7 +46,11 @@ excluded and why. For each workstream, note:
 - Final integration or synthesis, when the overall outcome needs it.
 
 Run independent work in parallel. Choose concurrency to suit the work and available
-resources. When multiple code workers contribute to one combined outcome, include
+resources. Add workers for promising independent approaches as they emerge.
+When execution or measurement must be serial, continue independent investigation
+and prototyping in parallel.
+
+When multiple code workers contribute to one combined outcome, include
 an integration workstream that combines their changes in its own worktree and
 verifies the result. One code worker needs no separate integrator. Leave independent
 outputs separate when requested, and add synthesis only when the outcome needs it.
@@ -63,16 +67,47 @@ to their task, including helpers and warranted reviews. Do not recursively creat
 delivery workstreams unless requested. Keep scheduling bookkeeping with the
 coordinator. Account for shared services separately; worktrees do not isolate them.
 
+Prefer existing harness support over extra coordination scripts or manual
+procedures. Keep bookkeeping focused on handoffs and recovery rather than
+duplicating complete task histories. Never require full commit IDs or file
+digests for agent orchestration. Use branch names, worker links, and accessible
+artifact paths for handoffs.
+
 Keep a coordinator-owned run record using the T3 procedure. Track descriptive
 workstream names, worker links, outputs, and status. Before launching dependent
 work, check acceptance evidence, outstanding helper work, and access to its inputs.
 
+While the run has unfinished work, arrange scheduled check-ins every 30 minutes.
+Use up to 60 minutes for long-running phases. Reconcile the whole flow, including
+uncollected results, unanswered questions, pending handoffs, and integration,
+not just running agents.
+
 On resume, reconcile existing workers and outputs before launching more.
 If a worker is blocked or fails, address the affected work and continue unrelated
 work where possible.
+
+## Settle questions
+
+Act as the first responder for worker questions, including workflow escalations
+normally addressed to the user. Recover answers from the coordinator conversation,
+accepted decisions, and task sources. Supply missing context and make reasonable
+task-local decisions within the requested outcome and acceptance criteria. Leave
+task-specific choices with the worker unless it needs a decision to proceed.
+
+Escalate questions needing facts only the user can supply, decisions explicitly
+reserved for the user in the request, brief, or run record, changes to the requested
+outcome or acceptance criteria, additional authorization, or costly or hard-to-reverse
+choices that the available evidence does not settle. Generic workflow instructions
+to ask the user go through the coordinator under this policy; explicit task
+restrictions still apply.
+
+Keep user-only requests pending. During unattended work, keep the coordinator
+available for check-ins by reporting new or changed blockers as text. Continue
+unaffected work and carry settled decisions into affected briefs and handoffs.
 
 ## Hand off
 
 Summarize delivered and unfinished work, verification results, and anything that
 needs the user's attention. Link workers and deliverables. Distinguish independent
 outputs from the verified final result and state where that result lives.
+Include material decisions made on the user's behalf and their basis.

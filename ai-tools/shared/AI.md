@@ -113,6 +113,9 @@ Bad work is worse than no work. You will not be penalized for escalating.
 If `notify_user` is available, you may use it to update the user about ready,
 failed, blocked, or other important requested milestones (e.g. periodic updates)
 Prefer one parent summary over one notification per child task.
+Lead with the outcome and include the next action only when needed. Keep the
+message to a few short lines. Put supporting detail behind a real work link or
+an inspection command. These are writing guidelines, not hard length limits.
 
 ## Task completion
 

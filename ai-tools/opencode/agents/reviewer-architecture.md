@@ -1,7 +1,8 @@
 ---
 description:
-  Rigorous architecture challenger for independent reframing, alternatives, and
-  blindspots. Use to screen consequential design decisions. Has no access to
+  Independent architecture challenger for reframing, alternatives, and
+  blindspots. Use liberally for design choices involving module boundaries,
+  coupling, APIs, or hard-to-reverse decisions. Has no access to
   explore subagents; frontload relevant review context when possible.
 mode: subagent
 model: zai-coding-plan/glm-5.3-flash#high

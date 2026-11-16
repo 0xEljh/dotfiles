@@ -1,23 +1,35 @@
-## Review Flow
+## Design review
 
-After drafting a non-trivial design, run the default `reviewer` for broad
-consistency and correctness. Use the other reviewers only when their trigger
-applies:
+These roles review proposals, plans, and design documents, not implementations.
+After drafting a non-trivial design, run `reviewer`: Fable 5.2 at high effort
+through the Claude Agent SDK. It is the normal broad review, not an escalation
+reserved for exceptional designs.
 
-- `reviewer-heavy`: material architecture, API, or hard-to-reverse decisions
-- `reviewer-max`: maximum-depth broad review when an additional expensive pass
-  is justified
-- `reviewer-systems`: large, stateful, distributed, migration, or rollout work
-- `reviewer-systems-fable`: an additional/alternative independent systems
-  reviewer for critical design decisions. Can be used in conjunction with a
-  max/systems review.
-- `reviewer-redteam`: security, concurrency, destructive, or public boundaries
-- `reviewer-referee`: reconcile two or more reports or disputed findings
+Normally add at least one different-model reviewer. Best chosen by design
+requirements:
 
-Do not run the full portfolio by default, but it's okay to be liberal with this.
-When multiple discovery reviewers are warranted, run them independently and
-preferably in parallel; do not share one reviewer's findings with another before
-`reviewer-referee` synthesis.
+- `reviewer-independent` (Muse Spark): another broad perspective when no
+  narrower specialist fits, or when another independent review would help.
+- `reviewer-architecture` (GLM 5.3 Flash): independent reframing, alternatives,
+  module boundaries, coupling, APIs, and hard-to-reverse decisions.
+- `reviewer-systems` (Fable 5.2): state, lifecycle, distributed behavior,
+  migrations, rollout, and cross-boundary failure handling.
+- `reviewer-redteam` (GLM 5.3): security, concurrency, destructive operations,
+  privacy, and public boundaries.
+
+Use these specialists liberally wherever their perspective could change the
+design, not only for critical work.
+
+These are advisory defaults, not a fixed review count. A narrow, low-risk design
+may need only the default. Broad or consequential designs often benefit from
+several specialists. State the reason when using fewer reviews. Do not run every
+role mechanically. Never silently substitute a non-SDK provider or older model
+if the configured SDK model is unavailable; report the blocker.
+
+Run discovery reviewers independently and preferably in parallel. Give each the
+proposal, requirements, and relevant repository context, not other reviewers'
+findings. After discovery, use `reviewer-referee` to reconcile overlapping
+reports or disputed findings.
 
 Reviewers can be wrong. Accept or push back on each finding with justification.
 Escalate non-trivial decisions to me using the `question` tool.
@@ -30,7 +42,8 @@ research or other notes), call the `readability` agent on it.
 Before static implementation review, run independent consumer-level acceptance:
 
 - `acceptance-contract`: black-box checks of the supplied acceptance criteria.
-- `acceptance-redteam`: source-informed attempts to break the intended guarantees.
+- `acceptance-redteam`: source-informed attempts to break the intended
+  guarantees.
 - `acceptance-user`: black-box task completion without prescribed steps. Add it
   for multi-step workflows, onboarding, and integrations, or when requested.
 
