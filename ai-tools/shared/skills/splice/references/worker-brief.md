@@ -34,12 +34,21 @@ user separate from questions the coordinator can settle.
 Use full words in branch names and summaries. Avoid acronyms, shorthand, and
 invented tracking identifiers.
 
+Before the first push or code handoff, rename any harness-generated branch to
+a descriptive name for the change, following repository conventions rather than
+using a tool or agent prefix. Pass the actual branch name to delivery helpers.
+Preserve existing published branch names unless a rename is requested.
+
 Return the deliverable or its accessible location, a short summary, checks and
 their results, and blockers or unfinished work. For code handoffs, commit the
 intended changes and return the actual branch with no deliverable work left
 uncommitted. If commits are prohibited, report that another handoff is needed.
 For files, explain where to find them. Report any outstanding helper work.
 ```
+
+When a worker's outcome, scope, inputs, or delivery requirements change, send a
+complete replacement brief that says it supersedes the earlier one. Answer routine
+clarifications without replacing the brief.
 
 For dependent work, explain how to obtain and use the prerequisite results before
 starting. Include the findings, accessible files, or branches needed, along with

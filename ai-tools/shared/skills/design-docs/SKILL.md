@@ -79,6 +79,11 @@ code without reading their target files. `--images=alt` affects only images;
 combine both options for publication without referenced asset reads. To show the
 syntax as documentation, use an outer longer code fence, as above.
 
+Before publishing built HTML, open it locally and exercise relevant controls when
+browser access is available. Otherwise report that this check was unavailable.
+A local preview does not verify Notion's sandbox. This is an artifact check,
+not an additional upload sync-status check.
+
 ## Good design
 
 Software engineering is about managing complexity. We always need to decide if

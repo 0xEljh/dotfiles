@@ -29,12 +29,19 @@ worker with the relevant context.
 Use full words in branch names, workstream names, worker titles, and summaries.
 Avoid acronyms, shorthand, and invented tracking identifiers.
 
+Name branches for the change, following repository conventions; otherwise use
+short kebab-case names such as `fix-session-timeout`. Keep tool and agent identity
+in orchestration records rather than branch prefixes. Use the same branch name
+locally and on the remote.
+
 ## Split by verifiable outcome
 
 Read the task list or large task and relevant sources. Group work by independently
-verifiable outcomes. Keep tightly coupled work together when splitting would break
-intermediate states or repeatedly rewrite an interface. Do not force parallelism
-when one coherent workstream is better.
+verifiable outcomes. When useful, one worker can own research or content that
+another worker applies and delivers. Hand it off as a dependency input; the
+delivering worker verifies the combined result. Keep tightly coupled work together
+when splitting would break intermediate states or repeatedly rewrite an interface.
+Use one coherent workstream when it fits better.
 
 Account for the requested work in the breakdown, including anything deferred or
 excluded and why. For each workstream, note:

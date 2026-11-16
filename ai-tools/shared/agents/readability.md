@@ -45,5 +45,5 @@ Add to the top of the design doc a short executive summary capturing the main
 implications and decisions made in the document. This should be communicated in
 a top-down manner (contrary to the rest of the doc). The target audience for
 this is a reviewer that would be tired, have limited context, and yet have to
-make a call on the doc despite being stretched thin. Again, the golden rule is
-to shoot for 80% accuracy but 100% clarity.
+make a call on the doc despite being stretched thin. Keep factual claims
+accurate; omit nonessential detail and label uncertainty.

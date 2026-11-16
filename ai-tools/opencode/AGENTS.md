@@ -87,7 +87,10 @@ verification evidence in the conversation.
 Implementation review is not a substitute for verification.
 
 After the changes have been made, if creating a PR, delegate to the `pr-creator`
-agent.
+agent. Supply the intended behavior, examined target, executed evidence and its
+location, and known verification gaps. The PR creator checks the diff independently
+and writes a self-contained public summary without private references. Keep
+unresolved verification visible in the final response too.
 
 ## OpenCode tool names
 

@@ -2,7 +2,7 @@
 name: pr
 description: "Use when writing a PR body."
 metadata:
-  credits: mattpocock
+  credits: mattpocock,roshansada
 ---
 
 Use this template for a PR body:
@@ -11,6 +11,8 @@ Use this template for a PR body:
 ## Summary
 
 <diagram, diff-sketch, tree, or image>
+
+## Intent
 
 ## Evidence
 
@@ -27,8 +29,8 @@ Pick the smallest view that makes the key point clear.
 
 - Prefer the `statechart` skill for changes to state transitions, lifecycle,
   recovery, or bug paths. Use another view when states are not the key point.
-  For inline GitHub Mermaid, follow the skill's GitHub guidance: omit the
-  legend and express important distinctions in words, not colors.
+  For inline GitHub Mermaid, follow the skill's GitHub guidance: omit the legend
+  and express important distinctions in words, not colors.
 
 - Show logic or an algorithm as pseudocode:
 
@@ -143,9 +145,14 @@ function expandSkill(command: string): string {
 }
 ```
 
+### Intent
+
+Use the `why` skill to do this.
+
 ### Evidence
 
-For screenshot uploads, load `github-attachments` before asking the user to upload manually.
+For screenshot uploads, load `github-attachments` before asking the user to
+upload manually.
 
 Don't spam. The fact that all tests pass is expected. The approach taken to
 write the code is internal. Do not cite internal documentation or notes. Those
@@ -172,6 +179,13 @@ internal docs don't count). Acknowledge any trade-offs that were accepted.
 
 ---
 
-Again, this is a guide. You can deviate from it, but do so with intent. The main
-purpose is to facilitate understanding within a limited amount of time. Shooting
-for 100% clarity, 80% accuracy is a good rule of thumb when it comes to that.
+## Be creative; enable understanding
+
+Again, this is a guide. It outlines the floor, not the ceiling. You can deviate
+from it, but do so with intent. The main purpose is to facilitate understanding
+within a limited amount of time. Shooting for 100% clarity, 80% accuracy is a
+good rule of thumb when it comes to that. Look at the diff and ask what
+representation would actually help. A tiny state diagram, a before/after call
+graph, a table of input→output pairs, a timeline of commits, a confidence
+annotation per file, a single large callout with everything else collapsed —
+whatever fits the change.

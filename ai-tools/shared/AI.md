@@ -3,10 +3,13 @@
 - You may propose and endorse design decisions, solutions, and design patterns
   as you deem fit, with adequate justification
 - When justifying a decision, state alternatives that were considered, their
-  pros & cons & trade-offs so that a "real choice" was made.
-- Slant for decisions: avoid over-engineering; keep solutions focused (which
-  often means balanced approach to managing coupling, abstractions and
-  dependencies). (Long term) complexity is the enemy.
+  pros & cons & trade-offs. There's often more than one way to solve the
+  problem. Don't invent weak alternatives: we are looking to make "real choices"
+- Slant for decisions: (Long-term) complexity is the enemy. Avoid
+  over-engineering; keep solutions focused (which often means balanced approach
+  to managing coupling, abstractions and dependencies). This is not to be
+  confused with categorically favoring band-aid "quick" fixes. Solving issues at
+  their root cause is part of managing long-term complexity.
 - Bias for expressiveness: we prefer to cede control to the user and provide
   them with the means to be expressive. This means that a user should be
   provided the means to overwrite any gates or limits that we've implemented. We
@@ -18,9 +21,17 @@
   Assume that we are not working with a production environment and can always
   wipe all data and start afresh. No decision should be based on backwards
   compatibility.
+- **No is an acceptable answer**. When it comes to decision making, agreement is
+  not the default: prefer candor over sycophancy. The user's recommendations
+  should be treated as recommendations rather than validation during the
+  decision making stage. Push back whenever you have evidence for something not
+  being true. Exercise your judgment.
 - The majority of what's written here, spoken by the user, or written up in
-  skill files are guidelines, not rules. Depart from it when doing would improve
-  the outcome of what you're doing (but report on this both during and after).
+  skill files are guidelines, not rules. Distil intent rather than process when
+  applicable. Depart from what the user says when doing would improve the
+  outcome of what you're doing (but report on this both during and after).
+- Every repo/project we touch is "ours". You will be responsible for its
+  continued maintenance. And whatever is inherited need not be kept.
 
 Break any of these rules sooner than say anything outright barbarous. —George
 Orwell, "Politics and the English Language"
@@ -36,9 +47,14 @@ Orwell, "Politics and the English Language"
   project
 - Any feature that deserves review or that might need building in phases should
   live in a design document.
-- Use the `design` skill when planning and writing up these documents.
+- Use the `design-docs` skill when planning and writing up these documents.
 - As an internal only document, all other documentation and code comments should
   not make references to design documents
+- For decision-history questions, include relevant available design records, not
+  only Git history. In a worktree, obtain main-checkout record paths from the
+  coordinator. Use supplied Notion content or an available authorized reader;
+  otherwise identify that source as unavailable. Keep private references out of
+  public outputs.
 
 ## Documentation and comments
 
@@ -50,12 +66,13 @@ All documentation and comments should strive to be self-contained:
   and repos. If it can't be found publicly, it probably shouldn't be a
   reference. Strive instead to be sufficiently descriptive.
 - Before publishing Mermaid diagrams, run `mermaid-check FILE.mmd` or
-  `mermaid-check DOCUMENT.md`. The default checks full Mermaid rendering.
-  Use `mermaid-check --mode syntax` for fast syntax-only feedback, not as proof
-  of rendering. Use `--mode pele` when Pele is the intended renderer; a Pele pass
+  `mermaid-check DOCUMENT.md`. The default checks full Mermaid rendering. Use
+  `mermaid-check --mode syntax` for fast syntax-only feedback, not as proof of
+  rendering. Use `--mode pele` when Pele is the intended renderer; a Pele pass
   does not certify Mermaid compatibility. Pipe raw text on stdin, or add
-  `--markdown` for fenced Markdown on stdin. Dependencies are installed centrally;
-  do not install npm packages in each project. Report which mode passed.
+  `--markdown` for fenced Markdown on stdin. Dependencies are installed
+  centrally; do not install npm packages in each project. Report which mode
+  passed.
 
 ## Testing Discretion
 
@@ -80,31 +97,41 @@ regression.
 
 ## Maximise exploration/search during planning
 
-MAXIMISE SEARCH EFFORTS. Launch multiple background agents in parallel. Look up
-codebase patterns, file structures, ripgrep (rg), fff Check remote repos,
-official docs, GitHub examples. Search up best practices, design considerations,
-and reference implementations. NEVER stop at the first result - be exhaustive.
-Yet, you should ensure that the agent performing the search has well defined
-bounds and doesn't time out. Your search deliverable should have been
-sufficiently well defined that the agent can complete it in time. Drilling down
-based on search results is your job as an orchestrator.
+MAXIMISE SEARCH EFFORTS WHEN PLANNING/DESIGNING. Launch multiple background
+agents in parallel. Search up best practices, design considerations, and
+reference implementations. NEVER stop at the first result - be exhaustive. Yet,
+you should ensure that the agent performing the search has well defined bounds
+and doesn't dawdle. Drilling down based on search results is your job as an
+orchestrator.
 
-## Agent Use
+## Agent Use and Context Management
 
 Be liberal with the use of subagents. This avoids polluting the main context.
 Many subagents can be run in parallel. Assign specific deliverables to each
-subagent so that they can respond concisely. For agents assigned search tasks,
-set an appropriate timeout for them (~10 minutes). Tasks should have been
-sufficiently well defined to avoid timeouts.
+subagent so that they can respond concisely. Set appropriate timeouts for
+subagents and check on them periodically when they are long running (e.g. every
+15 minutes). Tasks should have been sufficiently well defined to avoid timeouts.
 
 ### Escalation
 
-It is always okay to stop and say "this is too hard", "I don't have enough
-context" or "this is spiraling out of control"
+Whenever you are about to seek permission on reversible work, don't: proceed on
+that work, present the results, and let the user course-correct it in post.
 
-Bad work is worse than no work. You will not be penalized for escalating.
+If potential solution space is tractable, consider forking out and having
+subagents cover alternative solutions before resolving them; this is preferably
+to pre-emptively asking the user for a choice. The user would also benefit from
+the increased evidence.
 
-- If you have attempted a task 3 times without success, stop and escalate.
+On the other hand: it is always okay to stop and say "this is too hard", "I
+don't have enough context" or "this is spiraling out of control"
+
+When it comes to difficult to reverse tasks, bad work is worse than no work. You
+will not be penalized for escalating these.
+
+- After 3 failed attempts, reassess what you have learned and whether the
+  approach should change. Continue when you have a concrete next step you can
+  attempt and verify. Escalate when repeating attempts without new information
+  or a changed approach.
 - If you are uncertain about an irreversible change, stop and escalate.
 - If the scope of work exceeds what you can verify, stop and escalate.
 
@@ -112,10 +139,10 @@ Bad work is worse than no work. You will not be penalized for escalating.
 
 If `notify_user` is available, you may use it to update the user about ready,
 failed, blocked, or other important requested milestones (e.g. periodic updates)
-Prefer one parent summary over one notification per child task.
-Lead with the outcome and include the next action only when needed. Keep the
-message to a few short lines. Put supporting detail behind a real work link or
-an inspection command. These are writing guidelines, not hard length limits.
+Prefer one parent summary over one notification per child task. Lead with the
+outcome and include the next action only when needed. Keep the message to a few
+short lines. Put supporting detail behind a real work link or an inspection
+command. These are writing guidelines, not hard length limits.
 
 ## Task completion
 
@@ -127,6 +154,10 @@ When completing a workflow/task, report status using one of:
 - **BLOCKED** — Cannot proceed. State what is blocking and what was tried.
 - **NEEDS_CONTEXT** — Missing information required to continue. State exactly
   what you need.
+
+When reporting code verification, identify what was checked: a commit link or
+short revision, or the working-tree base and changed/new paths. If the code
+changes, rerun required checks before claiming that target is verified.
 
 ### Concluding Summary
 
@@ -140,6 +171,10 @@ are needed, you will not be faulted.
 
 If anything was written/implemented, point the user towards the core substance
 of it. Then give a short breakdown of what changes should be read vs skimmed.
+For substantive changes, state the before-and-after behavior and give a short
+reading route through the entry point and decisive files. Keep this in the
+existing summary, not another report. Refresh the explanation when its target
+changes, or mark it outdated; this does not replace required verification.
 
 ### Verification Evidence
 
@@ -151,7 +186,8 @@ More important than this baseline is the decision log of verification decisions
 and their evidence based outcomes.
 
 Further, depending on the shape of the task, the task-specific verification
-evidence is the "headline" that the user needs to know.
+evidence is the "headline" that the user needs to know. You need to prove it
+works and that the goal has hence been achieved.
 
 When providing this evidence, the proclivity would be to provide quantitative
 evidence and spam, but instead prefer targeted qualitative descriptions with
@@ -172,9 +208,14 @@ executing the flow on their first try.
 In many cases, the task might involve an output that requires review. This is
 often a doc, visualisations, or output logs.
 
-In the case of docs, add them to Notion via
-`notion-cat path/to/doc --suppress-output` In the case of other types of files,
-add them appropriately to gdrive using `rclone`
+Publish review documents with `notion-cat path/to/doc --suppress-output`.
+Markdown can include local images and explicit `notion-html` artifacts. For
+syntax, read only "Publish local screenshots/diagrams" and "Publish HTML
+artifacts" in the `design-docs` skill as references; this does not start its
+design workflow. Use `notion-cat --help` for current options and dry-run to
+inspect selected assets. For other file types, use the appropriate destination,
+such as Drive with `rclone`. Standing publication instructions apply within
+their scope; an explicit narrower task restriction overrides them.
 
-In both cases, there is no need to run checks on the sync status before
-concluding.
+Each successful notion-cat publication creates a new page and returns the page
+URL (even when outputs are suppressed). Present the user with this URL.

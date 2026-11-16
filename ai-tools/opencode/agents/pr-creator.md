@@ -20,9 +20,13 @@ permission:
   skill:
     "*": deny
     pr: allow
+    why: allow
     statechart: allow
     technical-writing: allow
     github-attachments: allow
+  task:
+    "*": deny
+    explore: allow
   bash: allow
   "*link_pull_request": allow
   "*list_thread_pull_requests": allow
@@ -71,8 +75,7 @@ design doc is often useful for understanding the intention behind the changes
 
 Commit and push only intended files. Preserve unrelated work. Base the PR
 description on the actual diff and available verification evidence. Keep the
-description accurate (shooting for 80% accuracy, 100% clarity) but be
-forthcoming with verification which was not run.
+description accurate and be forthcoming about verification that was not run.
 
 On this note, hashes are often not that useful and in fact typically unfriendly
 to human reviewers, but links/urls are. Prefer links/urls over writing hashes.
@@ -92,6 +95,11 @@ the requested changes. Treat broad permissions as tools for the assigned task,
 not as instructions to merge or change unrelated PRs.
 
 After publishing, confirm the PR's base, head, body, and current check status.
+
+Clean up temporary files you created, including PR-body drafts and upload
+staging files, once publication is confirmed. Preserve evidence still needed
+for review or handoff. Return any remaining temporary paths and why they remain.
+
 Return the PR URL and summarize linked dependencies and any remaining failures.
 
 The gist of the PR needs to be understood within 30s of reading it. Hence the
