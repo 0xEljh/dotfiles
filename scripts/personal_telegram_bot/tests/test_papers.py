@@ -72,7 +72,7 @@ def test_sends_once_then_dedupes_within_iso_week(tmp_path, monkeypatch):
     assert next_week is True  # new ISO week → new dispatch
     assert len(sent) == 2
     assert "week 27" in sent[0]
-    assert "2 sightings awaiting refinement" in sent[0]
+    assert "2 papers to review" in sent[0]
     assert "Attention Is All You Need" in sent[0]
 
 
@@ -128,8 +128,18 @@ def test_format_papers_escapes_and_links():
         board_url="https://notion.so/inbox?x=1&y=2",
         log_url="https://0xeljh.com/posts",
     )
-    assert "Expedition dispatch — week 27" in out
-    assert "1 sighting awaiting refinement" in out
+    assert "1 paper to review · week 27" in out
     assert "• Q&amp;A over graphs" in out
     assert "https://notion.so/inbox?x=1&amp;y=2" in out  # & is HTML-escaped
     assert "https://0xeljh.com/posts" in out
+
+
+def test_papers_preview_is_short_and_retains_inbox_when_titles_are_long():
+    titles = [f"Paper {i} " + "<&" * 400 for i in range(20)]
+    out = format_papers(titles, "week 27", board_url="https://notion.so/inbox")
+    assert len(out) <= 3900
+    assert "20 papers to review" in out
+    assert "more in the paper inbox" in out
+    assert out.endswith('<a href="https://notion.so/inbox">Paper inbox</a>')
+    assert "<blockquote expandable>" in out
+    assert out.count("<blockquote") == out.count("</blockquote>") == 1

@@ -1,9 +1,14 @@
+import asyncio
 import json
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 
+from personal_telegram_bot import bot
 from personal_telegram_bot.tpot.client import (
+    Candidate,
     OperatorActionTpotError,
     RetryableTpotError,
     TpotClient,
@@ -146,3 +151,19 @@ def test_per_result_errors_are_returned_for_partial_retry():
     assert response.result_by_id("ok").ok
     assert not response.result_by_id("slow").ok
     assert response.result_by_id("slow").code == "deadline_exceeded"
+
+
+@pytest.mark.parametrize("delay,expected", [(7, "Retry in 7 s."), (121, "Retry in 121 s."), (None, "Try again later.")])
+def test_retry_reply_keeps_error_code_and_useful_delay_without_raw_error(delay, expected):
+    message = SimpleNamespace(reply_text=AsyncMock())
+    error = RetryableTpotError("connection_error", "secret internal URL", retry_after_s=delay)
+    asyncio.run(bot._reply_tpot_error(message, error))
+    assert message.reply_text.call_args.args[0] == f"TPOT unavailable (connection_error). {expected}"
+    assert "parse_mode" not in message.reply_text.call_args.kwargs
+
+
+def test_candidate_reply_preserves_source_text_and_zero_score():
+    source = "<draft> & source emoji 🔥"
+    assert bot._format_candidates("Variants:", [Candidate(source, 0), Candidate("Second")]) == (
+        "Variants:\n\n1. <draft> & source emoji 🔥 (score 0.00)\n\n2. Second"
+    )

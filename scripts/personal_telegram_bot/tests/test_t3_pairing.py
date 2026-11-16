@@ -1,5 +1,7 @@
 import sqlite3
 
+import pytest
+
 from personal_telegram_bot.db import StateDB
 from personal_telegram_bot.t3_pairing import (
     PairingSession,
@@ -126,5 +128,26 @@ def test_pairing_message_contains_useful_metadata_but_no_session_secret():
     assert "contents-may-differ" in message
     assert "Pixel &lt;8&gt;" in message
     assert "Android" in message
+    assert "mobile" in message
+    assert "Chrome" in message
     assert "100.1.2.3" in message
+    assert "2026-07-27T08:01:00Z" in message
+    assert message.startswith("<b>New T3 client paired</b>")
     assert "sensitive-session-id" not in message
+
+
+@pytest.mark.parametrize("label", [None, "mobile"])
+def test_pairing_message_shows_device_type_once_without_distinct_label(label):
+    session = PairingSession("secret", label, None, "mobile", None, None, "now")
+    message = format_pairing_message("host", session)
+    assert "Device: mobile\n" in message
+    assert message.count("mobile") == 1
+    assert "Tailnet IP: <code>unknown</code>" in message
+
+
+def test_pairing_message_escapes_all_client_metadata():
+    session = PairingSession("secret", "<label>", "<ip>", "<type>", "<os>", "<browser>", "<time>")
+    message = format_pairing_message("<host>", session)
+    for value in ("label", "ip", "type", "os", "browser", "time", "host"):
+        assert f"&lt;{value}&gt;" in message
+        assert f"<{value}>" not in message

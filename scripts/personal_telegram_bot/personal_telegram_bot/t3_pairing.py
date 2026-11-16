@@ -56,10 +56,10 @@ def run_pair_helper(host: str, action: str, helper_path: str) -> dict[str, str]:
 def format_link_message(host: str, link: dict[str, str]) -> str:
     return (
         "<b>T3 pairing link</b>\n"
-        f"Host: <code>{html.escape(host)}</code>\n\n"
-        f'<a href="{html.escape(link["pairUrl"], quote=True)}">Open T3 pairing link</a>\n\n'
-        f"Expires: {html.escape(link['expiresAt'])} (5 minutes, single-use).\n"
-        "Connect to Tailscale before opening this link."
+        f"Host: <code>{html.escape(host)}</code>\n"
+        "Tailscale required. Single-use.\n"
+        f"Expires: {html.escape(link['expiresAt'])}\n\n"
+        f'<a href="{html.escape(link["pairUrl"], quote=True)}">Open T3</a>'
     )
 
 SESSION_QUERY = """
@@ -152,12 +152,14 @@ def select_new_pairings(
 
 def format_pairing_message(host: str, session: PairingSession) -> str:
     device = session.label or session.device_type
-    platform = " / ".join(part for part in (session.os, session.browser) if part) or "unknown"
+    if device != session.device_type:
+        device = f"{device} ({session.device_type})"
+    platform = ", ".join(part for part in (session.os, session.browser) if part) or "unknown"
     ip_address = session.ip_address or "unknown"
     return (
-        "🔐 <b>New T3 client paired</b>\n"
+        "<b>New T3 client paired</b>\n"
         f"Host: <code>{html.escape(host)}</code>\n"
-        f"Device: {html.escape(device)} ({html.escape(session.device_type)})\n"
+        f"Device: {html.escape(device)}\n"
         f"Platform: {html.escape(platform)}\n"
         f"Tailnet IP: <code>{html.escape(ip_address)}</code>\n"
         f"Issued: <code>{html.escape(session.issued_at)}</code>"

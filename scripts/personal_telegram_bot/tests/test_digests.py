@@ -72,7 +72,7 @@ def test_includes_sleep_line_when_available(tmp_path, monkeypatch):
     digests.deliver_morning_digest(cfg, trigger="wake", now=NOW)
 
     assert len(sent) == 1
-    assert "😴 7h33m" in sent[0]
+    assert "Sleep: 7h33m" in sent[0]
 
 
 def test_digest_sends_even_without_sleep_data(tmp_path, monkeypatch):

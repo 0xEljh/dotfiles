@@ -57,18 +57,40 @@ def run_case(args=None, sends=None, chat=None, policy=None, owner=123, allowed=(
 def test_plain_normal_and_silent_button_payloads():
     for silent in (False, True):
         result, calls, _ = run_case({**INPUT, "silent": silent,
+                                    "reference": "review-42",
                                     "link": {"url": "https://example.com/work"},
                                     "source": {"project": "dotfiles", "client": "OpenCode", "host": "pc", "session_id": "s1"}})
         assert result["state"] == "sent"
         assert result["send_attempts"] == 1
         assert result["possible_duplicate"] is False
+        assert result["reference"] == "review-42"
         assert calls[1][1] == {
             "chat_id": 123,
-            "text": f"READY | dotfiles\nReady <plain>\n\nTests pass.\nReview next.\n\nOpenCode | pc | session s1\nRef: {result['reference']}",
+            "text": "Ready <plain>\nReady · dotfiles · pc\n\nTests pass.\nReview next.",
             "disable_notification": silent,
             "link_preview_options": {"is_disabled": True},
             "reply_markup": {"inline_keyboard": [[{"text": "Open work", "url": "https://example.com/work"}]]},
         }
+
+
+@pytest.mark.parametrize("kind,source,context", [
+    ("ready", {}, "Ready"),
+    ("blocked", {"project": "<project>"}, "Blocked · <project>"),
+    ("failed", {"host": "<host>"}, "Failed · <host>"),
+    ("update", {"client": "OpenCode", "session_id": "s1"}, "Update"),
+])
+def test_outcome_first_with_only_available_project_and_host(kind, source, context):
+    result, calls, _ = run_case({**INPUT, "kind": kind, "source": source})
+    assert result["state"] == "sent"
+    assert result["reference"] == result["call_id"]
+    assert calls[1][1]["text"] == f"Ready <plain>\n{context}\n\nTests pass.\nReview next."
+
+
+def test_long_message_is_preserved_without_a_new_brevity_limit():
+    message = "x" * 2000
+    result, calls, _ = run_case({**INPUT, "message": message})
+    assert result["state"] == "sent"
+    assert calls[1][1]["text"] == f"Ready <plain>\nReady\n\n{message}"
 
 
 @pytest.mark.parametrize("extra", [
@@ -77,6 +99,7 @@ def test_plain_normal_and_silent_button_payloads():
     {"message": "x\u202ey"}, {"title": "x\u2028y"}, {"message": "\ud800"},
     {"title": ""}, {"message": " "}, {"reference": ""}, {"reference": None}, {"silent": 1},
     {"source": None}, {"source": {"host": None}}, {"link": {"url": "http://example.com"}},
+    {"source": {"client": "x\ny"}}, {"source": {"session_id": "x\u202ey"}},
     {"link": {"url": "https://user:pass@example.com"}}, {"link": {"url": "https://example.com:bad"}},
     {"link": {"url": "https://example.com", "label": ""}}, {"link": {"url": "https://"}},
     {"message": "😀" * 1800}, {"message": "x" * 2001}, {"title": "x" * 121},
@@ -211,9 +234,11 @@ def test_concurrent_calls_keep_independent_payloads_under_jitter_and_429s():
         async with httpx.AsyncClient(transport=httpx.MockTransport(request)) as client:
             service = NotificationService(OwnerNotificationSender("fake", 123, (123,), client),
                                           policy=RetryPolicy(backoff=0.001), jitter=randomizer.random)
-            results = await asyncio.gather(*(service.notify({**INPUT, "reference": f"task-{i}"}) for i in range(50)))
+            results = await asyncio.gather(*(service.notify({**INPUT, "title": f"Task {i} ready",
+                                                            "reference": f"task-{i}"}) for i in range(50)))
         assert len(counts) == 50
         assert set(counts.values()) == {2}
+        assert [r["reference"] for r in results] == [f"task-{i}" for i in range(50)]
         assert all(r["state"] == "sent" and r["send_attempts"] == 2 and not r["possible_duplicate"] for r in results)
     asyncio.run(go())
 

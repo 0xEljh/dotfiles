@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import html
+import math
+import shlex
 from datetime import date, datetime, timedelta, timezone
 from typing import Iterable
 
@@ -11,7 +13,33 @@ from .providers.sleep import SleepSummary, duration_hm
 from .tpot.seeds import SeedRow
 
 MAX_TASKS_PER_SECTION = 15
-MAX_JOURNAL_CHARS = 900
+PREVIEW_ITEMS = 3
+MESSAGE_BUDGET = 3900
+HEALTH_DETAILS_COMMAND = "uv run botctl send health --force --dry-run"
+
+
+def _fits_message(text: str, *, reserve: int = 0) -> bool:
+    # Count markup too, so the sender's raw slice cannot cut a tag or entity.
+    return len(text.encode("utf-16-le")) // 2 <= MESSAGE_BUDGET - reserve
+
+
+def _plain_list(header: str, items: list[str], details: str, *, footer: str = "", compact: bool = True) -> str:
+    def render(shown: int) -> str:
+        blocks = [header, *items[:shown]]
+        if footer:
+            blocks.extend(["", footer])
+        if shown < len(items):
+            blocks.extend(["", f"{len(items) - shown} more items not shown.", details])
+        return "\n".join(blocks)
+
+    text = render(len(items))
+    if not compact:
+        return text
+    shown = len(items)
+    while not _fits_message(text) and shown:
+        shown -= 1
+        text = render(shown)
+    return text
 
 
 def _task_link(task: Task) -> str:
@@ -37,10 +65,11 @@ def _overdue_line(task: Task, today: date) -> str:
     return line
 
 
-def _task_block(header: str, tasks: list[Task], render) -> str:
-    lines = [f"<b>{header} ({len(tasks)})</b>"]
-    lines.extend(render(task) for task in tasks[:MAX_TASKS_PER_SECTION])
-    hidden = len(tasks) - MAX_TASKS_PER_SECTION
+def _task_block(header: str, tasks: list[Task], render, *, total: int | None = None) -> str:
+    total = len(tasks) if total is None else total
+    lines = [f"<b>{header} ({total})</b>"]
+    lines.extend(render(task) for task in tasks)
+    hidden = total - len(tasks)
     if hidden > 0:
         lines.append(f"…and {hidden} more")
     return "\n".join(lines)
@@ -48,7 +77,7 @@ def _task_block(header: str, tasks: list[Task], render) -> str:
 
 def format_sleep_line(sleep: SleepSummary) -> str:
     window = f"{sleep.start:%H:%M}–{sleep.end:%H:%M}"
-    return f"😴 Slept {duration_hm(sleep.duration_seconds)} ({window})"
+    return f"Slept {duration_hm(sleep.duration_seconds)} ({window})"
 
 
 def format_morning_digest(
@@ -59,35 +88,78 @@ def format_morning_digest(
     board_url: str | None = None,
     post_seeds: list[SeedRow] | None = None,
 ) -> str:
-    """Triage-style morning digest (Telegram HTML): today's tasks lead, overdue is
-    demoted, and sleep + meta form a footer strip. Task titles link to their
-    Notion pages. Sent with parse_mode=HTML, so dynamic text is HTML-escaped."""
-    blocks = [f"<b>☀️ {today:%a %d %b}</b>"]
+    """Show today's shortlist first; keep secondary tasks in an expandable quote."""
+    today_limit = min(len(due_today), MAX_TASKS_PER_SECTION)
+    overdue_limit = min(len(overdue), MAX_TASKS_PER_SECTION)
+    seed_limit = len(post_seeds or [])
+    while True:
+        text = _morning_digest(
+            overdue, due_today, today, sleep, board_url, post_seeds,
+            today_limit, overdue_limit, seed_limit,
+        )
+        if _fits_message(text):
+            return text
+        # Remove complete items, not characters in HTML tags or URLs.
+        if seed_limit:
+            seed_limit -= 1
+        elif overdue_limit:
+            overdue_limit -= 1
+        elif today_limit:
+            today_limit -= 1
+        else:
+            board_url = None
+
+
+def _morning_digest(overdue, due_today, today, sleep, board_url, post_seeds,
+                    today_limit, overdue_limit, seed_limit) -> str:
+    counts = []
+    if due_today:
+        counts.append(f"{len(due_today)} due today")
+    if overdue:
+        counts.append(f"{len(overdue)} overdue")
+    heading = " · ".join([f"{today:%a %d %b}", *counts])
+    blocks = [f"<b>{heading}</b>"]
+    details: list[str] = []
 
     if not overdue and not due_today:
-        blocks.append("✅ Clear runway — nothing due or overdue.")
+        blocks.append("Nothing due or overdue.")
     else:
         if due_today:
-            blocks.append(_task_block("📌 Today", due_today, _today_line))
+            blocks.append("\n".join(_today_line(task) for task in due_today[:min(PREVIEW_ITEMS, today_limit)]))
+            if len(due_today) > PREVIEW_ITEMS:
+                details.append(_task_block(
+                    "More due today", due_today[PREVIEW_ITEMS:today_limit], _today_line,
+                    total=len(due_today) - PREVIEW_ITEMS,
+                ))
+            hidden_preview = min(PREVIEW_ITEMS, len(due_today)) - min(PREVIEW_ITEMS, today_limit)
+            if hidden_preview:
+                blocks.append(f"{hidden_preview} more due today not shown")
         if overdue:
-            header = "🔴 Also overdue" if due_today else "🔴 Overdue"
-            blocks.append(_task_block(header, overdue, lambda t: _overdue_line(t, today)))
+            if due_today:
+                details.append(_task_block("Overdue", overdue[:overdue_limit], lambda t: _overdue_line(t, today), total=len(overdue)))
+            else:
+                shown = min(PREVIEW_ITEMS, overdue_limit)
+                blocks.append("\n".join(_overdue_line(task, today) for task in overdue[:shown]))
+                if len(overdue) > shown:
+                    details.append(_task_block("More overdue", overdue[shown:overdue_limit], lambda t: _overdue_line(t, today), total=len(overdue) - shown))
 
     if post_seeds:
-        blocks.append(_seed_block("🌱 Still on the table", post_seeds))
+        details.append(_seed_block("Post ideas", post_seeds[:seed_limit]))
+        if len(post_seeds) > seed_limit:
+            details.append(f"{len(post_seeds) - seed_limit} more post ideas omitted")
+
+    if details:
+        blocks.append("<blockquote expandable>" + "\n\n".join(details) + "</blockquote>")
 
     footer: list[str] = []
     if sleep:
-        footer.append(f"😴 {duration_hm(sleep.duration_seconds)}")
-    total = len(overdue) + len(due_today)
-    if total:
-        footer.append(f"{total} open")
+        footer.append(f"Sleep: {duration_hm(sleep.duration_seconds)}")
     if board_url:
         footer.append(f'<a href="{html.escape(board_url, quote=True)}">Bread board</a>')
     if footer:
-        blocks.append("— — —\n" + " · ".join(footer))
+        blocks.append(" · ".join(footer))
 
-    return "\n\n".join(blocks)
+    return "\n\n".join(block for block in blocks if block)
 
 
 def format_standdown(
@@ -98,11 +170,19 @@ def format_standdown(
     """Minimal evening standdown (Telegram HTML): a dated header plus an optional
     deep link to that day's time-accounting page. Depth lives in Notion, not in
     the message — this is a nudge + pointer, sent with parse_mode=HTML."""
-    blocks = [f"🌙 <b>Standdown · {target_date:%a %d %b}</b>"]
+    blocks = [f"<b>Standdown · {target_date:%a %d %b}</b>"]
     if link_url:
-        blocks.append(f'<a href="{html.escape(link_url, quote=True)}">📊 Time accounting →</a>')
+        blocks.append(f'<a href="{html.escape(link_url, quote=True)}">Review your day</a>')
     if post_seeds:
-        blocks.append(_seed_block("🌱 Post seeds", post_seeds))
+        seed_limit = len(post_seeds)
+        while seed_limit:
+            detail = "<blockquote expandable>" + _seed_block("Post ideas", post_seeds[:seed_limit]) + "</blockquote>"
+            if _fits_message("\n\n".join(blocks + [detail]), reserve=60):
+                blocks.append(detail)
+                break
+            seed_limit -= 1
+        if seed_limit < len(post_seeds):
+            blocks.append(f"{len(post_seeds) - seed_limit} more post ideas omitted")
     return "\n\n".join(blocks)
 
 
@@ -131,17 +211,34 @@ def format_papers(
     plus pointers to the inbox and the expedition log. Terse by design — the
     nudge is the message. Sent with parse_mode=HTML, so dynamic text is escaped."""
     if not titles:
-        return "Paper inbox clear. Go sight something new."
+        return "Paper inbox clear."
 
     count = len(titles)
-    lines = [f"<b>Expedition dispatch — {week_label}</b>", ""]
-    lines.append(f"{count} sighting{'s' if count != 1 else ''} awaiting refinement:")
+    shown = min(count, MAX_TASKS_PER_SECTION)
+    while True:
+        text = _papers(titles, week_label, board_url, log_url, shown)
+        if _fits_message(text):
+            return text
+        if shown:
+            shown -= 1
+        elif board_url or log_url:
+            board_url = log_url = None
+        else:
+            week_label = week_label[:80]
+
+
+def _papers(titles, week_label, board_url, log_url, shown) -> str:
+    count = len(titles)
+    lines = [f"<b>{count} paper{'s' if count != 1 else ''} to review · {html.escape(week_label)}</b>", ""]
     lines.extend(
-        f"• {html.escape(title, quote=False)}" for title in titles[:MAX_TASKS_PER_SECTION]
+        f"• {html.escape(title, quote=False)}" for title in titles[:min(PREVIEW_ITEMS, shown)]
     )
-    hidden = count - MAX_TASKS_PER_SECTION
+    details = [f"• {html.escape(title, quote=False)}" for title in titles[PREVIEW_ITEMS:shown]]
+    hidden = count - shown
     if hidden > 0:
-        lines.append(f"…and {hidden} more")
+        details.append(f"…and {hidden} more in the paper inbox")
+    if details:
+        lines.extend(["", "<blockquote expandable>" + "\n".join(details) + "</blockquote>"])
 
     footer: list[str] = []
     if board_url:
@@ -150,44 +247,73 @@ def format_papers(
         footer.append(f'<a href="{html.escape(log_url, quote=True)}">Expedition log</a>')
     if footer:
         lines.append("")
-        lines.append("— — —\n" + " · ".join(footer))
+        lines.append(" · ".join(footer))
 
     return "\n".join(lines)
 
 
 def format_health_alert(
-    transitions: list[Transition], *, host: str = "sleeper-service"
+    transitions: list[Transition], *, host: str = "sleeper-service",
+    details_command: str = HEALTH_DETAILS_COMMAND,
 ) -> str:
-    lines = [f"⚠️ {host} health"]
+    if len(transitions) == 1:
+        t = transitions[0]
+        status = _transition_status(t)
+        headline = f"{t.name}: {status} on {host}"
+        detail = _transition_detail(t)
+        return _plain_list(headline, [detail] if detail else [],
+                           f"Full status on {host}:\n{details_command}")
+
+    outcome = _health_counts((t.new for t in transitions), healthy_label="recovered")
+    lines = [f"{host} · {outcome}"]
     for t in transitions:
-        if t.new == "ok":
-            lines.append(f"✅ {t.name}: recovered ({t.detail})")
-        elif t.new == "critical":
-            lines.append(f"🚨 {t.name}: critical ({t.detail})")
-        elif t.new == "warning":
-            lines.append(f"⚠️ {t.name}: warning ({t.detail})")
-        elif t.old == t.new == "fail":
-            lines.append(f"🚨 {t.name}: still failing ({t.detail})")
-        else:
-            was = f", was {t.old}" if t.old else ""
-            lines.append(f"❌ {t.name}: {t.detail}{was}")
-    return "\n".join(lines)
+        status = _transition_status(t)
+        detail_text = _transition_detail(t)
+        detail = f" · {detail_text}" if detail_text else ""
+        lines.append(f"{t.name}: {status}{detail}")
+    return _plain_list(lines[0], lines[1:], f"Full status on {host}:\n{details_command}")
+
+
+def _transition_status(transition: Transition) -> str:
+    if transition.old == transition.new == "fail":
+        return "still failing"
+    return {"fail": "failed", "ok": "recovered"}.get(transition.new, transition.new)
+
+
+def _transition_detail(transition: Transition) -> str:
+    if transition.new == "ok" and not transition.name.startswith("disk "):
+        return ""
+    return transition.detail if transition.detail != _transition_status(transition) else ""
+
+
+def _health_counts(states: Iterable[str], *, healthy_label: str) -> str:
+    counts = dict.fromkeys(("critical", "fail", "warning", "ok"), 0)
+    for state in states:
+        counts[state] = counts.get(state, 0) + 1
+    return " · ".join(
+        f"{count} " + {"fail": "failed", "ok": healthy_label}.get(state, state)
+        for state, count in counts.items() if count
+    ) or "no checks"
 
 
 def format_health_summary(
-    results: Iterable[CheckResult], *, host: str = "sleeper-service"
+    results: Iterable[CheckResult], *, host: str = "sleeper-service", compact: bool = True,
+    details_command: str = HEALTH_DETAILS_COMMAND,
 ) -> str:
-    lines = [f"{host} status"]
+    results = list(results)
+    outcome = _health_counts((r.status for r in results), healthy_label="ok")
+    lines = [f"{host} · {outcome}"]
     for r in results:
-        mark = "✅" if r.ok else "❌"
-        lines.append(f"{mark} {r.name}: {r.detail}")
-    return "\n".join(lines)
+        status = {"ok": "ok", "fail": "failed"}.get(r.status, r.status)
+        detail = f" · {r.detail}" if r.detail and r.detail != status else ""
+        lines.append(f"{r.name}: {status}{detail}")
+    return _plain_list(lines[0], lines[1:], f"Full status on {host}:\n{details_command}", compact=compact)
 
 
-def format_tailscale_key_expiry(devices: list[DeviceKeyExpiry], now: datetime) -> str:
+def format_tailscale_key_expiry(devices: list[DeviceKeyExpiry], now: datetime, *, compact: bool = True) -> str:
     if not devices:
         raise ValueError("at least one Tailscale device is required")
-    lines = ["⚠️ Tailscale key expiry"]
+    lines = ["Tailscale devices need reauthentication"]
     now_utc = now.astimezone(timezone.utc)
     for device in devices:
         if device.expires_at is None:
@@ -202,8 +328,11 @@ def format_tailscale_key_expiry(devices: list[DeviceKeyExpiry], now: datetime) -
                 local_expiry = device.expires_at.astimezone(now.tzinfo)
                 detail = f"expires in {days} day{'s' if days != 1 else ''} ({local_expiry:%d %b})"
         lines.append(f"• {device.name}: {detail}")
-    lines.extend(["", "Reauthenticate affected devices with sudo tailscale up."])
-    return "\n".join(lines)
+    return _plain_list(
+        lines[0], lines[1:],
+        "Full list in the bot checkout:\nuv run botctl send tailscale-keys --force --dry-run",
+        footer="On each affected device, run: sudo tailscale up", compact=compact,
+    )
 
 
 def _hour_label(hour: int) -> str:
@@ -216,28 +345,29 @@ def _hour_label(hour: int) -> str:
 
 
 def _minutes(seconds: float) -> str:
+    if 0 < seconds < 60 and not math.isclose(seconds, 60, rel_tol=1e-12, abs_tol=0):
+        return "&lt;1m"
     return f"{round(seconds / 60)}m"
 
 
-CLASSIFICATION_EMOJI = {"Deep Work": "🛠", "Shallow Work": "✍️"}
-
-
 def format_hour_report(report) -> str:
-    emoji = CLASSIFICATION_EMOJI.get(report.classification, "🕐")
-    header = f"{emoji} <b>{_hour_label(report.hour)} · {html.escape(report.classification)}</b>"
+    classification = report.classification or "Activity"
+    header = f"<b>{_hour_label(report.hour)} · {html.escape(classification)}</b>"
     tools = " · ".join(
         f"{html.escape(name)} {_minutes(secs)}" for name, secs in report.top_tools
     )
     body = f"{_minutes(report.active_seconds)} active" + (f" · {tools}" if tools else "")
+    if report.ai_chats:
+        ai_chats = " · ".join(
+            f"{html.escape(name)} {_minutes(secs)}" for name, secs in report.ai_chats
+        )
+        body += f"\nAI chat: {ai_chats}"
     return f"{header}\n{body}"
 
 
-def format_unit_failure(unit: str, journal_tail: str | None) -> str:
-    lines = [
-        f"🚨 sleeper-service: {unit} entered failed state.",
-        f"Inspect with: journalctl -u {unit} -n 50",
-    ]
-    if journal_tail:
-        lines.append("")
-        lines.append(journal_tail[-MAX_JOURNAL_CHARS:])
-    return "\n".join(lines)
+def format_unit_failure(unit: str, *, host: str = "sleeper-service") -> str:
+    return (
+        f"{unit} failed on {host}\n\n"
+        "Logs:\n"
+        f"journalctl -u {shlex.quote(unit)} -n 50 --no-pager"
+    )

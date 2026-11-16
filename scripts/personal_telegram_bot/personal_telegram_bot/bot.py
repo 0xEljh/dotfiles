@@ -18,15 +18,9 @@ logger = logging.getLogger(__name__)
 
 HELP_TEXT = """<b>Commands</b>
 /status — service health and last digests
-/dev3000 [rotate] — show or rotate dev-sharing credentials
-/t3 [sleeper-service|contents-may-differ] — fresh T3 pairing link (owner private chat)
-/help — this message
-
-<b>Scheduled</b>
-• Morning Bread digest: wake-triggered (noon fallback)
-• Health checks: every 5 minutes
-• Tailscale key-expiry check: daily at 09:00
-• Hourly activity classification: :10 past the hour"""
+/dev3000 [rotate] — sharing credentials (owner private chat)
+/t3 [sleeper-service|contents-may-differ] — pairing link (owner private chat)
+/help — commands"""
 
 
 def is_authorized(user_id: int | None, allowed: frozenset[int]) -> bool:
@@ -74,7 +68,7 @@ def parse_tpot_callback_data(data: str | None) -> tuple[str, int] | None:
 
 @_guard
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("nervous energy online.\n\n" + HELP_TEXT, parse_mode="HTML")
+    await update.message.reply_text(HELP_TEXT, parse_mode="HTML")
 
 
 @_guard
@@ -100,7 +94,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for kind in ("morning", "health-alert"):
         row = db.last_sent(kind)
         if row:
-            lines.append(f"Last {kind}: {row['date_key']} (sent {row['sent_at']})")
+            lines.append(f"Last {kind}: {row['sent_at']}")
     await update.message.reply_text("\n\n".join(lines))
 
 
@@ -209,8 +203,8 @@ async def _reply_tpot_error(update_or_query, exc: Exception) -> None:
     from .tpot.client import OperatorActionTpotError, RetryableTpotError
 
     if isinstance(exc, RetryableTpotError):
-        retry = f" Try again in ~{round(exc.retry_after_s / 60)} min." if exc.retry_after_s else " Try again later."
-        text = f"TPOT GPU unavailable ({exc.code}).{retry}"
+        retry = f" Retry in {exc.retry_after_s:g} s." if exc.retry_after_s else " Try again later."
+        text = f"TPOT unavailable ({exc.code}).{retry}"
     elif isinstance(exc, OperatorActionTpotError):
         text = f"TPOT needs operator attention ({exc.code})."
     else:

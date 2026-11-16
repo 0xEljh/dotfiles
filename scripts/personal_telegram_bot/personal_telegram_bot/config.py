@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -98,6 +99,7 @@ class Config:
     dev3000_auth_dir: Path = Path("/run/dev-3000-auth")
     dev3000_htpasswd_command: str = "htpasswd"
     t3_pair_helper: str = "/etc/profiles/per-user/elijah/bin/t3-pair"
+    aw_ai_report_min_seconds: float = 60
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -114,6 +116,10 @@ class Config:
         chat_id = env.get("TELEGRAM_DEFAULT_CHAT_ID", "")
         if not chat_id:
             raise SystemExit("TELEGRAM_DEFAULT_CHAT_ID is not set (expected in bot.env)")
+
+        ai_report_min_seconds = float(env.get("AW_AI_REPORT_MIN_SECONDS", "60"))
+        if not math.isfinite(ai_report_min_seconds) or ai_report_min_seconds < 0:
+            raise ValueError("AW_AI_REPORT_MIN_SECONDS must be finite and non-negative")
 
         return cls(
             telegram_token=token,
@@ -167,4 +173,5 @@ class Config:
             dev3000_auth_dir=Path(env.get("DEV3000_AUTH_DIR", "/run/dev-3000-auth")),
             dev3000_htpasswd_command=env.get("DEV3000_HTPASSWD_COMMAND", "htpasswd"),
             t3_pair_helper=env.get("T3_PAIR_HELPER", "/etc/profiles/per-user/elijah/bin/t3-pair"),
+            aw_ai_report_min_seconds=ai_report_min_seconds,
         )

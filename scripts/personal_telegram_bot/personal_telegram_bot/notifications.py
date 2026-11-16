@@ -35,13 +35,18 @@ INPUT_SCHEMA = {
     "type": "object", "additionalProperties": False, "required": ["kind", "title", "message"],
     "properties": {
         "kind": {"type": "string", "enum": list(KINDS)},
-        "title": string_schema(120), "message": string_schema(2000),
-        "reference": {**string_schema(128), "pattern": "^[A-Za-z0-9._:-]+$"},
+        "title": {**string_schema(120), "description": "Lead with one short outcome. Shown first, as plain text."},
+        "message": {**string_schema(2000), "description": "Keep the check-in brief. Add the next action if needed; put details behind a real work link."},
+        "reference": {**string_schema(128), "pattern": "^[A-Za-z0-9._:-]+$",
+                      "description": "Correlation label returned in the structured result, not shown in Telegram. Not an idempotency key."},
         "silent": {"type": "boolean", "default": False},
         "source": {"type": "object", "additionalProperties": False,
+                   "description": "Unverified caller-supplied context. Only project and host are shown in Telegram; omit unknown values.",
                    "properties": {key: string_schema(120) for key in SOURCE_FIELDS}},
         "link": {"type": "object", "additionalProperties": False, "required": ["url"],
-                 "properties": {"url": string_schema(2048), "label": string_schema(40)}},
+                 "description": "Optional button to real work details. Never invent a return link.",
+                 "properties": {"url": {**string_schema(2048), "description": "HTTPS URL for the work, review, or next action."},
+                                "label": {**string_schema(40), "description": "Short button label. Defaults to Open work."}}},
     },
 }
 
@@ -126,14 +131,9 @@ def normalize_and_render(arguments, call_id: str) -> tuple[dict, str]:
         link = _link(args["link"]) if "link" in args else None
     except (ValueError, TypeError, UnicodeError):
         raise InvalidNotification("link.url") from None
-    heading = args["kind"].upper() + (f" | {source['project']}" if "project" in source else "")
-    identity = [source[key] for key in ("client", "host") if key in source]
-    if "session_id" in source:
-        identity.append(f"session {source['session_id']}")
-    text = f"{heading}\n{title}\n\n{message}\n\n"
-    if identity:
-        text += " | ".join(identity) + "\n"
-    text += f"Ref: {reference}"
+    context = [args["kind"].capitalize()]
+    context.extend(source[key] for key in ("project", "host") if key in source)
+    text = f"{title}\n{' · '.join(context)}\n\n{message}"
     if len(text.encode("utf-16-le")) // 2 > 3500:
         raise InvalidNotification("rendered_text (maximum 3500 UTF-16 units)")
     return {"reference": reference, "silent": silent, "link": link}, text

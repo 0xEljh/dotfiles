@@ -119,7 +119,7 @@ def test_command_fresh_link_in_worker_thread_with_no_preview(cfg, monkeypatch, a
     asyncio.run(bot.cmd_t3(update, context))
     assert calls == [(host, "create", cfg.t3_pair_helper)] * 2
     text = update.message.reply_text.call_args.args[0]
-    assert all(part in text for part in (host, payload(host)["pairUrl"], "12:05:00", "Tailscale", "single-use", "5 minutes"))
+    assert all(part in text for part in (host, payload(host)["pairUrl"], payload(host)["expiresAt"], "Tailscale", "Single-use"))
     assert update.message.reply_text.call_args.kwargs["disable_web_page_preview"] is True
     assert update.message.reply_text.call_args.kwargs["parse_mode"] == "HTML"
 
@@ -272,9 +272,11 @@ def test_link_formatter_escapes_host_expiry_and_url_attribute_and_keeps_warnings
     text = t3_pairing.format_link_message(host, link)
     assert text.startswith("<b>T3 pairing link</b>\n")
     assert f"Host: <code>{html.escape(host)}</code>" in text
-    assert f'<a href="{html.escape(link["pairUrl"], quote=True)}">Open T3 pairing link</a>' in text
+    assert f'<a href="{html.escape(link["pairUrl"], quote=True)}">Open T3</a>' in text
     assert html.escape(link["expiresAt"]) in text
-    assert all(value in text for value in ("5 minutes", "single-use", "Connect to Tailscale before opening"))
+    assert all(value in text for value in ("Single-use", "Tailscale required"))
+    assert text.index("Tailscale required") < text.index('<a href=')
+    assert "5 minutes" not in text
     assert "<bad>" not in text and "<expiry>" not in text
 
 
@@ -284,9 +286,9 @@ def test_help_commands_send_short_sectioned_html_to_authorized_users(cfg, comman
     asyncio.run(command(update, context))
     text = update.message.reply_text.call_args.args[0]
     assert "<b>Commands</b>" in text
-    assert "\n\n<b>Scheduled</b>\n" in text
-    assert all(value in text for value in ("/status", "/dev3000", "/t3", "/help", "owner private chat",
-                                          "noon fallback", "5 minutes", "09:00", ":10"))
+    assert text.startswith("<b>Commands</b>\n/status")
+    assert all(value in text for value in ("/status", "/dev3000", "/t3", "/help", "owner private chat"))
+    assert len(text.splitlines()) == 5
     assert update.message.reply_text.call_args.kwargs["parse_mode"] == "HTML"
 
 

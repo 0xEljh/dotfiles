@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import socket
-import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -26,7 +25,7 @@ def _deliver(cfg: Config, text: str, dry_run: bool, parse_mode: str | None = Non
 
 
 def send_test(cfg: Config, args) -> int:
-    message_id = _deliver(cfg, "✅ Test message from sleeper-service (nervous energy).", args.dry_run)
+    message_id = _deliver(cfg, "Telegram delivery works · sleeper-service", args.dry_run)
     if message_id:
         print(f"Sent message {message_id} to chat {cfg.default_chat_id}")
     return 0
@@ -224,9 +223,9 @@ def send_hour(cfg: Config, args) -> int:
         print(f"Hour report already sent for {date_key}")
         return 0
 
-    report = classify_previous_hour(now)
+    report = classify_previous_hour(now, ai_report_min_seconds=cfg.aw_ai_report_min_seconds)
     if report is None:
-        print(f"No classification for {date_key} (no data or below thresholds)")
+        print(f"No hour report for {date_key} (no classified work or AI chat meeting report minimum)")
         return 0
 
     message_id = _deliver(cfg, format_hour_report(report), args.dry_run, parse_mode="HTML")
@@ -279,7 +278,7 @@ def send_health(cfg: Config, args) -> int:
 
     sent_transition_alert = False
     if args.force:
-        _deliver(cfg, format_health_summary(results), args.dry_run)
+        _deliver(cfg, format_health_summary(results, compact=not args.dry_run), args.dry_run)
     elif transitions:
         _deliver(cfg, format_health_alert(transitions), args.dry_run)
         sent_transition_alert = True
@@ -318,13 +317,13 @@ def send_disk_health(cfg: Config, args) -> int:
     if args.force:
         _deliver(
             cfg,
-            format_health_summary(results, host=args.host),
+            format_health_summary(results, host=args.host, compact=not args.dry_run, details_command="df -h"),
             args.dry_run,
         )
     elif transitions:
         _deliver(
             cfg,
-            format_health_alert(transitions, host=args.host),
+            format_health_alert(transitions, host=args.host, details_command="df -h"),
             args.dry_run,
         )
         sent_transition_alert = True
@@ -369,7 +368,7 @@ def send_tailscale_keys(cfg: Config, args, *, now: datetime | None = None) -> in
         return 0
 
     message_id = _deliver(
-        cfg, format_tailscale_key_expiry(devices, now), args.dry_run
+        cfg, format_tailscale_key_expiry(devices, now, compact=not args.dry_run), args.dry_run
     )
     if not args.dry_run:
         db.record_sent("tailscale-key-expiry", date_key, message_id)
@@ -399,19 +398,7 @@ def send_failure(cfg: Config, args) -> int:
         print(f"Already alerted for {args.unit} in this window ({window_key})")
         return 0
 
-    journal_tail = None
-    try:
-        proc = subprocess.run(
-            ["journalctl", "-u", args.unit, "-n", "10", "--no-pager", "-o", "cat"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        journal_tail = proc.stdout.strip() or None
-    except Exception:
-        pass  # journal access is best-effort; the alert still goes out
-
-    message_id = _deliver(cfg, format_unit_failure(args.unit, journal_tail), args.dry_run)
+    message_id = _deliver(cfg, format_unit_failure(args.unit, host=socket.gethostname()), args.dry_run)
     if not args.dry_run:
         db.record_sent("unit-failure", window_key, message_id)
         db.log_event("unit-failure", {"unit": args.unit})

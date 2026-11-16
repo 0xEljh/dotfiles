@@ -67,8 +67,10 @@ def deliver_morning_digest(
                 send_message(
                     cfg.telegram_token,
                     cfg.default_chat_id,
-                    f"⚠️ Morning digest failed ({type(exc).__name__}). "
-                    "Inspect with: journalctl -u personal-telegram-bot-ingest",
+                    "Morning digest failed · sleeper-service\n\n"
+                    "Logs on sleeper-service:\n"
+                    "journalctl -u personal-telegram-bot-morning.service "
+                    "-u personal-telegram-bot-ingest.service -n 50 --no-pager",
                 )
             raise
 
@@ -251,8 +253,9 @@ def deliver_papers_digest(
                 send_message(
                     cfg.telegram_token,
                     cfg.default_chat_id,
-                    f"⚠️ Papers digest failed ({type(exc).__name__}). "
-                    "Inspect with: journalctl -u personal-telegram-bot-papers",
+                    "Papers digest failed · sleeper-service\n\n"
+                    "Logs on sleeper-service:\n"
+                    "journalctl -u personal-telegram-bot-papers.service -n 50 --no-pager",
                 )
             raise
 

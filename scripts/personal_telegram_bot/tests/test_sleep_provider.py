@@ -189,13 +189,13 @@ def test_split_interval_single_day():
 def test_format_sleep_line():
     summary = SleepSummary(start=_dt("2026-06-13 23:48"), end=_dt("2026-06-14 07:21"))
 
-    assert format_sleep_line(summary) == "😴 Slept 7h33m (23:48–07:21)"
+    assert format_sleep_line(summary) == "Slept 7h33m (23:48–07:21)"
 
 
 def test_format_sleep_line_subhour_duration():
     summary = SleepSummary(start=_dt("2026-06-14 14:00"), end=_dt("2026-06-14 14:45"))
 
-    assert format_sleep_line(summary) == "😴 Slept 45m (14:00–14:45)"
+    assert format_sleep_line(summary) == "Slept 45m (14:00–14:45)"
 
 
 # --- sleep_for_date: explicit-date attribution (Notion daily sync) ---

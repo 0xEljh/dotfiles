@@ -59,11 +59,14 @@ def test_wire_discovery_structured_error_fallback_and_sanitized_sdk_failures(tmp
 
 
 def test_server_result_has_matching_success_text_and_schema():
+    sent = []
+
     class Sender:
         async def validate(self, timeout):
             pass
 
-        async def send(self, *args, **kwargs):
+        async def send(self, text, **kwargs):
+            sent.append((text, kwargs))
             return 42
 
     async def go():
@@ -72,12 +75,19 @@ def test_server_result_has_matching_success_text_and_schema():
         server = create_server(NotificationService(Sender()))
         result = await server.request_handlers[types.CallToolRequest](types.CallToolRequest(
             method="tools/call", params=types.CallToolRequestParams(
-                name="notify_user", arguments={"kind": "ready", "title": "Ready", "message": "Done"},
+                name="notify_user", arguments={
+                    "kind": "ready", "title": "Review ready", "message": "Approve the change.",
+                    "reference": "review-42", "source": {"project": "dotfiles", "client": "OpenCode", "session_id": "s1"},
+                    "link": {"url": "https://example.com/review/42", "label": "Review change"},
+                },
             ),
         ))
         body = result.root
         assert body.isError is False
         assert body.structuredContent["telegram_message_id"] == 42
+        assert body.structuredContent["reference"] == "review-42"
+        assert sent[0][0] == "Review ready\nReady · dotfiles\n\nApprove the change."
+        assert sent[0][1]["link"] == {"url": "https://example.com/review/42", "label": "Review change"}
         assert json.loads(body.content[0].text) == body.structuredContent
         jsonschema.validate(body.structuredContent, OUTPUT_SCHEMA)
     asyncio.run(go())

@@ -134,6 +134,20 @@ def test_formatter_requires_at_least_one_device():
         format_tailscale_key_expiry([], NOW)
 
 
+def test_large_expiry_list_keeps_action_and_full_console_route():
+    devices = [DeviceKeyExpiry(
+        str(i), f"device-{i:03}-" + "x" * 100, NOW - timedelta(days=1), True,
+    ) for i in range(60)]
+    text = format_tailscale_key_expiry(devices, NOW)
+    assert len(text.encode("utf-16-le")) // 2 <= 3900
+    shown = sum(device.name in text for device in devices)
+    assert f"{len(devices) - shown} more items not shown" in text
+    assert "sudo tailscale up" in text
+    assert "uv run botctl send tailscale-keys --force --dry-run" in text
+    full = format_tailscale_key_expiry(devices, NOW, compact=False)
+    assert all(device.name in full for device in devices)
+
+
 def test_send_tailscale_keys_sends_once_per_day(tmp_path, monkeypatch):
     cfg = _cfg(tmp_path)
     devices = [DeviceKeyExpiry("peer", "contents-may-differ", NOW - timedelta(days=1), True)]

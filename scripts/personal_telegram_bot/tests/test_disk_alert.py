@@ -66,7 +66,7 @@ def test_disk_warning_alerts_once_with_host_label(tmp_path, monkeypatch):
     assert cli.send_disk_health(cfg, args()) == 0
 
     assert len(sent) == 1
-    assert "contents-may-differ health" in sent[0]
+    assert "disk /: warning on contents-may-differ" in sent[0]
     assert "warning" in sent[0]
     assert StateDB(cfg.db_path).last_sent("disk-health-alert") is not None
 
@@ -102,7 +102,7 @@ def test_forced_disk_summary_is_not_recorded_as_transition_alert(tmp_path, monke
 
     cli.send_disk_health(cfg, args(force=True))
 
-    assert sent == ["contents-may-differ status\n✅ disk /: 71.0% used"]
+    assert sent == ["contents-may-differ · 1 ok\ndisk /: ok · 71.0% used"]
     assert StateDB(cfg.db_path).last_sent("disk-health-alert") is None
 
 

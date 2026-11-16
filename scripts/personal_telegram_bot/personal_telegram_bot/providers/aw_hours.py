@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import math
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -20,9 +21,10 @@ TOP_TOOLS_SHOWN = 3
 @dataclass(frozen=True)
 class HourReport:
     hour: int
-    classification: str
+    classification: str | None
     active_seconds: float
     top_tools: list[tuple[str, float]]
+    ai_chats: list[tuple[str, float]] = field(default_factory=list)
 
 
 def previous_hour(now: datetime) -> datetime:
@@ -98,20 +100,35 @@ def stale_aw_reminder_transition(
     )
 
 
-def build_hour_report(stats: dict, classification: str | None, hour: int) -> HourReport | None:
-    if classification is None:
+def build_hour_report(
+    stats: dict, classification: str | None, hour: int, *, ai_report_min_seconds: float = 60,
+) -> HourReport | None:
+    ai_time = {
+        name: seconds for name, seconds in stats.get("ai_chat_time", {}).items()
+        if seconds > 0
+    }
+    ai_seconds = sum(ai_time.values())
+    # Repeated fractional durations can sum to just below an exact threshold.
+    meets_minimum = ai_seconds >= ai_report_min_seconds or math.isclose(
+        ai_seconds, ai_report_min_seconds, rel_tol=1e-12, abs_tol=0,
+    )
+    if classification is None and (not ai_time or not meets_minimum):
         return None
     tool_key = {
         "Deep Work": "coding_tools",
         "Shallow Work": "planning_tools",
     }.get(classification)
     tools = stats.get(tool_key, {}) if tool_key else {}
-    top_tools = sorted(tools.items(), key=lambda x: -x[1])[:TOP_TOOLS_SHOWN]
+    top_tools = sorted(
+        ((name, seconds) for name, seconds in tools.items() if name not in ai_time),
+        key=lambda x: -x[1],
+    )[:TOP_TOOLS_SHOWN]
     return HourReport(
         hour=hour,
         classification=classification,
         active_seconds=stats.get("active_time", 0),
         top_tools=top_tools,
+        ai_chats=sorted(ai_time.items(), key=lambda x: -x[1]),
     )
 
 
@@ -124,8 +141,8 @@ def _aw_module():
     return aw_notion_sync
 
 
-def classify_previous_hour(now: datetime) -> HourReport | None:
-    """Classify the hour that just ended, or None if unclassified / no data."""
+def classify_previous_hour(now: datetime, *, ai_report_min_seconds: float = 60) -> HourReport | None:
+    """Report the previous hour's classified work or recorded AI-chat usage."""
     aw = _aw_module()
     target = previous_hour(now)
     all_data = aw.load_aw_data_for_journal_day(target.date())
@@ -134,4 +151,4 @@ def classify_previous_hour(now: datetime) -> HourReport | None:
     if not stats:
         return None
     classification = aw.determine_hourly_select_value(stats)
-    return build_hour_report(stats, classification, target.hour)
+    return build_hour_report(stats, classification, target.hour, ai_report_min_seconds=ai_report_min_seconds)

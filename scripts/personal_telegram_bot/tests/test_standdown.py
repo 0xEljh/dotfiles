@@ -91,7 +91,7 @@ def test_blocked_outside_window_even_at_home():
 def test_format_with_link_escapes_url():
     out = format_standdown(date(2026, 6, 28), "https://notion.so/abc?x=1&y=2")
     assert "Standdown" in out and "28 Jun" in out
-    assert "📊" in out
+    assert "Review your day" in out
     assert "https://notion.so/abc?x=1&amp;y=2" in out  # & is HTML-escaped
 
 

@@ -46,12 +46,16 @@ OUTPUT_SCHEMA = {
 }
 
 DESCRIPTION = """Send a short private Telegram check-in at a useful handoff, when human
-input is required, or at an important requested milestone. Routine progress
-narration is discouraged. Content leaves this host for Telegram and may appear
+input is required, or at an important requested milestone. Lead the title with
+one short outcome. Keep the message brief and add the next action if needed.
+Use a real work link for details. Brevity is guidance, not an extra length limit.
+Routine progress narration is discouraged. Content leaves this host for Telegram and may appear
 on a phone lock screen: omit secrets, private logs, full source files, pairing
 grants and credential-bearing URLs. Source labels are caller-supplied context,
 not authenticated identity; omit unknown labels and never invent session IDs or
-return links. Only HTTPS work links are accepted; a link is optional. Normal
+return links. Telegram shows only the project and host source labels. Client,
+session, and reference are omitted from the Telegram text; reference remains in
+the structured result. Only HTTPS work links are accepted; a link is optional. Normal
 notifications are the default; silent=true is an explicit override. Sent means
 Telegram acceptance, not read or acknowledged. Repeated calls and uncertain
 retries can duplicate messages; reference is a correlation label, NOT an

@@ -12,6 +12,7 @@ Telegram bot (`@nervous_energy_bot`) for sleeper-service.
 uv run botctl send test
 uv run botctl send morning --dry-run     # print, don't send
 uv run botctl send morning --force       # bypass once-per-day dedupe
+uv run botctl send hour --dry-run        # preview the previous hour's activity
 uv run botctl send health --force        # full summary, not just transitions
 uv run botctl send disk-health --host contents-may-differ --dry-run
 uv run botctl send tailscale-keys --dry-run
@@ -34,12 +35,44 @@ systemd bot services use a root-managed SOPS environment file instead. Settings:
 `HEALTH_DISK_PATHS` (comma-separated), `HEALTH_DISK_WARNING_PERCENT`,
 `HEALTH_DISK_CRITICAL_PERCENT`, `BOT_STATE_DB`, `AW_DATA_DIR`, and
 `AW_DATA_MAX_AGE_HOURS`.
+`AW_AI_REPORT_MIN_SECONDS` sets the minimum combined AI-chat duration for an
+otherwise unclassified hourly report (default: 60 seconds). Set it to `0` to
+report every positive AI session. The value must be finite and non-negative.
 The Tailscale warning window is configurable with
 `TAILSCALE_KEY_EXPIRY_WARNING_DAYS` (default: 14). The local status view covers
 devices visible to sleeper-service; it is not an authoritative tailnet inventory.
 
 State (digest dedupe, health transitions, audit log) is SQLite at
 `~/.local/state/personal-telegram-bot/state.sqlite3`.
+
+### Read notifications at a glance
+
+Messages lead with the outcome or the number of items to review. Morning and
+paper digests show up to three items first. Expand the quote for secondary
+items, or open the Notion link for the full list. Omitted counts identify items
+that do not fit in one Telegram message.
+
+Failure alerts identify the unit and host, then give a command to read the logs
+on that host. They do not include journal excerpts. Health alerts keep affected
+resources, severity, and measurements visible. Pairing alerts keep client
+identity visible. Use `/status` for current service health.
+
+If a health or key-expiry list is too long, the message shows an omitted count
+and a command for the full list. Run bot commands in the configured bot checkout.
+`send health --force --dry-run` and
+`send tailscale-keys --force --dry-run` print the full list without the Telegram
+presentation limit. Disk alerts point to `df -h` on the affected host.
+
+Hourly reports show desktop and browser AI-chat usage separately from the work
+category's top three tools. Recorded ChatGPT and other AI-chat time appears even
+in Deep Work reports.
+An hour with at least one minute of combined AI-chat usage below the
+work-classification thresholds is reported as `Activity`, not Deep or Shallow
+Work. The configurable minimum only controls these otherwise-silent hours.
+Classified work reports always include even brief AI usage. Other unclassified
+hours stay silent. Desktop durations still require same-computer non-idle
+coverage. Brief AI usage
+can therefore appear in a report, but an idle ChatGPT window does not.
 
 On `contents-may-differ`, `personal-telegram-bot-disk-health.service` reads its
 bot token and chat ID from the SOPS-managed
@@ -166,7 +199,14 @@ After authorized setup, inspect `opencode mcp list`, Claude's `/mcp`, or Codex's
 not send a notification. Do not call `notify_user` until live delivery is
 authorized. `report-plain --validate-only` is not an offline check: it calls Telegram.
 
-For a handoff, include what is ready or blocked and the next step. Omit secrets,
+For a handoff, use a short outcome as the title. Keep the message to a few short
+lines, with the next action when needed. Use the optional work-link button for
+supporting detail. These are writing guidelines, not additional length limits.
+The wrapper shows state, project, and host when supplied. Client, session, and
+reference metadata do not appear in Telegram; correlation references remain in
+the structured tool result.
+
+Omit secrets,
 private logs, full source files, pairing grants, and credential-bearing links.
 Telegram can display the message on a lock screen. Use known source labels and
 HTTPS links only. A missing link is acceptable.
