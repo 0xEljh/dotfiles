@@ -1,5 +1,6 @@
 import json
 import select
+import shlex
 import stat
 import subprocess
 import sys
@@ -88,8 +89,11 @@ def test_live_worker_outage_is_not_healthy_and_notice_is_safe_hourly(ledger, mon
         assert all("ghp_" not in text and "raw reason" not in text for text in delivered)
     reports = coordinator.db.execute("SELECT text FROM reports").fetchall()
     assert len(reports) == 1
-    assert "worker_transport_failures" in reports[0][0]
+    assert "worker transport failures" in reports[0][0]
     assert "no replacement" in reports[0][0].lower()
+    assert reports[0][0].startswith("PR maintenance: health degraded\n")
+    assert f"pr-maintenance --config {config_path} status" in reports[0][0]
+    assert str(coordinator.path.parent / "diagnostics") in reports[0][0]
 
 
 @pytest.mark.parametrize("state", ["inspection_required", "deadline_exceeded", "publication_unknown"])
@@ -445,3 +449,44 @@ def test_blocked_cli_error_keeps_existing_public_message(ledger, monkeypatch, ca
     monkeypatch.setattr(cli, "Coordinator", fail)
     assert cli.main(["--config", str(config_path), "status"]) == 2
     assert capsys.readouterr().err == "blocked: safe operator decision\n"
+
+
+def test_health_notice_inspection_command_quotes_the_actual_config_path(ledger, monkeypatch, capsys):
+    config_path, coordinator, _, at = ledger
+    actual = config_path.with_name("coordinator's private $(config).json")
+    config_path.rename(actual)
+    coordinator.db.execute("UPDATE meta SET value=? WHERE key='last_tick'", (str(at - 1800),))
+    code, result, delivered = health(actual, monkeypatch, capsys)
+    assert code == 1 and result["issue_codes"] == ["stale_tick"]
+    command = next(line for line in delivered[0].splitlines() if line.startswith("pr-maintenance "))
+    assert shlex.split(command) == ["pr-maintenance", "--config", str(actual), "status"]
+    assert "stale tick" in delivered[0]
+
+
+@pytest.mark.parametrize("location", ["config", "database", "host"])
+@pytest.mark.parametrize("healthy", [False, True])
+def test_health_survives_credential_shaped_inspection_metadata(tmp_path, monkeypatch, capsys, location, healthy):
+    token = "ghp_" + "Z" * 30
+    monkeypatch.setattr("socket.gethostname", lambda: token if location == "host" else "coordinator-test")
+    config_path = tmp_path / (token + ".json" if location == "config" else "config.json")
+    database = tmp_path / (token if location == "database" else "private") / "coordinator.sqlite3"
+    config_path.write_text(json.dumps({"database": str(database), "report_command": ["not-used"]}))
+    coordinator = Coordinator(database, load(config_path))
+    coordinator.enable(500)
+    coordinator.db.execute("INSERT OR REPLACE INTO meta VALUES ('last_tick',?)",
+                           (str(time.time() if healthy else time.time() - 1800),))
+    coordinator.db.close()
+
+    code, result, delivered = health(config_path, monkeypatch, capsys)
+
+    assert code == (0 if healthy else 1)
+    assert result["healthy"] is healthy
+    assert result["issue_codes"] == ([] if healthy else ["stale_tick"])
+    assert token not in json.dumps(result) + "\n".join(delivered)
+    if healthy:
+        assert delivered == []
+    else:
+        assert len(delivered) == 1 and "health degraded" in delivered[0]
+        assert "Inspect private coordinator status and diagnostics" in delivered[0]
+        if location != "host":
+            assert "coordinator-test" in delivered[0]

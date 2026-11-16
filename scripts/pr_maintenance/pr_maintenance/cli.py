@@ -5,12 +5,14 @@ import fcntl
 import json
 import logging
 import os
+import shlex
+import socket
 import sys
 import time
 import traceback
 from pathlib import Path
 
-from .common import Blocked, canonical, check_secrets
+from .common import Blocked, canonical, check_secrets, first_secret
 from .config import load
 from .coordinator import Coordinator
 from .diagnostics import retain_diagnostic
@@ -54,7 +56,18 @@ def _deliver(config, outbox, sender=None):
     return True
 
 
-def _health(config, coordinator, outbox):
+def _inspection(config, config_path):
+    host = socket.gethostname()
+    text = (f"Private status on {host}:\n"
+            f"pr-maintenance --config {shlex.quote(str(Path(config_path).resolve()))} status\n"
+            f"Private diagnostics: {Path(config['database']).resolve().parent / 'diagnostics'}")
+    if first_secret(text):
+        host = "the coordinator (host withheld)" if first_secret(host) else host
+        return f"Inspect private coordinator status and diagnostics on {host}. Inspection paths withheld."
+    return text
+
+
+def _health(config, coordinator, outbox, config_path):
     at = time.time()
     result = snapshot(coordinator, outbox.status(), at=at)
     lock = Path(config["database"]).with_suffix(".operator.lock")
@@ -67,10 +80,10 @@ def _health(config, coordinator, outbox):
             return 0 if result["healthy"] else 1
         if not result["healthy"]:
             outbox.enqueue(f"health:{int(at // 3600)}", None,
-                           "PR maintenance coordinator health is degraded. Issue codes: "
-                           + ", ".join(result["issue_codes"])
-                           + ". Inspect private coordinator state and diagnostics. Existing attempts and publication state "
-                           "are retained; no replacement coding attempt was authorized.")
+                           "PR maintenance: health degraded\n"
+                           + ", ".join(code.replace("_", " ") for code in result["issue_codes"])
+                           + "\nAttempts and publication state retained; no replacement coding authorized.\n\n"
+                           + _inspection(config, config_path))
     # Never hold the operator lock over health-side validation or network work.
     delivered = _deliver(config, outbox)
     result["report_delivery"] = "attempted" if delivered else "skipped_delivery_busy"
@@ -123,7 +136,7 @@ def main(argv=None):
             print(json.dumps(c.status() | {"reports": outbox.status()}, indent=2))
             return 0
         if args.command == "health":
-            return _health(config, c, outbox)
+            return _health(config, c, outbox, args.config)
         # Serialize complete tick/control operations, but not webhook acknowledgement.
         lock = Path(config["database"]).with_suffix(".operator.lock")
         with lock.open("a") as stream:
@@ -150,7 +163,9 @@ def main(argv=None):
             except Exception:
                 # External diagnostics may contain private URLs, payloads, or credentials.
                 service.notice(f"tick-failed:{int(time.time() // 3600)}", None,
-                               "PR maintenance coordinator tick failed. Inspect private diagnostics and GitHub integration access. Existing attempts and publication state are retained; inspect them before retrying.")
+                               "PR maintenance: poll failed\n"
+                               "Attempts and publication state retained. Inspect them and GitHub integration access before retrying.\n\n"
+                               + _inspection(config, args.config))
                 _deliver(config, outbox, sender)
                 raise
             finally:

@@ -348,11 +348,21 @@ def render_summary(workflow: dict, stages: list[dict], final: bool) -> str:
     number = workflow.get("number") or workflow.get("pr_number") or "?"
     url = (workflow.get("url") or workflow.get("html_url") or _mapping(workflow.get("pr")).get("html_url")
            or f"https://github.com/{repository}/pull/{number}")
-    lines = [f"{'Final' if final else 'Initial'} maintenance summary: {repository} #{number}", str(url)]
-    if any(stage.get("state") in ("blocked", "failed") for stage in stages):
-        lines.extend(["", "Maintenance finished with blockers." if final else "Initial stages finished with blockers."])
+    outcome = "finished" if final else "initial stages finished"
+    if any(stage.get("state") == "published_with_concern" for stage in stages):
+        outcome = "incident needs acknowledgement"
+    elif any(stage.get("state") == "publication_unknown" for stage in stages):
+        outcome = "publication unconfirmed"
+    elif any(stage.get("state") in ("blocked", "failed") for stage in stages):
+        outcome = "finished with blockers" if final else "initial stages finished with blockers"
     elif final and workflow.get("completion_outcome") == "unverified":
-        lines.extend(["", "Historical model-stage outcomes are unverified; completion does not establish successful maintenance."])
+        outcome = "unverified completion"
+    elif workflow.get("lifecycle_state") in {"cancelled", "cancel_requested"}:
+        outcome = "cancelled" if workflow["lifecycle_state"] == "cancelled" else "cancellation requested"
+    phase = " (final)" if final else ""
+    lines = [f"PR maintenance: {outcome} · {repository} #{number}{phase}", str(url), ""]
+    if final and workflow.get("completion_outcome") == "unverified":
+        lines.append("Historical model-stage outcomes are unverified; completion does not establish successful maintenance.")
     if workflow.get("lifecycle_state") in {"cancelled", "cancel_requested"}:
         lines.extend(["", brief(workflow.get("paused_reason") or "Maintenance cancelled")])
         if final and not workflow.get("has_attempts", any(s.get("active_attempt_id") or _mapping(s.get("result")) for s in stages)):
@@ -369,9 +379,9 @@ def render_summary(workflow: dict, stages: list[dict], final: bool) -> str:
         kind = stage.get("kind", "unknown stage")
         state = stage.get("state", data.get("state", "unknown"))
         if state == "cancelled" and not stage.get("active_attempt_id") and not result and not stage.get("spec"):
-            lines.extend(["", f"{stage_title(kind)}: Not started (cancelled)"])
+            lines.append(f"{stage_title(kind)}: Not started (cancelled)")
             continue
-        lines.extend(["", f"{stage_title(kind)}: {state_title(state)}"])
+        lines.append(f"{stage_title(kind)}: {state_title(state)}. {_verification_summary(data.get('verification'))}")
         if state == "published_with_concern":
             lines.append("Changes were published; incident requires acknowledgement.")
         for blocker in _items(data.get("blockers")):
@@ -387,27 +397,19 @@ def render_summary(workflow: dict, stages: list[dict], final: bool) -> str:
             reason = data["summary"]
         if reason:
             lines.append(brief(reason))
-        commits = _items(data.get("commits"))
-        candidate = data.get("candidate_sha")
-        if candidate and candidate not in commits:
-            commits.append(candidate)
         published = state in ("pushed", "published_with_concern")
-        if candidate or commits:
+        if data.get("candidate_sha") or data.get("commits"):
             if not published:
                 lines.append("Local changes retained; not confirmed pushed.")
         elif state in ("blocked", "failed", "publication_unknown"):
             lines.append("Publication not confirmed.")
-        if published:
-            for commit in commits:
-                record = _mapping(commit)
-                sha = record.get("sha") if record else str(commit)
-                link = record.get("url") or f"https://github.com/{repository}/commit/{sha}"
-                lines.append(f"Commit: {link}")
-        lines.append(_verification_summary(data.get("verification")))
         for finding in _items(data.get("feedback_dispositions") or data.get("dispositions")):
             if isinstance(finding, dict):
-                lines.append(f"Feedback {finding.get('id', '?')}: {finding.get('disposition', 'needs decision')} "
-                             f"— {brief(finding.get('reason', 'reason not recorded'), 120)}")
+                disposition = finding.get("disposition") or "needs decision"
+                if disposition in ("fixed", "already addressed", "not applicable"):
+                    continue
+                lines.append(f"Feedback {finding.get('id', '?')}: {disposition}. "
+                             f"{brief(finding.get('reason', 'reason not recorded'), 120)}")
                 if finding.get("url"):
                     lines.append(str(finding["url"]))
     return "\n".join(lines)

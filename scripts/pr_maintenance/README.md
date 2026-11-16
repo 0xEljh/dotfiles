@@ -149,10 +149,24 @@ credentials and must remain private. Retention keeps at most 200 generated recor
 with 64 KiB per private text field and 256 KiB per record. Truncation is explicit.
 Storage failure reports that evidence was not retained.
 
-Telegram summaries show stage outcomes, short explanations, verification status,
-and decisions. PR, published commit, and review links replace inspection metadata.
-Session IDs, attempt IDs, checkout paths, exact commands, and log hashes remain in
-private status and artifacts. Single-message reports have no delivery footer.
+Telegram notices lead with the outcome and required action. Summaries combine
+each stage's outcome and verification status in one line. Blockers, unresolved
+decisions, publication uncertainty, and background-process warnings stay visible.
+Resolved feedback and individual commit links are omitted; the PR link leads to
+published changes and review threads. Feedback that needs a decision keeps its
+reason and direct link.
+
+Private verification evidence is not on GitHub. Summaries name the coordinator
+host and database containing retained attempt results. Use the private CLI
+`status` command below for workflow and publication state; full checks and
+feedback dispositions remain in the database's attempt results and worker
+artifacts. Health and poll-failure notices include the status command with the
+actual configuration path and the private diagnostics directory when safe to
+disclose. Credential-shaped inspection locations are omitted without withholding
+the underlying notice. Diagnostic
+storage can fail, so a directory pointer does not confirm that evidence was saved.
+Session IDs, attempt IDs, checkout paths, exact check commands, and log hashes
+remain private. Single-message reports have no delivery footer.
 Multipart reports repeat the report heading with `Part N/M`; internal deduplication
 keys never become delivery labels. Previously queued messages keep their stored text.
 Delivery does not depend on an extra model or readability subagent.

@@ -142,17 +142,17 @@ def test_personal_inventory_access_failure_defers_without_cancelling_work(tmp_pa
     assert c.meta("api_deferred_at") == "2000"
     assert c.meta("last_tick") == "2000"
     message = next(iter(outbox.messages.values()))
-    assert "Could not get the repository list from GitHub" in message
+    assert message.startswith("PR maintenance: discovery delayed (GitHub repository list unavailable)")
     assert "Reason: GitHub inventory unavailable" in message
     assert action in message
-    assert "No new maintenance work or publication was authorized during this poll" in message
+    assert "No new work or publication authorized this poll" in message
     assert "Existing attempts were not cancelled" in message
     if status:
         assert f"HTTP {status}" in message
     if retry_at:
         assert "no earlier than 1970-01-01 01:00:00 UTC" in message
     else:
-        assert "Retry: Automatically on a scheduled poll" in message
+        assert "Retry: Next scheduled poll" in message
 
 
 @pytest.mark.parametrize("inventoried", [False, True])
@@ -161,7 +161,7 @@ def test_personal_inventory_access_failure_defers_without_cancelling_work(tmp_pa
     ("GitHub API transport failed", None, 3600, "Could not connect to GitHub", "network"),
     ("personal authentication or access denied", 403, None, "HTTP 403", "permissions"),
     ("GitHub API request failed (HTTP 404)", 404, None, "HTTP 404", "still exists"),
-    ("GitHub API returned invalid JSON", None, None, "invalid JSON", "diagnostics"),
+    ("GitHub API returned invalid JSON", None, None, "invalid JSON", "journalctl -u pr-maintenance.service"),
 ])
 def test_scan_failure_explains_repository_reason_retry_and_impact(
     tmp_path, inventoried, diagnostic, status, retry_at, reason, action,
@@ -193,20 +193,19 @@ def test_scan_failure_explains_repository_reason_retry_and_impact(
     outbox = Outbox()
     refreshed = Service(c, GitHub(), None, outbox, now=lambda: 2000).scan()
     message = next(iter(outbox.messages.values()))
-    assert "PR maintenance: EigenformAI/test\nhttps://github.com/EigenformAI/test" in message
-    assert "Could not finish checking for new or updated PRs" in message
+    assert message.startswith("PR maintenance: discovery delayed · EigenformAI/test\nhttps://github.com/EigenformAI/test")
     assert "Reason:" in message and reason in message
     assert "Action:" in message and action in message
     assert "The next scan rechecks the unfinished period" in message
     if retry_at:
         assert "no earlier than 1970-01-01 01:00:00 UTC" in message
     else:
-        assert "Retry: Automatically on a scheduled poll" in message
+        assert "Retry: Next scheduled poll" in message
     if inventoried:
-        assert "Discovery of new or updated PRs is delayed" in message
+        assert "discovery delayed" in message
         assert "PRs refreshed separately can still proceed" in message
     else:
-        assert "Initial PR inventory is incomplete" in message
+        assert "Initial PR inventory incomplete" in message
         assert "new maintenance work will not start" in message
         assert not c.meta("baseline_complete")
     inventory = c.db.execute("SELECT * FROM inventories WHERE repository_id=77").fetchone()
@@ -237,10 +236,9 @@ def test_live_pr_read_failure_identifies_pr_and_does_not_expose_arbitrary_except
     outbox = Outbox()
     refreshed = Service(c, GitHub(), None, outbox, now=lambda: 2000).scan()
     message = next(iter(outbox.messages.values()))
-    assert "PR maintenance: EigenformAI/test #1\n" + pr()["html_url"] in message
-    assert "Could not refresh this PR from GitHub" in message
-    assert "No new work or publication will be authorized for this PR without a fresh read" in message
-    assert "Retry: Automatically on a scheduled poll" in message
+    assert message.startswith("PR maintenance: refresh blocked · EigenformAI/test #1\n" + pr()["html_url"])
+    assert "No new work or publication for this PR until a fresh GitHub read succeeds" in message
+    assert "Retry: Next scheduled poll" in message
     assert "private upstream response" not in message
     assert ("malformed PR data" if malformed else "HTTP 404") in message
     assert 100 not in refreshed
@@ -305,7 +303,7 @@ def test_scan_error_credential_match_is_withheld_before_delivery(tmp_path):
     Service(c, GitHub(), None, outbox, now=lambda: 2000).scan()
     delivered = []
     assert outbox.deliver(lambda body: delivered.append(body) or 1) == 1
-    assert "Notification withheld by outbound credential filter" in delivered[0]
+    assert "notification withheld" in delivered[0] and "Outbound credential filter matched" in delivered[0]
     assert token not in delivered[0]
     assert token in next((tmp_path / "withheld-reports").glob("*.txt")).read_text()
 
@@ -340,9 +338,9 @@ def test_malformed_pr_does_not_stall_other_repositories_or_advance_bad_cursor(tm
     assert c.db.execute("SELECT inventoried FROM inventories WHERE repository_id=78").fetchone()[0] == 1
     assert c.meta("baseline_complete") is None
     message = next(iter(outbox.messages.values()))
-    assert "PR maintenance: EigenformAI/test\nhttps://github.com/EigenformAI/test" in message
+    assert message.startswith("PR maintenance: PR record skipped · EigenformAI/test\nhttps://github.com/EigenformAI/test")
     assert "malformed PR data" in message
-    assert "Retry: Automatically on a scheduled poll" in message
+    assert "Retry: Next scheduled poll" in message
     assert "Action:" in message
     assert "cursor" not in message
 
@@ -382,6 +380,52 @@ def test_lost_submit_ack_reconciles_same_attempt_without_resubmission(tmp_path):
     Service(c, GitHub(), worker, service.outbox, now=lambda: 2001).tick()
     assert len(worker.submitted) == 1
     assert c.stages(100)[0]["state"] == "running"
+
+
+@pytest.mark.parametrize("worker_host", ["worker-test", "ghp_" + "Z" * 30])
+def test_offline_notice_survives_credential_shaped_worker_alias(tmp_path, worker_host):
+    from pr_maintenance.reporting import Outbox as DurableOutbox
+    from pr_maintenance.transport import WorkerOffline
+
+    c = coordinator(tmp_path)
+    c.config.update(execution_enabled=True, allow_repositories=["EigenformAI/test"], worker_host=worker_host)
+    spec = c.claim(100, at=2000)
+    c.mark_submitted(spec["attempt_id"])
+    retained = c.attempt(spec["attempt_id"])
+
+    class GitHub:
+        def repositories(self):
+            return [pr()["base"]["repo"]]
+
+        def get_pr(self, repo, number):
+            return pr()
+
+        def open_prs(self, repo):
+            return [pr()]
+
+    class OfflineWorker:
+        def request(self, operation):
+            assert operation == "collect"
+            raise WorkerOffline("offline")
+
+        def submit(self, *args):
+            raise AssertionError("must not start a replacement attempt")
+
+    outbox = DurableOutbox(c.db)
+    Service(c, GitHub(), OfflineWorker(), outbox, now=lambda: 2000).tick()
+    delivered = []
+    assert outbox.deliver(lambda text: delivered.append(text) or 1) == 1
+    message = delivered[0]
+    label = "Worker" if worker_host.startswith("ghp_") else worker_host
+    assert f"{label} unreachable. Retrying automatically." in message
+    assert "Attempt retained; no replacement writer started." in message
+    assert pr()["html_url"] in message
+    assert "ghp_" not in message and "credential filter" not in message
+    assert not (c.path.parent / "withheld-reports").exists()
+    assert c.db.execute("SELECT report_key FROM reports").fetchone()[0] == "offline:100"
+    assert c.attempt(spec["attempt_id"]) == retained
+    assert c.db.execute("SELECT COUNT(*) FROM attempts").fetchone()[0] == 1
+    assert c.meta("worker_retry_at") == "2015"
 
 
 def test_feedback_spool_is_hashed_not_copied_into_coordinator_ledger(tmp_path):
@@ -599,7 +643,7 @@ def test_recovered_readiness_notice_uses_explicit_utc_and_preserves_polling_dela
     outbox = Outbox()
     Service(c, GitHub(), None, outbox, now=lambda: 1793361600).scan()
     message = outbox.messages["recovered-ready:100"]
-    assert message.startswith("PR maintenance: EigenformAI/test #1\n")
+    assert message.startswith("PR maintenance: draft ready · EigenformAI/test #1\n")
     assert "2026-10-30 12:00:00 UTC" in message
     assert "recovered by polling" in message
     assert "15-minute delay starts at this observation" in message
@@ -617,7 +661,7 @@ def test_published_with_concern_notice_requires_acknowledgement_without_claiming
     outbox = Outbox()
     Service(c, None, None, outbox).reports()
     message = outbox.messages[f"stage:{attempt['attempt_id']}:published_with_concern"]
-    assert "Deep modules: Published with concern" in message
+    assert message.startswith("PR maintenance: Deep modules published with concern · EigenformAI/test #1\n")
     assert "Changes were published; incident requires acknowledgement" in message
     assert "unpublished" not in message.lower()
     assert all(value in message for value in ("Unexpected post-push observation", pr()["html_url"],
@@ -658,7 +702,8 @@ def test_paused_private_workflow_reports_complete_ticks_without_replaying_attemp
     assert c.attempt(spec["attempt_id"]) == retained
     assert c.db.execute("SELECT COUNT(*) FROM attempts").fetchone()[0] == 1
     report = c.db.execute("SELECT text FROM reports").fetchone()[0]
-    assert "paused: repository absent from private inventory" in report
+    assert report.startswith("PR maintenance: paused · EigenformAI/test #1\n")
+    assert "repository absent from private inventory" in report
     assert "possible secret" not in report
 
     service.now = lambda: 2001
@@ -667,7 +712,7 @@ def test_paused_private_workflow_reports_complete_ticks_without_replaying_attemp
     assert c.db.execute("SELECT COUNT(*) FROM reports").fetchone()[0] == 1
     delivered = []
     assert outbox.deliver(lambda text: delivered.append(text) or 123) == 1
-    assert "paused: repository absent from private inventory" in delivered[0]
+    assert "repository absent from private inventory" in delivered[0]
 
 
 def test_secret_notice_retains_exact_private_text_and_delivers_inspection_location(tmp_path, monkeypatch):
@@ -737,7 +782,7 @@ def test_summary_filter_retains_rendered_match_not_unused_inputs(tmp_path):
     stages = [{"kind": "cleanup", "state": "blocked", "result": {"logs": token}}]
     service.summary("unused-inputs", workflow, stages, False)
     text = c.db.execute("SELECT text FROM reports WHERE report_key='unused-inputs'").fetchone()[0]
-    assert "Initial maintenance summary" in text
+    assert "PR maintenance: initial stages finished with blockers" in text
     assert token not in text
     assert not (c.path.parent / "withheld-reports").exists()
 
@@ -901,3 +946,62 @@ def test_worker_recovery_reconciles_cancelled_owner_without_delaying_other_pr(tm
     assert c.workflow(100)["lifecycle_state"] == "cancelled"
     assert c.attempt(owner["attempt_id"])["result"]["operator_recovery"] == recovery["operator_recovery"]
     assert c.claim(101)["attempt_id"] == independent["attempt_id"]
+
+
+def test_summary_points_to_real_private_attempt_results_not_github_for_checks(tmp_path, monkeypatch):
+    monkeypatch.setattr("socket.gethostname", lambda: "coordinator-test")
+    c = coordinator(tmp_path)
+    outbox = Outbox()
+    Service(c, None, None, outbox).summary("compact", c.workflow(100), [{
+        "kind": "cleanup", "state": "pushed", "result": {"verification": {"commands": [{"returncode": 0}]}},
+    }], False)
+    message = outbox.messages["compact"]
+    assert f"Private attempt results on coordinator-test: {c.path.resolve()}" in message
+    assert "Checks on GitHub" not in message
+    assert "Cleanup: Pushed. Verification: 1 passed." in message
+
+
+@pytest.mark.parametrize("location", ["database", "host"])
+def test_optional_private_location_does_not_withhold_a_safe_summary(tmp_path, monkeypatch, location):
+    from pr_maintenance.reporting import Outbox as DurableOutbox
+
+    token = "ghp_" + "Z" * 30
+    monkeypatch.setattr("socket.gethostname", lambda: token if location == "host" else "coordinator-test")
+    c = coordinator(tmp_path / token if location == "database" else tmp_path)
+    outbox = DurableOutbox(c.db)
+    Service(c, None, None, outbox).summary("safe-summary", c.workflow(100), [{
+        "kind": "cleanup", "state": "blocked", "result": {
+            "error": "Prepare pinned dependencies", "execution_assurance": "best_effort"},
+    }], False)
+    delivered = []
+    assert outbox.deliver(lambda text: delivered.append(text) or 1) == 1
+    message = delivered[0]
+    assert "finished with blockers" in message and "Prepare pinned dependencies" in message
+    assert "Background processes may still be running" in message
+    assert "Private attempt results" in message
+    assert token not in message
+    assert not (c.path.parent / "withheld-reports").exists()
+
+
+def test_credential_shaped_diagnostic_pointer_does_not_withhold_publication_notice(tmp_path, monkeypatch):
+    from pr_maintenance.reporting import Outbox as DurableOutbox
+
+    c = coordinator(tmp_path)
+    spec = c.claim(100)
+    token = "ghp_" + "Z" * 30
+    reference = tmp_path / token / "diagnostic.json"
+    monkeypatch.setattr("pr_maintenance.diagnostics.retain_diagnostic", lambda *args, **kwargs: reference)
+
+    class BlockedWorker:
+        def request(self, *args):
+            raise Blocked("candidate needs inspection")
+
+    outbox = DurableOutbox(c.db)
+    Service(c, None, BlockedWorker(), outbox).authorize_publication(c.attempt(spec["attempt_id"]), pr())
+    delivered = []
+    assert outbox.deliver(lambda text: delivered.append(text) or 1) == 1
+    assert "publication deferred" in delivered[0] and "Candidate retained" in delivered[0]
+    assert "Private diagnostic saved" in delivered[0]
+    assert token not in delivered[0]
+    assert c.meta("publication_rejected:" + spec["attempt_id"]) == str(reference)
+    assert not (c.path.parent / "withheld-reports").exists()

@@ -281,14 +281,14 @@ def test_summary_uses_real_links_and_keeps_unpublished_work_and_decisions_explic
     }]
     text = render_summary(workflow, stages, final=True)
     assert all(expected in text for expected in [
-        "Final", workflow["repository"], workflow["url"], "Cleanup: Pushed", "Pushed",
-        "https://github.com/EigenformAI/example/commit/" + "a" * 40,
+        "(final)", workflow["repository"], workflow["url"], "Cleanup: Pushed", "Pushed",
         "4 passed", "Review feedback: Blocked", "Local changes retained; not confirmed pushed",
         "Needs an interface decision", "17", "needs decision", "Changes the public contract",
         "https://github.com/EigenformAI/example/pull/42#discussion_r17",
     ])
     assert all(value not in text for value in [
         "ses_cleanup", "ses_feedback", "contents-may-differ", "/owned/attempt-2",
+        "https://github.com/EigenformAI/example/commit/" + "a" * 40,
         "https://github.com/EigenformAI/example/commit/" + "b" * 40,
     ])
     assert "PRIVATE RAW LOG" not in text
@@ -346,10 +346,11 @@ def test_summary_condenses_trusted_checks_without_diagnostic_hashes_and_commands
     }], False)
     assert all(value in text for value in [
         "Verification: 1 passed",
-        "Removed redundant wrapper", "Feedback 7", "fixed", "same defect",
+        "Removed redundant wrapper",
     ])
     assert all(value not in text for value in [
         "contents-may-differ", "ses_coding", "ses_review", "tests with spaces", "b" * 64,
+        "Feedback 7", "https://example.test/finding/7",
     ])
 
 
@@ -360,7 +361,7 @@ def test_noop_summary_leads_with_outcome_and_never_infers_verification_or_unpubl
         "result": {"checkout": "/owned/unchanged", "session_id": "ses_noop",
                    "summary": "Dependencies unavailable; application checks could not run."},
     }], False)
-    assert text.startswith("Initial maintenance summary: EigenformAI/example #42\n")
+    assert text.startswith("PR maintenance: initial stages finished · EigenformAI/example #42\n")
     assert "Deep modules: No changes" in text
     assert "Verification: not recorded" in text
     assert "unpublished" not in text.lower()
@@ -383,8 +384,9 @@ def test_publication_concern_retains_warning_verification_and_required_action():
     assert "Changes were published; incident requires acknowledgement" in text
     assert text.index("incident requires acknowledgement") < text.index("Post-push observation uncertain")
     assert "Unpublished" not in text
-    assert all(value in text for value in (f"https://github.com/EigenformAI/example/commit/{sha}",
+    assert all(value in text for value in ("https://github.com/EigenformAI/example/pull/42",
                                           "9 passed", "Acknowledge incident"))
+    assert f"/commit/{sha}" not in text
 
 
 def test_long_stage_explanation_is_bounded_but_explicit_decisions_are_not_hidden():
@@ -420,3 +422,59 @@ def test_shortening_selected_prose_does_not_hide_or_partially_send_a_credential(
     }], False)
     with pytest.raises(Blocked):
         Outbox(sqlite3.connect(":memory:")).enqueue("unsafe", 42, text)
+
+
+def test_summary_keeps_stage_results_compact_and_only_surfaces_feedback_needing_action():
+    dispositions = [
+        {"id": i, "disposition": "fixed", "reason": "Resolved in the published change",
+         "url": f"https://github.com/EigenformAI/example/pull/42#discussion_r{i}"}
+        for i in range(20)
+    ]
+    dispositions.append({"id": 21, "disposition": "needs decision", "reason": "Choose the public API",
+                         "url": "https://github.com/EigenformAI/example/pull/42#discussion_r21"})
+    text = render_summary({"repository": "EigenformAI/example", "number": 42}, [
+        {"kind": "cleanup", "state": "pushed", "result": {
+            "candidate_sha": "a" * 40, "verification": {"commands": [{"returncode": 0}]}}},
+        {"kind": "feedback", "state": "blocked", "result": {"feedback_dispositions": dispositions}},
+    ], True)
+    assert text.startswith("PR maintenance: finished with blockers · EigenformAI/example #42 (final)\n")
+    assert "Cleanup: Pushed. Verification: 1 passed." in text
+    assert "Review feedback: Blocked. Verification: not recorded." in text
+    assert "Feedback 21: needs decision" in text and "Choose the public API" in text
+    assert "#discussion_r21" in text
+    assert "#discussion_r0\n" not in text and "Feedback 0:" not in text
+    assert "/commit/" not in text
+    assert len(text) < 500
+
+
+@pytest.mark.parametrize("disposition", [None, "needs decision", "unexpected", ["unknown"], {"unknown": "review"}])
+def test_feedback_without_a_resolved_disposition_stays_visible(disposition):
+    text = render_summary({"repository": "EigenformAI/example", "number": 42}, [{
+        "kind": "feedback", "state": "noop", "result": {"dispositions": [
+            {"id": 8, "disposition": disposition, "reason": "Human review required"},
+        ]},
+    }], True)
+    assert "Feedback 8:" in text and "Human review required" in text
+
+
+@pytest.mark.parametrize("final", [False, True])
+@pytest.mark.parametrize("blocked", [False, True])
+@pytest.mark.parametrize("unverified", [False, True])
+def test_publication_uncertainty_precedes_finished_or_blocked_headlines(final, blocked, unverified):
+    stages = [{"kind": "cleanup", "state": "publication_unknown", "result": {
+        "error": "Transport closed during push.", "candidate_sha": "c" * 40,
+        "verification": {"commands": [{"returncode": 0}]},
+    }}]
+    if blocked:
+        stages.append({"kind": "feedback", "state": "blocked", "result": {
+            "unresolved_decisions": ["Choose the public API"],
+        }})
+    text = render_summary({"repository": "EigenformAI/example", "number": 42,
+                           "completion_outcome": "unverified" if unverified else None}, stages, final)
+    assert text.splitlines()[0].startswith("PR maintenance: publication unconfirmed · ")
+    assert "Local changes retained; not confirmed pushed" in text
+    assert "Transport closed during push" in text and "Verification: 1 passed" in text
+    if blocked:
+        assert "Decision needed: Choose the public API" in text
+    if final and unverified:
+        assert "Historical model-stage outcomes are unverified" in text
