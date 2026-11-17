@@ -1,0 +1,10 @@
+{
+  "port": 47835,
+  "deadlineMs": 2500,
+  "cleanupMs": 300,
+  "maxConcurrentPerDevice": 4,
+  "devices": [
+    { "id": "windows", "endpoint": "http://127.0.0.1:47832/mcp" },
+    { "id": "macos", "endpoint": "http://127.0.0.1:47834/mcp" }
+  ]
+}

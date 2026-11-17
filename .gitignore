@@ -27,8 +27,12 @@ ai-tools/shared/skills/.system/
 !nixos-config/packages/opencode-claude-agent/package-lock.json
 !nixos-config/packages/opencode-claude-agent/tsconfig.json
 !scripts/pr_maintenance/*.example.json
+!scripts/persona_broadcast/package.json
+!scripts/persona_broadcast/tsconfig.json
+!scripts/persona_broadcast/config.example.json
 
 node_modules/
+/scripts/persona_broadcast/dist/
 /nixos-config/packages/opencode-claude-agent/dist/
 
 # python files
