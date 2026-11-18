@@ -16,7 +16,7 @@ botctl = "personal_telegram_bot.cli:main"
 agent-notify-mcp = "personal_telegram_bot.notification_mcp:main"
 
 [dependency-groups]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=9.1.1"]
 
 [build-system]
 requires = ["hatchling"]
